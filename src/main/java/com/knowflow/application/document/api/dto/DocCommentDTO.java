@@ -2,9 +2,7 @@ package com.knowflow.application.document.api.dto;
 
 import java.time.LocalDateTime;
 
-/**
- * 文档协同评论数据传输对象 (不可变 record)
- */
+/** 文档协同评论数据传输对象 (不可变 record) */
 public record DocCommentDTO(
     Long id,
     Long workSpaceId,
@@ -14,5 +12,4 @@ public record DocCommentDTO(
     Long replyToUserId,
     String content,
     Integer likeCount,
-    LocalDateTime createTime
-) {}
+    LocalDateTime createTime) {}

@@ -56,13 +56,11 @@ class SearchHistoryArchiveTest {
   @DisplayName("SearchHistoryArchiveListener 正常监听事件并异步落库")
   void shouldSaveSearchHistoryEntityOnEvent() {
     LocalDateTime now = LocalDateTime.now();
-    SearchHistoryRecordEvent event =
-        new SearchHistoryRecordEvent(2001L, 5L, "Spring Data ES", now);
+    SearchHistoryRecordEvent event = new SearchHistoryRecordEvent(2001L, 5L, "Spring Data ES", now);
 
     archiveListener.onSearchHistoryRecord(event);
 
-    ArgumentCaptor<SearchHistoryEntity> captor =
-        ArgumentCaptor.forClass(SearchHistoryEntity.class);
+    ArgumentCaptor<SearchHistoryEntity> captor = ArgumentCaptor.forClass(SearchHistoryEntity.class);
     verify(searchHistoryRepository).save(captor.capture());
 
     SearchHistoryEntity saved = captor.getValue();
@@ -76,8 +74,10 @@ class SearchHistoryArchiveTest {
   @DisplayName("非法或空事件时跳过处理")
   void shouldSkipOnNullEventOrFields() {
     archiveListener.onSearchHistoryRecord(null);
-    archiveListener.onSearchHistoryRecord(new SearchHistoryRecordEvent(null, 1L, "key", LocalDateTime.now()));
-    archiveListener.onSearchHistoryRecord(new SearchHistoryRecordEvent(1L, 1L, null, LocalDateTime.now()));
+    archiveListener.onSearchHistoryRecord(
+        new SearchHistoryRecordEvent(null, 1L, "key", LocalDateTime.now()));
+    archiveListener.onSearchHistoryRecord(
+        new SearchHistoryRecordEvent(1L, 1L, null, LocalDateTime.now()));
 
     verify(searchHistoryRepository, never()).save(any());
   }
@@ -85,9 +85,7 @@ class SearchHistoryArchiveTest {
   @Test
   @DisplayName("落库发生异常时不中断流程")
   void shouldHandleExceptionGracefully() {
-    doThrow(new RuntimeException("DB connection error"))
-        .when(searchHistoryRepository)
-        .save(any());
+    doThrow(new RuntimeException("DB connection error")).when(searchHistoryRepository).save(any());
 
     SearchHistoryRecordEvent event =
         new SearchHistoryRecordEvent(2002L, 5L, "异常测试", LocalDateTime.now());

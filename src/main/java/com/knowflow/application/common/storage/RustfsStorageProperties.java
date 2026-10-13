@@ -3,10 +3,7 @@ package com.knowflow.application.common.storage;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-/**
- * rustfs 对象存储配置属性
- * rustfs 是基于 Rust 编写的高性能、S3 兼容的分布式对象存储引擎
- */
+/** rustfs 对象存储配置属性 rustfs 是基于 Rust 编写的高性能、S3 兼容的分布式对象存储引擎 */
 @Data
 @ConfigurationProperties(prefix = "knowflow.storage.rustfs")
 public class RustfsStorageProperties {

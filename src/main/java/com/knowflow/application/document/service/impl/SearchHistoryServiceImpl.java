@@ -19,8 +19,8 @@ import org.springframework.stereotype.Service;
 /**
  * 用户搜索历史服务实现
  *
- * <p>基于 Redis ZSet 高性能热点存储，保留最新 20 条并设置 30 天 TTL；
- * 支持 workspaceId 多租户隔离，并发布异步领域事件解耦落库，保证即便缓存故障历史仍可靠归档。
+ * <p>基于 Redis ZSet 高性能热点存储，保留最新 20 条并设置 30 天 TTL； 支持 workspaceId
+ * 多租户隔离，并发布异步领域事件解耦落库，保证即便缓存故障历史仍可靠归档。
  */
 @Slf4j
 @Service
@@ -66,10 +66,7 @@ public class SearchHistoryServiceImpl implements SearchHistoryService {
             new SearchHistoryRecordEvent(userId, workspaceId, cleanKeyword, LocalDateTime.now()));
       } catch (Exception e) {
         log.warn(
-            "发布搜索历史归档事件异常: userId={}, keyword={}, error={}",
-            userId,
-            cleanKeyword,
-            e.getMessage());
+            "发布搜索历史归档事件异常: userId={}, keyword={}, error={}", userId, cleanKeyword, e.getMessage());
       }
     }
   }
@@ -86,7 +83,11 @@ public class SearchHistoryServiceImpl implements SearchHistoryService {
       Set<String> members = stringRedisTemplate.opsForZSet().reverseRange(key, 0, limit - 1);
       return members == null ? Collections.emptyList() : new ArrayList<>(members);
     } catch (Exception ex) {
-      log.warn("读取 Redis 搜索历史异常: userId={}, workspaceId={}, error={}", userId, workspaceId, ex.getMessage());
+      log.warn(
+          "读取 Redis 搜索历史异常: userId={}, workspaceId={}, error={}",
+          userId,
+          workspaceId,
+          ex.getMessage());
       return Collections.emptyList();
     }
   }
@@ -118,7 +119,11 @@ public class SearchHistoryServiceImpl implements SearchHistoryService {
     try {
       stringRedisTemplate.delete(key);
     } catch (Exception ex) {
-      log.warn("清空 Redis 搜索历史异常: userId={}, workspaceId={}, error={}", userId, workspaceId, ex.getMessage());
+      log.warn(
+          "清空 Redis 搜索历史异常: userId={}, workspaceId={}, error={}",
+          userId,
+          workspaceId,
+          ex.getMessage());
     }
   }
 

@@ -172,8 +172,7 @@ class WorkSpaceMemberCommandServiceImplTest {
   @Test
   @DisplayName("主动退出团队成功")
   void leaveWorkSpaceSuccess() {
-    WorkSpaceEntity workSpace =
-        WorkSpaceEntity.create("团队", "team", null, null, 999L, 10, null);
+    WorkSpaceEntity workSpace = WorkSpaceEntity.create("团队", "team", null, null, 999L, 10, null);
 
     WorkSpaceMemberEntity member =
         WorkSpaceMemberEntity.create(workSpaceId, currentUserId, WorkSpaceRoleEnum.MEMBER);

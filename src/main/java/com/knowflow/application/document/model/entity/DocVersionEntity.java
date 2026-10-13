@@ -12,10 +12,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/**
- * 文档历史版本快照实体
- * 每次正式发布或生成里程碑时固化不可变快照，支持 Myers Diff 差异对比与一键回退
- */
+/** 文档历史版本快照实体 每次正式发布或生成里程碑时固化不可变快照，支持 Myers Diff 差异对比与一键回退 */
 @Entity
 @org.hibernate.annotations.Immutable
 @Table(
@@ -66,9 +63,7 @@ public class DocVersionEntity extends BaseEntity {
   @Column(name = "word_count", nullable = false)
   private Integer wordCount;
 
-  /**
-   * 静态工厂：创建不可变历史版本快照
-   */
+  /** 静态工厂：创建不可变历史版本快照 */
   public static DocVersionEntity createSnapshot(
       Long workSpaceId,
       Long documentId,

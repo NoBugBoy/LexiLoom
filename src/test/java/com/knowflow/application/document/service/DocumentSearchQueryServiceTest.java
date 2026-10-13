@@ -61,7 +61,7 @@ class DocumentSearchQueryServiceTest {
   private SearchHit<DocSearchDocument> mockHit(
       String id, DocSearchDocument doc, Map<String, List<String>> highlights) {
     SearchHit<DocSearchDocument> hit = mock(SearchHit.class);
-    lenient().when(hit.getId()).thenReturn(id);  // getId() 仅部分路径调用，使用 lenient 避免 strict 误报
+    lenient().when(hit.getId()).thenReturn(id); // getId() 仅部分路径调用，使用 lenient 避免 strict 误报
     when(hit.getContent()).thenReturn(doc);
     when(hit.getHighlightFields()).thenReturn(highlights);
     return hit;
@@ -83,7 +83,8 @@ class DocumentSearchQueryServiceTest {
   @DisplayName("全文检索成功：正确提取高亮字段并异步记录搜索历史")
   void testSuccessfulSearchWithHighlightsAndAsyncHistory() {
     DocumentSearchRequest request =
-        new DocumentSearchRequest("Spring", 1L, 10L, List.of("后端"), 1, 20, DocSearchSortBy.RELEVANCE);
+        new DocumentSearchRequest(
+            "Spring", 1L, 10L, List.of("后端"), 1, 20, DocSearchSortBy.RELEVANCE);
 
     LocalDateTime now = LocalDateTime.now();
     DocSearchDocument doc =
@@ -96,7 +97,7 @@ class DocumentSearchQueryServiceTest {
             .rawText("原文件提取纯文本")
             .categoryId("10")
             .tags(List.of("后端"))
-            .sourceType("MANUAL")
+            .sourceType("IMPORT")
             .publishedAt(now)
             .build();
 

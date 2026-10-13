@@ -6,9 +6,7 @@ import java.util.List;
 import java.util.Optional;
 import org.springframework.stereotype.Repository;
 
-/**
- * 文档标签仓储
- */
+/** 文档标签仓储 */
 @Repository
 public interface DocTagRepository extends BaseRepository<DocTagEntity> {
 

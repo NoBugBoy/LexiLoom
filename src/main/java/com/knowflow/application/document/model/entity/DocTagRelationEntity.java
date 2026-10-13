@@ -10,9 +10,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/**
- * 文档与标签关联实体
- */
+/** 文档与标签关联实体 */
 @Entity
 @Table(
     name = "kf_doc_tag_relation",

@@ -17,9 +17,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * 来源原始文件资产实体
- * 记录上传到 rustfs 的原始文件（Word/PDF/附件等）元数据与哈希索引，
- * 支撑后续 Elasticsearch 全文检索与 RAG 向量双路召回时追溯并调出原始文件。
+ * 来源原始文件资产实体 记录上传到 rustfs 的原始文件（Word/PDF/附件等）元数据与哈希索引， 支撑后续 Elasticsearch 全文检索与 RAG
+ * 向量双路召回时追溯并调出原始文件。
  */
 @Entity
 @Table(
@@ -84,13 +83,15 @@ public class DocSourceFileEntity extends BaseEntity {
   @Column(name = "raw_text", columnDefinition = "TEXT")
   private String rawText;
 
+  /** 解析元数据与结构化切片 JSON (存储 DeepDoc 返回的 chunks 列表、坐标等完整版面元数据) */
+  @Column(name = "parse_metadata", columnDefinition = "TEXT")
+  private String parseMetadata;
+
   /** 错误信息 (若解析失败) */
   @Column(name = "error_message", length = 1000)
   private String errorMessage;
 
-  /**
-   * 静态工厂：创建原始文件记录
-   */
+  /** 静态工厂：创建原始文件记录 */
   public static DocSourceFileEntity create(
       Long workSpaceId,
       Long documentId,
@@ -125,49 +126,64 @@ public class DocSourceFileEntity extends BaseEntity {
     entity.parseStatus = DocParseStatusEnum.ASYNC_PROCESSING;
     entity.parseEngine = DocParserEngineEnum.AUTO;
     entity.rawText = null;
+    entity.parseMetadata = null;
     entity.errorMessage = null;
     return entity;
   }
 
-  /**
-   * 关联主文档
-   */
+  /** 关联主文档 */
   public void bindDocument(Long documentId) {
     Objects.requireNonNull(documentId, "文档ID不能为空");
     this.documentId = documentId;
   }
 
-  /**
-   * 标记解析成功
-   */
+  /** 标记解析成功 (包含完整切片元数据) */
+  public void markParseSuccess(String rawText, DocParserEngineEnum engine, String parseMetadata) {
+    applyParseResult(DocParseStatusEnum.SUCCESS, rawText, engine, parseMetadata);
+  }
+
+  /** 标记解析成功 */
   public void markParseSuccess(String rawText, DocParserEngineEnum engine) {
-    applyParseResult(DocParseStatusEnum.SUCCESS, rawText, engine);
+    markParseSuccess(rawText, engine, null);
   }
 
-  /**
-   * 标记为固化版面仅预览（如 PDF 双轨制）
-   */
+  /** 标记为固化版面仅预览（如 PDF 双轨制） */
+  public void markPreviewOnly(String rawText, DocParserEngineEnum engine, String parseMetadata) {
+    applyParseResult(DocParseStatusEnum.PREVIEW_ONLY, rawText, engine, parseMetadata);
+  }
+
+  /** 标记为固化版面仅预览 */
   public void markPreviewOnly(String rawText, DocParserEngineEnum engine) {
-    applyParseResult(DocParseStatusEnum.PREVIEW_ONLY, rawText, engine);
+    markPreviewOnly(rawText, engine, null);
   }
 
-  /**
-   * 标记解析失败
-   */
+  /** 标记解析失败 */
   public void markParseFailed(String errorMessage) {
-    if (this.parseStatus == DocParseStatusEnum.SUCCESS || this.parseStatus == DocParseStatusEnum.PREVIEW_ONLY) {
+    if (this.parseStatus == DocParseStatusEnum.SUCCESS
+        || this.parseStatus == DocParseStatusEnum.PREVIEW_ONLY) {
       throw BusinessException.badRequest("文档已成功解析，不可标记为失败状态");
     }
     this.parseStatus = DocParseStatusEnum.FAILED;
     this.errorMessage = errorMessage;
   }
 
-  private void applyParseResult(DocParseStatusEnum newStatus, String rawText, DocParserEngineEnum engine) {
+  /** 重置为异步解析中状态 (供重试解析使用) */
+  public void markAsyncProcessing() {
+    this.parseStatus = DocParseStatusEnum.ASYNC_PROCESSING;
+    this.errorMessage = null;
+  }
+
+  private void applyParseResult(
+      DocParseStatusEnum newStatus,
+      String rawText,
+      DocParserEngineEnum engine,
+      String parseMetadata) {
     this.parseStatus = newStatus;
     this.rawText = rawText;
     if (engine != null) {
       this.parseEngine = engine;
     }
+    this.parseMetadata = parseMetadata;
     this.errorMessage = null;
   }
 }

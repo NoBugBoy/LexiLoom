@@ -15,9 +15,9 @@ spring:
       url: redis://localhost:6379
   jpa:
     hibernate:
-      # 量产阶段使用 flyway，关闭 ddl-auto 改为 validate
-      ddl-auto: update
-    show-sql: true
+    # 量产阶段使用 flyway，关闭 ddl-auto 改为 validate
+    #      ddl-auto: update
+    show-sql: false
     properties:
       hibernate:
         format_sql: true
@@ -63,19 +63,53 @@ knowflow:
       region: us-east-1
 
   # ── 文档解析引擎 ─────────────────────────────────────────────────────────────
-  # 可选值: AUTO | MARKITDOWN | MINERU
-  # AUTO: 根据文件类型自动路由（推荐）
+  # 可选值: AUTO | DEEPDOC
+  # AUTO: 根据文件类型自适应路由（默认使用当前 DeepDoc 引擎）
   parser:
     default-engine: AUTO
-    # MarkItDown：部署独立 Python 微服务后填写，留空则降级为 Mock 引擎
-    markitdown:
-      endpoint:
-    # MinerU：填写 MinerU 云端 API 或本地服务地址，留空则降级为 Mock 引擎
-    mineru:
-      endpoint:
-      api-key:
+    # DeepDoc：对接部署在 Docker 中的 RAGFlow DeepDoc 服务
+    deepdoc:
+      endpoint: ${DEEPDOC_ENDPOINT:http://localhost:9390}
 
   # ── Elasticsearch 全文检索 ───────────────────────────────────────────────────
   elasticsearch:
     index-name: knowflow_doc_index
     auto-create-index: true
+
+  # ── AI 智能问答与 RAG 检索增强中心 ──────────────────────────────────────────
+  ai:
+    enabled: true
+    # 可选值: DEEPSEEK | QWEN | OLLAMA | MOCK (本地开发默认 MOCK，支持通过环境变量接入真实 API)
+    model-provider: ${AI_MODEL_PROVIDER:DEEPSEEK}
+    api-key: ${AI_API_KEY:${DEEPSEEK_API_KEY:}}
+    base-url: ${AI_BASE_URL:https://api.deepseek.com}
+    chat-model: ${AI_CHAT_MODEL:deepseek-flash}
+    reasoning-model: ${AI_REASONING_MODEL:deepseek-flash}
+    chunk-index-name: ${AI_CHUNK_INDEX:knowflow_chunk_index}
+    auto-create-index: true
+    embedding:
+      # 可选值: OPENAI_COMPATIBLE | DASHSCOPE | OLLAMA | MOCK
+      provider: ${AI_EMBEDDING_PROVIDER:DASHSCOPE}
+      api-key: ${AI_EMBEDDING_API_KEY:${DASHSCOPE_API_KEY:}}
+      base-url: ${AI_EMBEDDING_BASE_URL:https://maas.qianwenaiapi.com/compatible-mode/v1}
+      model: ${AI_EMBEDDING_MODEL:qwen3.7-text-embedding-flash}
+      dimension: 1024
+    rerank:
+      # 重排完全可选（默认关闭），开启时可选: NONE | RRF | CROSS_ENCODER | MOCK
+      enabled: false
+      strategy: NONE
+      provider: DASHSCOPE
+      api-key: ${AI_RERANK_API_KEY:}
+      base-url: ${AI_RERANK_BASE_URL:}
+      model: ${AI_RERANK_MODEL:gte-rerank}
+      top-k: 5
+      min-score: 0.60
+    chunk:
+      context-prefix-enabled: true
+      max-token-limit: 2000
+    rag:
+      top-k: 5
+      similarity-threshold: 0.60
+      history-turns: 3
+      session-expire-seconds: 604800
+

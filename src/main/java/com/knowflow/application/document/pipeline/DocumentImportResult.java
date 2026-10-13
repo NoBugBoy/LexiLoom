@@ -5,9 +5,7 @@ import com.knowflow.application.document.parser.DocParserEngineEnum;
 import java.util.Collections;
 import java.util.Map;
 
-/**
- * 文档导入执行结果（不可变 Java Record）
- */
+/** 文档导入执行结果（不可变 Java Record） */
 public record DocumentImportResult(
     Long documentId,
     Long sourceFileId,
@@ -19,8 +17,7 @@ public record DocumentImportResult(
     DocParserEngineEnum engineUsed,
     boolean instantUpload,
     String previewOrMarkdownContent,
-    Map<String, Object> metadata
-) {
+    Map<String, Object> metadata) {
 
   public DocumentImportResult {
     metadata = (metadata == null) ? Collections.emptyMap() : Collections.unmodifiableMap(metadata);
@@ -97,8 +94,39 @@ public record DocumentImportResult(
         Map.of("error", errorMessage != null ? errorMessage : ""));
   }
 
+  public static DocumentImportResult asyncProcessing(
+      Long documentId,
+      Long sourceFileId,
+      String title,
+      String originalFileName,
+      String storagePath,
+      String storageUrl,
+      DocParserEngineEnum engineUsed,
+      boolean instantUpload,
+      String placeholderContent,
+      Map<String, Object> metadata) {
+    return new DocumentImportResult(
+        documentId,
+        sourceFileId,
+        title,
+        originalFileName,
+        storagePath,
+        storageUrl,
+        DocParseStatusEnum.ASYNC_PROCESSING,
+        engineUsed,
+        instantUpload,
+        placeholderContent,
+        metadata);
+  }
+
   public boolean isSuccess() {
-    return this.parseStatus == DocParseStatusEnum.SUCCESS || this.parseStatus == DocParseStatusEnum.PREVIEW_ONLY;
+    return this.parseStatus == DocParseStatusEnum.SUCCESS
+        || this.parseStatus == DocParseStatusEnum.PREVIEW_ONLY
+        || this.parseStatus == DocParseStatusEnum.ASYNC_PROCESSING;
+  }
+
+  public boolean isAsyncProcessing() {
+    return this.parseStatus == DocParseStatusEnum.ASYNC_PROCESSING;
   }
 
   public String suggestedTitle() {
@@ -112,5 +140,9 @@ public record DocumentImportResult(
   public String errorMessage() {
     Object err = this.metadata.get("error");
     return err != null ? err.toString() : null;
+  }
+
+  public boolean versionUnchanged() {
+    return Boolean.TRUE.equals(this.metadata.get("versionUnchanged"));
   }
 }

@@ -2,26 +2,18 @@ package com.knowflow.application.document.statemachine;
 
 import lombok.Getter;
 
-/**
- * 文档全生命周期状态枚举
- */
+/** 文档全生命周期状态枚举（严格收敛为待审核、审批通过、审批驳回三态） */
 @Getter
 public enum DocumentStateEnum {
 
-  /** 草稿：仅作者及协作者可见，可自由编辑 */
-  DRAFT("草稿"),
+  /** 待审核：导入或修改提交后进入审核流 */
+  PENDING_APPROVAL("待审核"),
 
-  /** 待审阅：已提交审批，进入审阅流，不可修改 */
-  PENDING_REVIEW("待审阅"),
+  /** 审批通过：审核通过，正式生效并供检索 */
+  APPROVED("审批通过"),
 
-  /** 已发布：正式对外公开或团队可见，生成正式版本快照 */
-  PUBLISHED("已发布"),
-
-  /** 已驳回：审批未通过，返回作者修改，保留驳回理由 */
-  REJECTED("已驳回"),
-
-  /** 已归档：文档封存，只读归档，不展示在常规活跃知识库中 */
-  ARCHIVED("已归档");
+  /** 审批驳回：审核未通过，保留驳回理由供修改后重提 */
+  REJECTED("审批驳回");
 
   private final String description;
 

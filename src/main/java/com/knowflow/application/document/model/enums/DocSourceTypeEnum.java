@@ -2,14 +2,9 @@ package com.knowflow.application.document.model.enums;
 
 import lombok.Getter;
 
-/**
- * 文档内容来源渠道
- */
+/** 文档内容来源渠道 */
 @Getter
 public enum DocSourceTypeEnum {
-
-  /** 手动在线创作：内置 Markdown 编辑器编写 */
-  MANUAL("手动创作"),
 
   /** 外部文件导入：Word, PDF, Markdown, TXT 等文件摄入 */
   IMPORT("文件导入"),

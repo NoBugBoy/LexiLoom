@@ -21,12 +21,10 @@ import org.springframework.stereotype.Service;
 /**
  * 搜索建议与自动补全服务实现
  *
- * <p>基于 {@code matchPhrasePrefix} 查询并配合 workspaceId / status 过滤，
- * 提供多租户安全的实时标题补全，最多返回 10 条候选词。
+ * <p>基于 {@code matchPhrasePrefix} 查询并配合 workspaceId / status 过滤， 提供多租户安全的实时标题补全，最多返回 10 条候选词。
  *
- * <p><b>安全说明</b>：Elasticsearch Completion Suggester 在分片级独立执行，<b>不受</b>
- * bool.filter 约束，直接使用会导致跨租户数据泄露。因此此处改用带隔离过滤的 matchPhrasePrefix
- * 方案。若未来需要真正的 Completion Suggester，需配合
+ * <p><b>安全说明</b>：Elasticsearch Completion Suggester 在分片级独立执行，<b>不受</b> bool.filter
+ * 约束，直接使用会导致跨租户数据泄露。因此此处改用带隔离过滤的 matchPhrasePrefix 方案。若未来需要真正的 Completion Suggester，需配合
  * {@code @CompletionContext(workspaceId)} 使用。
  */
 @Slf4j
@@ -53,22 +51,14 @@ public class SearchSuggestQueryServiceImpl implements SearchSuggestQueryService 
           q ->
               q.bool(
                   b -> {
-                    b.must(
-                        m ->
-                            m.matchPhrasePrefix(
-                                mpp -> mpp.field("title").query(cleanKeyword)));
+                    b.must(m -> m.matchPhrasePrefix(mpp -> mpp.field("title").query(cleanKeyword)));
+                    b.filter(
+                        f ->
+                            f.term(t -> t.field("workspaceId").value(String.valueOf(workspaceId))));
                     b.filter(
                         f ->
                             f.term(
-                                t ->
-                                    t.field("workspaceId")
-                                        .value(String.valueOf(workspaceId))));
-                    b.filter(
-                        f ->
-                            f.term(
-                                t ->
-                                    t.field("status")
-                                        .value(DocumentStateEnum.PUBLISHED.name())));
+                                t -> t.field("status").value(DocumentStateEnum.APPROVED.name())));
                     return b;
                   }));
 

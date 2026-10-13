@@ -67,7 +67,7 @@ services:
   # HTTP: http://localhost:9200
   # ─────────────────────────────────────────────
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.0
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.0.0
     container_name: knowflow-es
     restart: unless-stopped
     environment:
@@ -83,15 +83,17 @@ services:
       - es_data:/usr/share/elasticsearch/data
     # 安装 IK 中文分词插件（版本须与 ES 镜像版本严格一致）
     # 首次启动耗时较长（需下载插件），后续因 es_data 卷持久化会跳过
-    command: >
-      /bin/bash -c "
+    command:
+      - bash
+      - -c
+      - |
         if [ ! -d /usr/share/elasticsearch/plugins/analysis-ik ]; then
-          echo '>>> 安装 IK 中文分词插件 ...' &&
-          /usr/share/elasticsearch/bin/elasticsearch-plugin install --batch
-          https://release.infinilabs.com/analysis-ik/stable/elasticsearch-analysis-ik-8.17.0.zip;
-        fi &&
-        /usr/local/bin/docker-entrypoint.sh eswrapper
-      "
+          echo '>>> 安装 IK 中文分词插件 ...'
+          /usr/share/elasticsearch/bin/elasticsearch-plugin install --batch \
+            https://release.infinilabs.com/analysis-ik/stable/elasticsearch-analysis-ik-9.0.0.zip \
+          || echo '!!! IK 插件安装失败，ES 将以未启用中文分词的方式继续启动'
+        fi
+        exec /usr/local/bin/docker-entrypoint.sh eswrapper
     healthcheck:
       test: [ "CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health | grep -qv '\"status\":\"red\"'" ]
       interval: 15s
@@ -112,22 +114,22 @@ services:
   # Kibana 8.x  (可选，ES 可视化调试工具)
   # Web UI: http://localhost:5601
   # ─────────────────────────────────────────────
-  kibana:
-    image: docker.elastic.co/kibana/kibana:8.17.0
-    container_name: knowflow-kibana
-    restart: unless-stopped
-    depends_on:
-      elasticsearch:
-        condition: service_healthy
-    environment:
-      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-      - xpack.security.enabled=false
-    ports:
-      - "5601:5601"
-    networks:
-      - knowflow-net
-    profiles:
-      - tools                               # docker compose --profile tools up -d 才启动
+  #  kibana:
+  #    image: docker.elastic.co/kibana/kibana:8.17.0
+  #    container_name: knowflow-kibana
+  #    restart: unless-stopped
+  #    depends_on:
+  #      elasticsearch:
+  #        condition: service_healthy
+  #    environment:
+  #      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+  #      - xpack.security.enabled=false
+  #    ports:
+  #      - "5601:5601"
+  #    networks:
+  #      - knowflow-net
+  #    profiles:
+  #      - tools                               # docker compose --profile tools up -d 才启动
 
   # ─────────────────────────────────────────────
   # RustFS  (S3 兼容对象存储，MinIO 协议兼容)
@@ -156,27 +158,53 @@ services:
       start_period: 10s
     networks:
       - knowflow-net
+  deepdoc:
+    container_name: deepdoc-server
+    image: deepdoc-server:latest
+    restart: unless-stopped
+    ports:
+      - "9390:9390"
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      # 持久化挂载模型缓存目录，容器重启无需重新下载模型
+      - ./model_cache:/root/.cache/deepdoc
+      # 挂载修复后的解析服务入口脚本，无需重新构建镜像
+      - ./.agents/deepdoc/server.py:/app/server.py
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:9390/health || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 4096M
+        reservations:
+          memory: 1536M
+
 
   # ─────────────────────────────────────────────
   # mc-init：自动创建 knowflow Bucket（一次性 Job）
   # 依赖 rustfs 健康后运行，完成即退出
   # ─────────────────────────────────────────────
-  mc-init:
-    image: minio/mc:latest
-    container_name: knowflow-mc-init
-    depends_on:
-      rustfs:
-        condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-        mc alias set rustfs http://rustfs:9000 rustfsadmin rustfsadmin &&
-        mc mb --ignore-existing rustfs/knowflow &&
-        mc anonymous set public rustfs/knowflow &&
-        echo '✅ Bucket knowflow created'
-      "
-    networks:
-      - knowflow-net
-    restart: "no"
+#  mc-init:
+#    image: minio/mc:latest
+#    container_name: knowflow-mc-init
+#    depends_on:
+#      rustfs:
+#        condition: service_healthy
+#    entrypoint: >
+#      /bin/sh -c "
+#        mc alias set rustfs http://rustfs:9000 rustfsadmin rustfsadmin &&
+#        mc mb --ignore-existing rustfs/knowflow &&
+#        mc anonymous set public rustfs/knowflow &&
+#        echo '✅ Bucket knowflow created'
+#      "
+#    networks:
+#      - knowflow-net
+#    restart: "no"
 
 # ─────────────────────────────────────────────
 # 数据卷（持久化）

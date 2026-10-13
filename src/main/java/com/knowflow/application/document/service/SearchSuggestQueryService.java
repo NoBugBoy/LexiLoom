@@ -2,9 +2,7 @@ package com.knowflow.application.document.service;
 
 import java.util.List;
 
-/**
- * 搜索建议与自动补全服务
- */
+/** 搜索建议与自动补全服务 */
 public interface SearchSuggestQueryService {
 
   /**

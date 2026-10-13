@@ -18,9 +18,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * 文档协同评论 REST 控制器
- */
+/** 文档协同评论 REST 控制器 */
 @RestController
 @RequestMapping("/documents/{docId}/comments")
 @RequiredArgsConstructor
@@ -28,9 +26,7 @@ public class DocCommentController {
 
   private final DocCommentService docCommentService;
 
-  /**
-   * 发表评论或楼中楼回复
-   */
+  /** 发表评论或楼中楼回复 */
   @PostMapping
   public DocCommentDTO addComment(
       @PathVariable("docId") Long docId,
@@ -42,21 +38,23 @@ public class DocCommentController {
       return docCommentService.addRootComment(workSpaceId, docId, userId, request.content());
     } else {
       return docCommentService.addReplyComment(
-          workSpaceId, docId, userId, request.parentId(), request.replyToUserId(), request.content());
+          workSpaceId,
+          docId,
+          userId,
+          request.parentId(),
+          request.replyToUserId(),
+          request.content());
     }
   }
 
-  /**
-   * 获取文档评论树
-   */
+  /** 获取文档评论树 */
   @GetMapping
   public List<DocCommentNodeDTO> getCommentTree(@PathVariable("docId") Long docId) {
-    return docCommentService.getCommentTree(docId);
+    Long userId = SecurityHolder.getUserId();
+    return docCommentService.getCommentTree(docId, userId);
   }
 
-  /**
-   * 删除评论
-   */
+  /** 删除评论 */
   @DeleteMapping("/{commentId}")
   public void deleteComment(
       @PathVariable("docId") Long docId, @PathVariable("commentId") Long commentId) {
@@ -64,12 +62,11 @@ public class DocCommentController {
     docCommentService.deleteComment(commentId, userId);
   }
 
-  /**
-   * 点赞评论
-   */
+  /** 点赞评论 */
   @PostMapping("/{commentId}/like")
   public void likeComment(
       @PathVariable("docId") Long docId, @PathVariable("commentId") Long commentId) {
-    docCommentService.likeComment(commentId);
+    Long userId = SecurityHolder.getUserId();
+    docCommentService.likeComment(commentId, userId);
   }
 }

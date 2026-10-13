@@ -17,9 +17,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * 团队成员查询服务实现
- */
+/** 团队成员查询服务实现 */
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)

@@ -12,9 +12,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/**
- * 文档协同评论实体 (支持楼中楼嵌套回复)
- */
+/** 文档协同评论实体 (支持楼中楼嵌套回复) */
 @Entity
 @Table(
     name = "kf_doc_comment",
@@ -56,9 +54,7 @@ public class DocCommentEntity extends BaseEntity {
   @Column(name = "like_count", nullable = false)
   private Integer likeCount;
 
-  /**
-   * 静态工厂：创建根评论
-   */
+  /** 静态工厂：创建根评论 */
   public static DocCommentEntity createRoot(
       Long workSpaceId, Long documentId, Long userId, String content) {
     validate(workSpaceId, documentId, userId, content);
@@ -74,11 +70,14 @@ public class DocCommentEntity extends BaseEntity {
     return entity;
   }
 
-  /**
-   * 静态工厂：创建楼中楼回复
-   */
+  /** 静态工厂：创建楼中楼回复 */
   public static DocCommentEntity createReply(
-      Long workSpaceId, Long documentId, Long userId, Long parentId, Long replyToUserId, String content) {
+      Long workSpaceId,
+      Long documentId,
+      Long userId,
+      Long parentId,
+      Long replyToUserId,
+      String content) {
     validate(workSpaceId, documentId, userId, content);
     Objects.requireNonNull(parentId, "父评论ID不能为空");
 

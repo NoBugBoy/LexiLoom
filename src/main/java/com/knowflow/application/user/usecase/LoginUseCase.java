@@ -16,7 +16,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.chanjar.weixin.common.error.WxErrorException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * @author yujian
@@ -33,7 +32,6 @@ public class LoginUseCase implements UseCase<LoginCommand, String> {
 
   public record LoginCommand(String loginCode) {}
 
-  @Transactional(rollbackFor = Throwable.class)
   @Override
   public String execute(LoginCommand loginCommand) {
     final var loginCode = loginCommand.loginCode();

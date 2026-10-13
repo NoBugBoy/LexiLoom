@@ -23,10 +23,10 @@ class DocSearchMapperTest {
   @DisplayName("完整实体映射为 DocSearchDocument")
   void testToSearchDocComplete() {
     DocumentEntity doc =
-        DocumentEntity.createManual(
+        DocumentEntity.createFromImport(
             10L, 20L, "设计规范文档", "这是摘要", "# 详细正文", WorkSpaceAclEnum.INTERNAL);
     doc.setId(1001L);
-    doc.transitionTo(DocumentStateEnum.PUBLISHED);
+    doc.transitionTo(DocumentStateEnum.APPROVED);
     doc.setCreateBy(88L);
     LocalDateTime updateTime = LocalDateTime.of(2026, 10, 1, 10, 0, 0);
     doc.setUpdateTime(updateTime);
@@ -42,7 +42,7 @@ class DocSearchMapperTest {
             "hash999",
             "storage/manual.docx",
             "http://rustfs/manual.docx");
-    sourceFile.markParseSuccess("提取的纯文本内容", DocParserEngineEnum.MARKITDOWN);
+    sourceFile.markParseSuccess("提取的纯文本内容", DocParserEngineEnum.DEEPDOC);
 
     List<String> tags = List.of("文档", "工程规范");
 
@@ -57,9 +57,9 @@ class DocSearchMapperTest {
     assertThat(result.getRawText()).isEqualTo("提取的纯文本内容");
     assertThat(result.getTags()).containsExactly("文档", "工程规范");
     assertThat(result.getCategoryId()).isEqualTo("20");
-    assertThat(result.getSourceType()).isEqualTo("MANUAL");
+    assertThat(result.getSourceType()).isEqualTo("IMPORT");
     assertThat(result.getAuthorId()).isEqualTo("88");
-    assertThat(result.getStatus()).isEqualTo("PUBLISHED");
+    assertThat(result.getStatus()).isEqualTo("APPROVED");
     assertThat(result.getPublishedAt()).isEqualTo(updateTime);
     assertThat(result.getContentVector()).isNull();
 
@@ -72,8 +72,7 @@ class DocSearchMapperTest {
   @DisplayName("无源文件及无 updateTime 时应平滑降级映射")
   void testToSearchDocWithNullSourceFileAndNullUpdateTime() {
     DocumentEntity doc =
-        DocumentEntity.createManual(
-            11L, 0L, "测试无附件文档", null, "纯正文", WorkSpaceAclEnum.PUBLIC);
+        DocumentEntity.createFromImport(11L, 0L, "测试无附件文档", null, "纯正文", WorkSpaceAclEnum.PUBLIC);
     doc.setId(1002L);
     LocalDateTime createTime = LocalDateTime.of(2026, 10, 1, 9, 30, 0);
     doc.setCreateTime(createTime);

@@ -10,9 +10,7 @@ import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.MappingTarget;
 
-/**
- * Elasticsearch 核心文档检索实体 MapStruct 映射器
- */
+/** Elasticsearch 核心文档检索实体 MapStruct 映射器 */
 @Mapper
 public interface DocSearchMapper {
 

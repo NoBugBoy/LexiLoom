@@ -17,9 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * 文档历史版本管理与多版本比对 REST 控制器
- */
+/** 文档历史版本管理与多版本比对 REST 控制器 */
 @RestController
 @RequestMapping("/documents/{docId}/versions")
 @RequiredArgsConstructor
@@ -27,9 +25,7 @@ public class DocumentVersionController {
 
   private final DocVersionService docVersionService;
 
-  /**
-   * 手动创建里程碑版本快照
-   */
+  /** 手动创建里程碑版本快照 */
   @PostMapping
   public DocVersionDTO createSnapshot(
       @PathVariable("docId") Long docId,
@@ -38,26 +34,22 @@ public class DocumentVersionController {
     return docVersionService.createSnapshot(docId, request, userId);
   }
 
-  /**
-   * 获取文档历史版本列表
-   */
+  /** 获取文档历史版本列表 */
   @GetMapping
   public List<DocVersionDTO> listVersions(@PathVariable("docId") Long docId) {
-    return docVersionService.listVersions(docId);
+    Long userId = SecurityHolder.getUserId();
+    return docVersionService.listVersions(docId, userId);
   }
 
-  /**
-   * 获取单次历史版本详情
-   */
+  /** 获取单次历史版本详情 */
   @GetMapping("/{versionNumber}")
   public DocVersionDTO getVersion(
       @PathVariable("docId") Long docId, @PathVariable("versionNumber") Integer versionNumber) {
-    return docVersionService.getVersion(docId, versionNumber);
+    Long userId = SecurityHolder.getUserId();
+    return docVersionService.getVersion(docId, versionNumber, userId);
   }
 
-  /**
-   * 一键回滚到历史版本 (由 Service 完成实体 DTO 转换，Controller 不感知领域聚合根)
-   */
+  /** 一键回滚到历史版本 (由 Service 完成实体 DTO 转换，Controller 不感知领域聚合根) */
   @PostMapping("/{versionNumber}/rollback")
   public DocumentDTO rollback(
       @PathVariable("docId") Long docId, @PathVariable("versionNumber") Integer versionNumber) {
@@ -76,6 +68,7 @@ public class DocumentVersionController {
       @PathVariable("docId") Long docId,
       @RequestParam(value = "oldVersion", required = false) Integer oldVersion,
       @RequestParam(value = "newVersion", required = false) Integer newVersion) {
-    return docVersionService.compareVersions(docId, oldVersion, newVersion);
+    Long userId = SecurityHolder.getUserId();
+    return docVersionService.compareVersions(docId, oldVersion, newVersion, userId);
   }
 }

@@ -240,9 +240,10 @@ class AdminAuthCaseTest {
     @Test
     @DisplayName("系统初次启动未存在超管时应自动创建超管")
     void shouldInitSuperAdminWhenNotPresent() throws Exception {
-      given(adminQueryService.findAdminByEmail("admin@shenwu.com")).willReturn(Optional.empty());
+      given(adminQueryService.findAdminByEmail("admin@knowflow.com")).willReturn(Optional.empty());
       given(passwordEncoder.encode("123456")).willReturn("super_enc_pwd");
-      given(adminCommandService.saveAdminUser("admin@shenwu.com", "super_enc_pwd")).willReturn(1L);
+      given(adminCommandService.saveAdminUser("admin@knowflow.com", "super_enc_pwd"))
+          .willReturn(1L);
 
       adminRegisterUseCase.run();
 
@@ -254,7 +255,7 @@ class AdminAuthCaseTest {
     void shouldNotCreateSuperAdminWhenAlreadyPresent() throws Exception {
       AdminEntity superAdmin = new AdminEntity();
       superAdmin.setId(1L);
-      given(adminQueryService.findAdminByEmail("admin@shenwu.com"))
+      given(adminQueryService.findAdminByEmail("admin@knowflow.com"))
           .willReturn(Optional.of(superAdmin));
 
       adminRegisterUseCase.run();

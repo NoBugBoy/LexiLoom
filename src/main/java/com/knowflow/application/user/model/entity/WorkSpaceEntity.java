@@ -15,9 +15,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.springframework.util.StringUtils;
 
-/**
- * 团队/工作空间聚合根
- */
+/** 团队/工作空间聚合根 */
 @Entity
 @Table(name = "kf_work_space", comment = "团队")
 @Getter
@@ -58,9 +56,7 @@ public class WorkSpaceEntity extends BaseEntity {
   @Column(nullable = false, length = 20)
   private WorkSpaceAclEnum visibility;
 
-  /**
-   * 静态工厂：创建新团队
-   */
+  /** 静态工厂：创建新团队 */
   public static WorkSpaceEntity create(
       String name,
       String code,
@@ -89,10 +85,9 @@ public class WorkSpaceEntity extends BaseEntity {
     return entity;
   }
 
-  /**
-   * 更新基本信息
-   */
-  public void updateInfo(String name, String description, String avatarUrl, WorkSpaceAclEnum visibility) {
+  /** 更新基本信息 */
+  public void updateInfo(
+      String name, String description, String avatarUrl, WorkSpaceAclEnum visibility) {
     assertActive();
     if (StringUtils.hasText(name)) {
       this.name = name.trim();
@@ -104,9 +99,7 @@ public class WorkSpaceEntity extends BaseEntity {
     }
   }
 
-  /**
-   * 调整人数配额
-   */
+  /** 调整人数配额 */
   public void updateMaxMembers(Integer newMaxMembers, long currentMemberCount) {
     assertActive();
     if (newMaxMembers == null || newMaxMembers <= 0) {
@@ -118,9 +111,7 @@ public class WorkSpaceEntity extends BaseEntity {
     this.maxMembers = newMaxMembers;
   }
 
-  /**
-   * 校验是否可加入新成员
-   */
+  /** 校验是否可加入新成员 */
   public void validateCanAddMember(long currentMemberCount) {
     assertActive();
     if (currentMemberCount >= this.maxMembers) {
@@ -128,9 +119,7 @@ public class WorkSpaceEntity extends BaseEntity {
     }
   }
 
-  /**
-   * 转让团队所有者
-   */
+  /** 转让团队所有者 */
   public void transferOwnership(Long newOwnerId) {
     assertActive();
     Objects.requireNonNull(newOwnerId, "新所有者ID不能为空");
@@ -140,9 +129,7 @@ public class WorkSpaceEntity extends BaseEntity {
     this.ownerId = newOwnerId;
   }
 
-  /**
-   * 冻结团队
-   */
+  /** 冻结团队 */
   public void freeze() {
     if (this.status == WorkSpaceStatusEnum.DISBANDED) {
       throw BusinessException.badRequest("已解散的团队不可冻结");
@@ -150,9 +137,7 @@ public class WorkSpaceEntity extends BaseEntity {
     this.status = WorkSpaceStatusEnum.FROZEN;
   }
 
-  /**
-   * 激活/恢复团队
-   */
+  /** 激活/恢复团队 */
   public void activate() {
     if (this.status == WorkSpaceStatusEnum.DISBANDED) {
       throw BusinessException.badRequest("已解散的团队无法重新激活");
@@ -160,9 +145,7 @@ public class WorkSpaceEntity extends BaseEntity {
     this.status = WorkSpaceStatusEnum.NORMAL;
   }
 
-  /**
-   * 解散团队
-   */
+  /** 解散团队 */
   public void disband() {
     if (this.status == WorkSpaceStatusEnum.DISBANDED) {
       throw BusinessException.badRequest("团队已经处于解散状态");
@@ -170,9 +153,7 @@ public class WorkSpaceEntity extends BaseEntity {
     this.status = WorkSpaceStatusEnum.DISBANDED;
   }
 
-  /**
-   * 断言团队处于可用状态
-   */
+  /** 断言团队处于可用状态 */
   public void assertActive() {
     if (!this.status.isActive()) {
       throw BusinessException.badRequest("团队当前不可用，状态为: " + this.status);

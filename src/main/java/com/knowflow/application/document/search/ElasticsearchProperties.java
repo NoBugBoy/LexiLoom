@@ -8,8 +8,8 @@ import org.springframework.stereotype.Component;
 /**
  * Elasticsearch 检索基础设施配置属性
  *
- * <p>提供索引名称与自动化索引结构初始化的动态配置。
- * 显式声明 Bean 名称以支持 SpEL 表达式 (如 {@code @Document(indexName = "#{@elasticsearchProperties.indexName}")})。
+ * <p>提供索引名称与自动化索引结构初始化的动态配置。 显式声明 Bean 名称以支持 SpEL 表达式 (如 {@code @Document(indexName =
+ * "#{@elasticsearchProperties.indexName}")})。
  */
 @Getter
 @Setter

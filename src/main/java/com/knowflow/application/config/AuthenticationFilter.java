@@ -37,8 +37,10 @@ public class AuthenticationFilter extends OncePerRequestFilter {
       HttpServletRequest request, @NonNull HttpServletResponse response, @NonNull FilterChain chain)
       throws ServletException, IOException {
 
-    String token = request.getHeader("Authorization");
-    if (token != null) {
+    String authHeader = request.getHeader("Authorization");
+    if (authHeader != null && !authHeader.isBlank()) {
+      String token =
+          authHeader.startsWith("Bearer ") ? authHeader.substring(7).trim() : authHeader.trim();
       authenticate(token);
     }
 
@@ -56,13 +58,16 @@ public class AuthenticationFilter extends OncePerRequestFilter {
         return;
       }
 
-      List<String> roles = loginToken.roles().stream().map(AdminRoleEnum::name).toList();
+      List<String> roles =
+          loginToken.roles() != null
+              ? loginToken.roles().stream().map(AdminRoleEnum::name).toList()
+              : List.of();
       if (roles.isEmpty()) {
         SecurityHolder.setAuthentication(userId);
       } else {
         SecurityHolder.setAuthentication(userId, roles);
       }
-    } catch (IllegalArgumentException e) {
+    } catch (Exception e) {
       // 显式清空：防止因过滤器被容器/安全链重复执行而残留上一个请求的认证
       SecurityContextHolder.clearContext();
       log.debug("Token 校验失败，按未登录处理: {}", e.getMessage());

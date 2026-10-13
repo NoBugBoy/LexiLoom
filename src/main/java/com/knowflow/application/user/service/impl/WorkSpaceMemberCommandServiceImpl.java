@@ -13,9 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * 团队成员写操作服务实现
- */
+/** 团队成员写操作服务实现 */
 @Service
 @RequiredArgsConstructor
 public class WorkSpaceMemberCommandServiceImpl implements WorkSpaceMemberCommandService {

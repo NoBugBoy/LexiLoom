@@ -75,8 +75,7 @@ class SearchSuggestQueryServiceTest {
     assertThat(suggestQueryService.suggest(1L, "   ")).isEmpty();
 
     // 消除 search() 重载歧义，显式指定参数类型
-    verify(elasticsearchOperations, never())
-        .search(any(NativeQuery.class), any(Class.class));
+    verify(elasticsearchOperations, never()).search(any(NativeQuery.class), any(Class.class));
   }
 
   @Test

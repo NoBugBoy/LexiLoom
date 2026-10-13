@@ -19,9 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-/**
- * 团队查询服务实现
- */
+/** 团队查询服务实现 */
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)

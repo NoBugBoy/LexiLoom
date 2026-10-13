@@ -24,9 +24,10 @@ import org.springframework.transaction.event.TransactionalEventListener;
  * Elasticsearch 索引同步异步事件监听器
  *
  * <p>监听文档状态机流转事件 {@link DocumentStateTransitionEvent}，驱动 Elasticsearch 全文检索索引的生命周期变更：
+ *
  * <ul>
- *   <li>{@code PUBLISHED}: 读取文档主体、关联源文件原始纯文本及标签，写入/覆盖 ES 索引</li>
- *   <li>{@code ARCHIVED} / {@code DRAFT}: 从 ES 索引中安全移除文档</li>
+ *   <li>{@code APPROVED}: 读取文档主体、关联源文件原始纯文本及标签，写入/覆盖 ES 索引
+ *   <li>{@code REJECTED} / {@code PENDING_APPROVAL}: 从 ES 索引中安全移除文档
  * </ul>
  */
 @Slf4j
@@ -55,12 +56,11 @@ public class DocumentSearchSyncListener {
         event.targetState());
 
     switch (event.targetState()) {
-      case PUBLISHED -> indexDocument(event.documentId());
-      case ARCHIVED, DRAFT -> removeFromIndex(event.documentId());
-      default -> log.debug(
-          "忽略非索引关心的状态变更: documentId={}, toState={}",
-          event.documentId(),
-          event.targetState());
+      case APPROVED -> indexDocument(event.documentId());
+      case REJECTED, PENDING_APPROVAL -> removeFromIndex(event.documentId());
+      default ->
+          log.debug(
+              "忽略非索引关心的状态变更: documentId={}, toState={}", event.documentId(), event.targetState());
     }
   }
 
@@ -71,12 +71,29 @@ public class DocumentSearchSyncListener {
    */
   @Async
   @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
-  public void onDocumentDeleted(com.knowflow.application.document.model.event.DocumentDeletedEvent event) {
+  public void onDocumentDeleted(
+      com.knowflow.application.document.model.event.DocumentDeletedEvent event) {
     if (event == null || event.documentId() == null) {
       return;
     }
     log.info("收到文档删除事件，准备从 ES 索引移除: documentId={}", event.documentId());
     removeFromIndex(event.documentId());
+  }
+
+  /**
+   * 监听文档内容更新事件（如正文变更、版本回退等），在事务提交后重新全量同步该文档索引
+   *
+   * @param event 文档更新事件
+   */
+  @Async
+  @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+  public void onDocumentUpdated(
+      com.knowflow.application.document.model.event.DocumentUpdatedEvent event) {
+    if (event == null || event.documentId() == null) {
+      return;
+    }
+    log.info("收到文档内容更新事件，准备刷新 ES 索引: documentId={}", event.documentId());
+    indexDocument(event.documentId());
   }
 
   /**
@@ -94,11 +111,9 @@ public class DocumentSearchSyncListener {
         return;
       }
 
-      if (doc.getStatus() != DocumentStateEnum.PUBLISHED) {
+      if (doc.getStatus() != DocumentStateEnum.APPROVED) {
         log.warn(
-            "ES 索引同步跳过：文档当前非已发布状态, documentId={}, currentStatus={}",
-            documentId,
-            doc.getStatus());
+            "ES 索引同步跳过：文档当前非审批通过状态, documentId={}, currentStatus={}", documentId, doc.getStatus());
         return;
       }
 

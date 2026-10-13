@@ -5,9 +5,7 @@ import com.knowflow.application.document.model.entity.SearchHistoryEntity;
 import java.util.List;
 import org.springframework.stereotype.Repository;
 
-/**
- * 搜索历史归档仓储
- */
+/** 搜索历史归档仓储 */
 @Repository
 public interface SearchHistoryRepository extends BaseRepository<SearchHistoryEntity> {
 

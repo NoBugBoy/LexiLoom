@@ -25,7 +25,10 @@ public class RedisTokenManager {
     String token = UUID.randomUUID().toString();
     redisTemplate
         .opsForValue()
-        .set(TOKEN_KEY + token, new LoginToken(userId, roles), Duration.ofSeconds(tokenExpireSeconds));
+        .set(
+            TOKEN_KEY + token,
+            new LoginToken(userId, roles),
+            Duration.ofSeconds(tokenExpireSeconds));
     return token;
   }
 

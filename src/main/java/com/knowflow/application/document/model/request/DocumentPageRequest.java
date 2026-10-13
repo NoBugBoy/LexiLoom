@@ -6,17 +6,14 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 
-/**
- * 文档分页检索请求对象 (不可变 record)
- */
+/** 文档分页检索请求对象 (不可变 record) */
 public record DocumentPageRequest(
     @NotNull(message = "工作空间ID不能为空") Long workSpaceId,
     Long categoryId,
     DocumentStateEnum status,
     String keyword,
     Integer page,
-    Integer size
-) {
+    Integer size) {
 
   public DocumentPageRequest {
     page = (page == null || page < 0) ? 0 : page;

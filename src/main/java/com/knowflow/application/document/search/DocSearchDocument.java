@@ -20,9 +20,8 @@ import org.springframework.data.elasticsearch.core.suggest.Completion;
  *
  * <p>基于 IK 中文分词器建立多级权重全文检索模型，支持高亮、分类过滤、标签匹配、Suggester 自动补全及 Dense Vector 向量预留。
  *
- * <p>索引 Settings 通过 {@code es-settings.json} 注入 IK 中文分词器配置；
- * 若 Elasticsearch 未安装 analysis-ik 插件，启动时会抛出明确的 analyzer not found 错误。
- * 在 docker-compose.yml 的 elasticsearch 服务中已通过插件安装命令引入 IK 插件。
+ * <p>索引 Settings 通过 {@code es-settings.json} 注入 IK 中文分词器配置； 若 Elasticsearch 未安装 analysis-ik
+ * 插件，启动时会抛出明确的 analyzer not found 错误。 在 docker-compose.yml 的 elasticsearch 服务中已通过插件安装命令引入 IK 插件。
  */
 @Data
 @Builder
@@ -69,7 +68,7 @@ public class DocSearchDocument {
   @Field(type = FieldType.Keyword)
   private String categoryId;
 
-  /** 来源渠道：MANUAL / IMPORT / AI_GENERATED */
+  /** 来源渠道：IMPORT / AI_GENERATED */
   @Field(type = FieldType.Keyword)
   private String sourceType;
 

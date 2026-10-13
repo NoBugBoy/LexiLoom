@@ -3,6 +3,11 @@ spring:
     name: trade
   profiles:
     active: local
+  servlet:
+    multipart:
+      # 文档导入单文件上限（与 DocumentCommandService.MAX_IMPORT_FILE_SIZE_BYTES 保持一致）
+      max-file-size: 100MB
+      max-request-size: 120MB
   elasticsearch:
     uris: ${ES_URIS:http://localhost:9200}
     socket-timeout: 30s
@@ -12,3 +17,39 @@ knowflow:
   elasticsearch:
     index-name: knowflow_doc_index
     auto-create-index: true
+  parser:
+    default-engine: AUTO
+    deepdoc:
+      endpoint: ${DEEPDOC_ENDPOINT:http://localhost:8001}
+  ai:
+    enabled: true
+    model-provider: ${AI_MODEL_PROVIDER:MOCK}
+    api-key: ${AI_API_KEY:}
+    base-url: ${AI_BASE_URL:https://api.deepseek.com}
+    chat-model: ${AI_CHAT_MODEL:deepseek-chat}
+    reasoning-model: ${AI_REASONING_MODEL:deepseek-reasoner}
+    chunk-index-name: ${AI_CHUNK_INDEX:knowflow_chunk_index}
+    auto-create-index: true
+    embedding:
+      provider: ${AI_EMBEDDING_PROVIDER:MOCK}
+      api-key: ${AI_EMBEDDING_API_KEY:}
+      base-url: ${AI_EMBEDDING_BASE_URL:}
+      model: ${AI_EMBEDDING_MODEL:text-embedding-v3}
+      dimension: 1024
+    rerank:
+      enabled: false
+      strategy: NONE
+      provider: DASHSCOPE
+      api-key: ${AI_RERANK_API_KEY:}
+      base-url: ${AI_RERANK_BASE_URL:}
+      model: ${AI_RERANK_MODEL:gte-rerank}
+      top-k: 5
+      min-score: 0.60
+    chunk:
+      context-prefix-enabled: true
+      max-token-limit: 2000
+    rag:
+      top-k: 5
+      similarity-threshold: 0.60
+      history-turns: 3
+      session-expire-seconds: 604800

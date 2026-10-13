@@ -5,26 +5,15 @@ import jakarta.validation.constraints.NotNull;
 import java.util.Collections;
 import java.util.List;
 
-/**
- * 全文检索请求参数 (全不可变 record)
- */
+/** 全文检索请求参数 (全不可变 record) */
 public record DocumentSearchRequest(
-    @NotBlank(message = "搜索关键词不能为空")
-    String keyword,
-
-    @NotNull(message = "工作区ID不能为空")
-    Long workspaceId,
-
+    @NotBlank(message = "搜索关键词不能为空") String keyword,
+    @NotNull(message = "工作区ID不能为空") Long workspaceId,
     Long categoryId,
-
     List<String> tags,
-
     Integer pageNum,
-
     Integer pageSize,
-
-    DocSearchSortBy sortBy
-) {
+    DocSearchSortBy sortBy) {
 
   public DocumentSearchRequest {
     pageNum = (pageNum == null || pageNum < 1) ? 1 : pageNum;

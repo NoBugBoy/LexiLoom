@@ -5,9 +5,7 @@ import com.knowflow.application.user.model.entity.WorkSpaceEntity;
 import java.util.Optional;
 import org.springframework.stereotype.Repository;
 
-/**
- * 团队仓储
- */
+/** 团队仓储 */
 @Repository
 public interface WorkSpaceRepository extends BaseRepository<WorkSpaceEntity> {
 

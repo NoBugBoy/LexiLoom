@@ -23,7 +23,6 @@ import com.knowflow.application.user.usecase.LoginUseCase;
 import com.knowflow.application.user.usecase.LoginUseCase.LoginCommand;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
-import java.util.Collections;
 import java.util.Optional;
 import me.chanjar.weixin.common.error.WxError;
 import me.chanjar.weixin.common.error.WxErrorException;

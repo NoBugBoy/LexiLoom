@@ -2,9 +2,7 @@ package com.knowflow.application.document.api.dto;
 
 import java.time.LocalDateTime;
 
-/**
- * 分类目录数据传输对象 (不可变 record)
- */
+/** 分类目录数据传输对象 (不可变 record) */
 public record DocCategoryDTO(
     Long id,
     Long workSpaceId,
@@ -13,5 +11,4 @@ public record DocCategoryDTO(
     Integer sortOrder,
     Integer level,
     String path,
-    LocalDateTime createTime
-) {}
+    LocalDateTime createTime) {}

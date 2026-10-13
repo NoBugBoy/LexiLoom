@@ -1,10 +1,6 @@
 package com.knowflow.application.document.parser;
 
-/**
- * 文档解析通用网关接口（防腐层 ACL）
- * 对上层业务屏蔽底层解析引擎（如 MarkItDown、MinerU、Tika 等）的技术细节与差异，
- * 提供统一且高内聚的文档摄入与 Markdown 提取能力。
- */
+/** 文档解析通用网关接口（防腐层 ACL） 对上层业务屏蔽底层解析引擎（如 DeepDoc 等）的技术细节与差异， 提供统一且高内聚的文档摄入与 Markdown 提取能力。 */
 public interface DocParserGateway {
 
   /**

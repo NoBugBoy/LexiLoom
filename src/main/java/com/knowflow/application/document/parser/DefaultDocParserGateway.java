@@ -2,8 +2,8 @@ package com.knowflow.application.document.parser;
 
 import cn.hutool.core.util.StrUtil;
 import com.knowflow.application.common.ErrorCode;
-import com.knowflow.application.document.parser.engine.MockDocParserEngine;
 import com.knowflow.application.exception.BusinessException;
+import jakarta.annotation.PostConstruct;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -11,8 +11,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
- * 通用文档解析网关门面实现（防腐层 ACL）
- * 集中管理各引擎策略路由，向业务层提供统一文档解析入口。
+ * 通用文档解析网关门面实现（防腐层 ACL） 策略规则： 1. 若为 AUTO（默认）：优先使用 DeepDoc 深度解析引擎； 2. 若显式指定具体引擎（非
+ * AUTO），优先使用指定引擎；若指定引擎未配置则尝试使用其他已配置的引擎； 3. 启动自检：若 DeepDoc 等解析引擎未配置，则启动报错，提示配置解析引擎服务。
  */
 @Slf4j
 @Service
@@ -20,10 +20,26 @@ import org.springframework.stereotype.Service;
 public class DefaultDocParserGateway implements DocParserGateway {
 
   private final List<DocParserEngine> engines;
-  private final MockDocParserEngine mockFallback;
 
   @Value("${knowflow.parser.default-engine:AUTO}")
   private String defaultEngineConfig;
+
+  @PostConstruct
+  public void validateEngines() {
+    boolean anyConfigured =
+        engines != null && engines.stream().anyMatch(DocParserEngine::isAvailable);
+    if (!anyConfigured) {
+      throw new IllegalStateException(
+          "系统未配置任何文档解析引擎服务！请配置 DeepDoc (knowflow.parser.deepdoc.endpoint)。");
+    }
+    log.info(
+        "【DocParserGateway】文档解析网关初始化完成: 注册引擎数量={}, 可用引擎={}",
+        engines.size(),
+        engines.stream()
+            .filter(DocParserEngine::isAvailable)
+            .map(e -> e.getEngineType().name())
+            .toList());
+  }
 
   @Override
   public DocParseResult parse(DocParseCommand command) {
@@ -56,48 +72,72 @@ public class DefaultDocParserGateway implements DocParserGateway {
   }
 
   private DocParserEngine routeEngine(DocParseCommand command) {
+    String ext = command.fileExtension().toLowerCase();
+
+    DocParserEngine deepDocEngine = findEngine(DocParserEngineEnum.DEEPDOC);
+    boolean deepDocAvailable = deepDocEngine != null && deepDocEngine.isAvailable();
+
+    // 1. 若显式指定具体引擎（非 AUTO，即手动指定）
     DocParserEngineEnum preferred = command.preferredEngine();
-
-    // 1. 若命令显式指定了具体引擎（非 AUTO）
     if (preferred != null && preferred != DocParserEngineEnum.AUTO) {
-      return engines.stream()
-          .filter(e -> e.getEngineType() == preferred)
-          .findFirst()
-          .orElse(mockFallback);
-    }
-
-    // 2. 检查全局配置倾向
-    if (StrUtil.isNotBlank(defaultEngineConfig) && !"AUTO".equalsIgnoreCase(defaultEngineConfig)) {
-      try {
-        DocParserEngineEnum configEngine = DocParserEngineEnum.valueOf(defaultEngineConfig.toUpperCase());
-        return engines.stream()
-            .filter(e -> e.getEngineType() == configEngine && e.supports(command.fileExtension()))
-            .findFirst()
-            .orElse(mockFallback);
-      } catch (Exception ignored) {
-        // ignore invalid enum config
+      DocParserEngine target = findEngine(preferred);
+      if (target != null && target.isAvailable()) {
+        return target;
+      }
+      // 手动指定的引擎未配置/不可用，自动切换至其他可用引擎
+      log.warn("【DocParserGateway】手动指定的引擎 [{}] 未配置或不可用，正在自动切换可用引擎", preferred);
+      if (preferred != DocParserEngineEnum.DEEPDOC
+          && deepDocAvailable
+          && deepDocEngine.supports(ext)) {
+        return deepDocEngine;
+      }
+      if (target != null) {
+        return target;
       }
     }
 
-    // 3. 根据文件类型自动优选
-    // PDF 优选 MinerU，Office 优选 MarkItDown
-    String ext = command.fileExtension().toLowerCase();
-    if ("pdf".equals(ext)) {
-      return engines.stream()
-          .filter(e -> e.getEngineType() == DocParserEngineEnum.MINERU)
-          .findFirst()
-          .orElse(mockFallback);
-    } else if ("docx".equals(ext) || "doc".equals(ext) || "pptx".equals(ext) || "xlsx".equals(ext)) {
-      return engines.stream()
-          .filter(e -> e.getEngineType() == DocParserEngineEnum.MARKITDOWN)
-          .findFirst()
-          .orElse(mockFallback);
+    // 2. 检查全局配置策略（若配置了非 AUTO 的默认引擎）
+    if (StrUtil.isNotBlank(defaultEngineConfig) && !"AUTO".equalsIgnoreCase(defaultEngineConfig)) {
+      try {
+        DocParserEngineEnum configEngine =
+            DocParserEngineEnum.valueOf(defaultEngineConfig.toUpperCase());
+        DocParserEngine target = findEngine(configEngine);
+        if (target != null && target.isAvailable()) {
+          return target;
+        }
+      } catch (Exception ignored) {
+      }
     }
 
-    // 4. 默认 fallback
-    return engines.stream()
-        .filter(e -> e.supports(ext))
-        .findFirst()
-        .orElse(mockFallback);
+    // 3. AUTO 模式：默认优先使用 DeepDoc（若可用且支持该文件）
+    if (deepDocAvailable && deepDocEngine.supports(ext)) {
+      return deepDocEngine;
+    }
+
+    // 容错兜底：若扩展名暂不在各引擎静态列表中，但引擎可用
+    if (deepDocAvailable) {
+      return deepDocEngine;
+    }
+
+    DocParserEngine fallbackEngine =
+        engines.stream()
+            .filter(DocParserEngine::isAvailable)
+            .filter(e -> e.supports(ext))
+            .findFirst()
+            .orElse(null);
+    if (fallbackEngine != null) {
+      return fallbackEngine;
+    }
+
+    // 4. 全部未配置
+    throw new BusinessException(
+        ErrorCode.Document.DOC_PARSE_FAILED, "系统未配置任何可用的文档解析引擎服务！请检查 DeepDoc 的服务配置。");
+  }
+
+  private DocParserEngine findEngine(DocParserEngineEnum engineType) {
+    if (engines == null || engineType == null) {
+      return null;
+    }
+    return engines.stream().filter(e -> e.getEngineType() == engineType).findFirst().orElse(null);
   }
 }

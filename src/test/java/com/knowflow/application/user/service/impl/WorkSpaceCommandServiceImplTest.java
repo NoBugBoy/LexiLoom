@@ -109,7 +109,8 @@ class WorkSpaceCommandServiceImplTest {
             "旧团队名", "old-team", "旧简介", null, userId, 50, WorkSpaceAclEnum.PRIVATE);
     ReflectionTestUtils.setField(entity, "id", 1L);
 
-    WorkSpaceMemberEntity member = WorkSpaceMemberEntity.create(1L, userId, WorkSpaceRoleEnum.OWNER);
+    WorkSpaceMemberEntity member =
+        WorkSpaceMemberEntity.create(1L, userId, WorkSpaceRoleEnum.OWNER);
 
     when(workSpaceRepository.findById(1L)).thenReturn(Optional.of(entity));
     when(workSpaceMemberRepository.findByWorkSpaceIdAndUserId(1L, userId))
@@ -129,8 +130,7 @@ class WorkSpaceCommandServiceImplTest {
   @DisplayName("非管理员/所有者无法更新团队")
   void updateForbiddenForNormalMember() {
     WorkSpaceEntity entity =
-        WorkSpaceEntity.create(
-            "团队名", "team-code", "简介", null, 999L, 50, WorkSpaceAclEnum.PRIVATE);
+        WorkSpaceEntity.create("团队名", "team-code", "简介", null, 999L, 50, WorkSpaceAclEnum.PRIVATE);
 
     WorkSpaceMemberEntity member =
         WorkSpaceMemberEntity.create(1L, userId, WorkSpaceRoleEnum.MEMBER);
@@ -139,8 +139,7 @@ class WorkSpaceCommandServiceImplTest {
     when(workSpaceMemberRepository.findByWorkSpaceIdAndUserId(1L, userId))
         .thenReturn(Optional.of(member));
 
-    WorkSpaceUpdateRequest updateRequest =
-        new WorkSpaceUpdateRequest("新团队名", null, null, null);
+    WorkSpaceUpdateRequest updateRequest = new WorkSpaceUpdateRequest("新团队名", null, null, null);
 
     assertThatThrownBy(() -> service.update(1L, updateRequest))
         .isInstanceOf(BusinessException.class)

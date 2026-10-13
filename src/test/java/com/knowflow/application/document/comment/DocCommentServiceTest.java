@@ -3,6 +3,9 @@ package com.knowflow.application.document.comment;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -18,12 +21,15 @@ import com.knowflow.application.exception.BusinessException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
@@ -32,18 +38,30 @@ class DocCommentServiceTest {
   @Mock private DocumentRepository documentRepository;
   @Mock private DocCommentRepository docCommentRepository;
   @Mock private DocCommentMapper docCommentMapper;
+  @Mock private StringRedisTemplate stringRedisTemplate;
+  @Mock private ValueOperations<String, String> valueOps;
+
+  @Mock
+  private com.knowflow.application.document.acl.DocAccessControlService docAccessControlService;
 
   private DocCommentService commentService;
 
   @BeforeEach
   void setUp() {
-    commentService = new DocCommentService(documentRepository, docCommentRepository, docCommentMapper);
+    commentService =
+        new DocCommentService(
+            documentRepository,
+            docCommentRepository,
+            docCommentMapper,
+            stringRedisTemplate,
+            docAccessControlService);
   }
 
   @Test
   @DisplayName("发表根评论：成功创建并返回 DTO")
   void testAddRootCommentSuccess() {
-    DocumentEntity doc = DocumentEntity.createManual(1L, 0L, "文档", "摘要", "正文", WorkSpaceAclEnum.INTERNAL);
+    DocumentEntity doc =
+        DocumentEntity.createFromImport(1L, 0L, "文档", "摘要", "正文", WorkSpaceAclEnum.INTERNAL);
     ReflectionTestUtils.setField(doc, "id", 100L);
     when(documentRepository.findById(100L)).thenReturn(Optional.of(doc));
 
@@ -102,5 +120,53 @@ class DocCommentServiceTest {
     DocCommentNodeDTO replyNode = rootNode.replies().get(0);
     assertThat(replyNode.id()).isEqualTo(2L);
     assertThat(replyNode.parentId()).isEqualTo(1L);
+  }
+
+  @Test
+  @DisplayName("点赞评论：首次点赞成功，Redis 写入并触发原子计数递增")
+  void testLikeCommentSuccess() {
+    when(docCommentRepository.existsById(50L)).thenReturn(true);
+    when(stringRedisTemplate.opsForValue()).thenReturn(valueOps);
+    when(valueOps.setIfAbsent(eq("kf:comment:like:50:10"), eq("1"), eq(24L), eq(TimeUnit.HOURS)))
+        .thenReturn(Boolean.TRUE);
+
+    commentService.likeComment(50L, 10L);
+
+    verify(docCommentRepository).incrementLikeCount(50L);
+  }
+
+  @Test
+  @DisplayName("点赞评论：24小时内重复点赞，抛出业务异常且不执行计数递增")
+  void testLikeCommentDuplicate() {
+    when(docCommentRepository.existsById(50L)).thenReturn(true);
+    when(stringRedisTemplate.opsForValue()).thenReturn(valueOps);
+    when(valueOps.setIfAbsent(eq("kf:comment:like:50:10"), eq("1"), eq(24L), eq(TimeUnit.HOURS)))
+        .thenReturn(Boolean.FALSE);
+
+    assertThatThrownBy(() -> commentService.likeComment(50L, 10L))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("24 小时内点赞过");
+
+    verify(docCommentRepository, never()).incrementLikeCount(anyLong());
+  }
+
+  @Test
+  @DisplayName("发表回复：父评论属于其他文档时抛出参数异常，阻止孤儿评论产生")
+  void testAddReplyComment_crossDocumentParent_throwsException() {
+    DocumentEntity doc =
+        DocumentEntity.createFromImport(1L, 0L, "文档A", "摘要", "正文", WorkSpaceAclEnum.INTERNAL);
+    ReflectionTestUtils.setField(doc, "id", 100L);
+    when(documentRepository.findById(100L)).thenReturn(Optional.of(doc));
+
+    // 父评论属于文档 200L，而非当前文档 100L
+    DocCommentEntity parentCommentOtherDoc = DocCommentEntity.createRoot(1L, 200L, 20L, "文档B的评论");
+    ReflectionTestUtils.setField(parentCommentOtherDoc, "id", 88L);
+    when(docCommentRepository.findById(88L)).thenReturn(Optional.of(parentCommentOtherDoc));
+
+    assertThatThrownBy(() -> commentService.addReplyComment(1L, 100L, 10L, 88L, null, "恶意回复"))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("父评论不属于当前文档");
+
+    verify(docCommentRepository, never()).save(any());
   }
 }

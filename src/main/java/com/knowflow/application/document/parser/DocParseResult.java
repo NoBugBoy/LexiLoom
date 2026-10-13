@@ -3,9 +3,7 @@ package com.knowflow.application.document.parser;
 import java.util.Collections;
 import java.util.Map;
 
-/**
- * 文档解析标准输出结果（不可变值对象）
- */
+/** 文档解析标准输出结果（不可变值对象） */
 public record DocParseResult(
     String markdownContent,
     String rawText,
@@ -14,8 +12,7 @@ public record DocParseResult(
     DocParserEngineEnum engineUsed,
     boolean isPreviewOnly,
     Map<String, Object> metadata,
-    String errorMessage
-) {
+    String errorMessage) {
 
   public DocParseResult {
     metadata = (metadata == null) ? Collections.emptyMap() : Collections.unmodifiableMap(metadata);
@@ -66,11 +63,29 @@ public record DocParseResult(
         errorMessage);
   }
 
+  public static DocParseResult asyncProcessing(
+      DocParserEngineEnum engineUsed, String batchId, String taskId, Map<String, Object> metadata) {
+    java.util.Map<String, Object> meta =
+        new java.util.HashMap<>(metadata != null ? metadata : Collections.emptyMap());
+    if (batchId != null) {
+      meta.put("batchId", batchId);
+    }
+    if (taskId != null) {
+      meta.put("taskId", taskId);
+    }
+    return new DocParseResult(
+        null, null, null, DocParseStatusEnum.ASYNC_PROCESSING, engineUsed, false, meta, null);
+  }
+
   public boolean isSuccess() {
     return this.status == DocParseStatusEnum.SUCCESS;
   }
 
   public boolean isFailure() {
     return this.status == DocParseStatusEnum.FAILED;
+  }
+
+  public boolean isAsyncProcessing() {
+    return this.status == DocParseStatusEnum.ASYNC_PROCESSING;
   }
 }

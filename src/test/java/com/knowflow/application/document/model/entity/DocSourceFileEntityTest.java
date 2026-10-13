@@ -36,11 +36,13 @@ class DocSourceFileEntityTest {
     file.bindDocument(100L);
     assertThat(file.getDocumentId()).isEqualTo(100L);
 
-    // 标记解析成功
-    file.markParseSuccess("# 提取内容", DocParserEngineEnum.MARKITDOWN);
+    // 标记解析成功 (含 parseMetadata)
+    String metadataJson = "{\"chunks\":[{\"chunk_id\":\"c1\"}]}";
+    file.markParseSuccess("# 提取内容", DocParserEngineEnum.DEEPDOC, metadataJson);
     assertThat(file.getParseStatus()).isEqualTo(DocParseStatusEnum.SUCCESS);
     assertThat(file.getRawText()).isEqualTo("# 提取内容");
-    assertThat(file.getParseEngine()).isEqualTo(DocParserEngineEnum.MARKITDOWN);
+    assertThat(file.getParseEngine()).isEqualTo(DocParserEngineEnum.DEEPDOC);
+    assertThat(file.getParseMetadata()).isEqualTo(metadataJson);
   }
 
   @Test

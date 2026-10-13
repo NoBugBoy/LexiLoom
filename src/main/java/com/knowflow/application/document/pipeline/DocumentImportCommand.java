@@ -10,11 +10,10 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
 
-/**
- * 文档导入命令参数对象（不可变 Java Record）
- */
+/** 文档导入命令参数对象（不可变 Java Record） */
 public record DocumentImportCommand(
     Long workSpaceId,
+    Long documentId,
     Long categoryId,
     String originalFileName,
     byte[] fileBytes,
@@ -22,8 +21,7 @@ public record DocumentImportCommand(
     DocParserEngineEnum preferredEngine,
     boolean extractPdfToDoc,
     WorkSpaceAclEnum visibility,
-    Map<String, Object> extraOptions
-) {
+    Map<String, Object> extraOptions) {
 
   public DocumentImportCommand {
     Objects.requireNonNull(workSpaceId, "工作区ID不能为空");
@@ -36,12 +34,35 @@ public record DocumentImportCommand(
     categoryId = (categoryId == null) ? 0L : categoryId;
     preferredEngine = (preferredEngine == null) ? DocParserEngineEnum.AUTO : preferredEngine;
     visibility = (visibility == null) ? WorkSpaceAclEnum.INTERNAL : visibility;
-    extraOptions = (extraOptions == null) ? Collections.emptyMap() : Collections.unmodifiableMap(extraOptions);
+    extraOptions =
+        (extraOptions == null) ? Collections.emptyMap() : Collections.unmodifiableMap(extraOptions);
   }
 
-  /**
-   * 快捷工厂：通过字节数组构建
-   */
+  /** 兼容旧版不带 documentId 构造器（默认新建导入） */
+  public DocumentImportCommand(
+      Long workSpaceId,
+      Long categoryId,
+      String originalFileName,
+      byte[] fileBytes,
+      String contentType,
+      DocParserEngineEnum preferredEngine,
+      boolean extractPdfToDoc,
+      WorkSpaceAclEnum visibility,
+      Map<String, Object> extraOptions) {
+    this(
+        workSpaceId,
+        null,
+        categoryId,
+        originalFileName,
+        fileBytes,
+        contentType,
+        preferredEngine,
+        extractPdfToDoc,
+        visibility,
+        extraOptions);
+  }
+
+  /** 快捷工厂：通过字节数组构建 */
   public static DocumentImportCommand ofBytes(
       Long workSpaceId,
       Long categoryId,
@@ -60,9 +81,7 @@ public record DocumentImportCommand(
         Collections.emptyMap());
   }
 
-  /**
-   * 快捷工厂：通过输入流构建
-   */
+  /** 快捷工厂：通过输入流构建 */
   public static DocumentImportCommand ofStream(
       Long workSpaceId,
       Long categoryId,
@@ -74,17 +93,13 @@ public record DocumentImportCommand(
     return ofBytes(workSpaceId, categoryId, originalFileName, bytes, contentType);
   }
 
-  /**
-   * 提取文件扩展名
-   */
+  /** 提取文件扩展名 */
   public String fileExtension() {
     int idx = originalFileName.lastIndexOf('.');
     return (idx >= 0) ? originalFileName.substring(idx + 1).toLowerCase() : "";
   }
 
-  /**
-   * 获取文件大小
-   */
+  /** 获取文件大小 */
   public long fileSize() {
     return fileBytes != null ? fileBytes.length : 0L;
   }

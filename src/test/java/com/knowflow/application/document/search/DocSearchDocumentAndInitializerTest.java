@@ -11,12 +11,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.data.elasticsearch.core.IndexOperations;
-import org.springframework.data.elasticsearch.core.suggest.Completion;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("DocSearchDocument 实体与 IndexInitializer 单元测试")
@@ -52,7 +50,7 @@ class DocSearchDocumentAndInitializerTest {
             .rawText("核心章节 这是正文内容")
             .tags(List.of("架构", "后端"))
             .categoryId("cat_1")
-            .sourceType("MANUAL")
+            .sourceType("IMPORT")
             .authorId("user_99")
             .status("PUBLISHED")
             .publishedAt(now)
@@ -69,7 +67,7 @@ class DocSearchDocumentAndInitializerTest {
     assertThat(doc.getRawText()).isEqualTo("核心章节 这是正文内容");
     assertThat(doc.getTags()).containsExactly("架构", "后端");
     assertThat(doc.getCategoryId()).isEqualTo("cat_1");
-    assertThat(doc.getSourceType()).isEqualTo("MANUAL");
+    assertThat(doc.getSourceType()).isEqualTo("IMPORT");
     assertThat(doc.getAuthorId()).isEqualTo("user_99");
     assertThat(doc.getStatus()).isEqualTo("PUBLISHED");
     assertThat(doc.getPublishedAt()).isEqualTo(now);

@@ -35,8 +35,7 @@ import org.springframework.stereotype.Service;
 /**
  * 文档全文检索查询服务实现
  *
- * <p>基于 Elasticsearch 8.x + IK 分词构建 NativeQuery，包含多字段打分、工作区租户隔离、高亮及分页，
- * 并在检索完成后非阻塞异步记录用户历史搜索。
+ * <p>基于 Elasticsearch 8.x + IK 分词构建 NativeQuery，包含多字段打分、工作区租户隔离、高亮及分页， 并在检索完成后非阻塞异步记录用户历史搜索。
  */
 @Slf4j
 @Service
@@ -90,7 +89,7 @@ public class DocumentSearchQueryServiceImpl implements DocumentSearchQueryServic
                 b -> {
                   // Must: multi_match 跨多字段全文检索，设置不同字段检索打分权重
                   b.must(
-                       m ->
+                      m ->
                           m.multiMatch(
                               mm ->
                                   mm.query(request.keyword())
@@ -106,13 +105,9 @@ public class DocumentSearchQueryServiceImpl implements DocumentSearchQueryServic
                                   t.field("workspaceId")
                                       .value(String.valueOf(request.workspaceId()))));
 
-                  // Filter 2: status = PUBLISHED (仅允许检索已发布文档)
+                  // Filter 2: status = APPROVED (仅允许检索审批通过文档)
                   b.filter(
-                      f ->
-                          f.term(
-                              t ->
-                                  t.field("status")
-                                      .value(DocumentStateEnum.PUBLISHED.name())));
+                      f -> f.term(t -> t.field("status").value(DocumentStateEnum.APPROVED.name())));
 
                   // Filter 3: categoryId (可选分类过滤)
                   if (request.categoryId() != null) {
@@ -128,12 +123,7 @@ public class DocumentSearchQueryServiceImpl implements DocumentSearchQueryServic
                   if (request.tags() != null && !request.tags().isEmpty()) {
                     List<FieldValue> tagValues =
                         request.tags().stream().map(FieldValue::of).toList();
-                    b.filter(
-                        f ->
-                            f.terms(
-                                t ->
-                                    t.field("tags")
-                                        .terms(tq -> tq.value(tagValues))));
+                    b.filter(f -> f.terms(t -> t.field("tags").terms(tq -> tq.value(tagValues))));
                   }
 
                   return b;
@@ -236,10 +226,7 @@ public class DocumentSearchQueryServiceImpl implements DocumentSearchQueryServic
     return defaultValue != null ? defaultValue : "";
   }
 
-  /**
-   * 安全截断文本，确保 HTML 高亮标签（如 {@code <em class="hl">} 与 {@code </em>}）完整闭合，
-   * 避免破坏前端 DOM 结构与页面文本样式。
-   */
+  /** 安全截断文本，确保 HTML 高亮标签（如 {@code <em class="hl">} 与 {@code </em>}）完整闭合， 避免破坏前端 DOM 结构与页面文本样式。 */
   private String safeTruncateHtml(String text, int maxLength) {
     if (text == null) {
       return "";
@@ -271,8 +258,7 @@ public class DocumentSearchQueryServiceImpl implements DocumentSearchQueryServic
 
   private void recordSearchHistoryAsync(DocumentSearchRequest request) {
     try {
-      Long userId =
-          SecurityHolder.getLoginUser().map(LoginUserAuthentication::userId).orElse(null);
+      Long userId = SecurityHolder.getLoginUser().map(LoginUserAuthentication::userId).orElse(null);
       if (userId != null && StrUtil.isNotBlank(request.keyword())) {
         searchHistoryService.record(userId, request.workspaceId(), request.keyword());
       }

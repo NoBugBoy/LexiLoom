@@ -28,6 +28,9 @@ public class SendAdminRegisterEmailUseCase implements UseCase<AdminCreateRequest
   private final CacheHelper cacheHelper;
   private final AdminQueryService adminQueryService;
 
+  @org.springframework.beans.factory.annotation.Value("${spring.mail.username:754369677@qq.com}")
+  private String mailFrom = "754369677@qq.com";
+
   private static final String EMAIL_TEMPLATE = loadEmailTemplate();
 
   private static String loadEmailTemplate() {
@@ -66,7 +69,7 @@ public class SendAdminRegisterEmailUseCase implements UseCase<AdminCreateRequest
 
     MimeMessage mimeMessage = mailSender.createMimeMessage();
     MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
-    helper.setFrom("754369677@qq.com");
+    helper.setFrom(mailFrom);
     helper.setTo(email);
 
     registerEmail(helper, tokenValue);

@@ -3,9 +3,7 @@ package com.knowflow.application.document.service;
 import com.knowflow.application.document.search.dto.DocumentSearchRequest;
 import com.knowflow.application.document.search.dto.DocumentSearchResponse;
 
-/**
- * 文档全文检索查询服务
- */
+/** 文档全文检索查询服务 */
 public interface DocumentSearchQueryService {
 
   /**

@@ -3,7 +3,7 @@
 > **所属项目**：KnowFlow 知识库管理系统  
 > **模块定位**： **内容资产中心（Content Asset Center）**  
 > **架构技术规范**：JDK 25 + Spring Boot 4.x + Spring Modulith + Spring Data JPA + CQRS + DDD 充血模型 + COLA
-> StateMachine + MapStruct + rustfs 存储防腐层 + MarkItDown 解析防腐层
+> StateMachine + MapStruct + rustfs 存储防腐层 + DeepDoc / MarkItDown 解析防腐层
 
 ---
 
@@ -14,11 +14,11 @@
 文档模块绝非传统单一的手动在线文本编辑，而是企业级知识资产的 **摄入、加工、流转、沉淀与检索底座**：
 
 ```
-                   ┌── [渠道 1] 手动创作：内置富文本/Markdown 编辑，支持图文排版、数学公式、表格
-                   │
-三大内容来源输入 ──┼── [渠道 2] 文件导入：Word (DOCX)、PDF、Markdown、TXT、HTML 等外部文件批量导入
-                   │
-                   └── [渠道 3] AI 辅助创作：大纲生成、要点扩写、多源资料提炼总结（RAG/LLM 协同）
+                    ┌── [唯一来源] 外部文件导入：PDF、Word (DOCX)、PPT (PPTX)、Excel (XLSX)、Markdown、TXT 批量导入
+                    │             全流程由 DeepDoc 版面分析引擎深度驱动解析（YOLO版面识别 + KMeans行距聚类）
+唯一内容输入渠道 ──┤             提取高保真 Markdown 正文、结构化原子切片与物理边界坐标 (BBox)
+                    │             导入后自动沉淀为 DRAFT 草稿，支持在在线 Markdown 编辑器中二次精修
+                    └───────────────────┐
                                         │
                                         ▼
                   ╔═══════════════════════════════════════════╗
@@ -86,7 +86,7 @@
 
 - [x] **2.1 文档主聚合根设计 (`DocumentEntity`)**
     - 继承 `BaseEntity`，拥有 `workspaceId`、`categoryId`、`title`、`summary`、`status`（枚举）、`visibility`（公开/内部/私有）、
-      `currentVersion`、`sourceType`（MANUAL/IMPORT/AI_GENERATED）等核心属性；
+      `currentVersion`、`sourceType`（**唯一支持 IMPORT**，纯导入型知识库，所有文档均由外部文件导入经 DeepDoc 解析产生）等核心属性；
     - 充血方法封装：`submitForReview()`、`approve()`、`reject()`、`publish()`、`archive()`、`updateContent()`、
       `bindSourceFile()`，守护状态与版本约束。
 - [x] **2.2 来源文件资产实体设计 (`DocSourceFileEntity`)**
@@ -165,12 +165,9 @@
 
 ---
 
-### 任务组 6：Redis 协同草稿自动保存机制
+### 任务组 6：草稿模块废除与生命周期极简收敛（架构认知纠偏）
 
-- [x] **6.1 自动保存暂存服务**
-    - 设计 Redis Key：`kf:doc:draft:{workspaceId}:{documentId}:{userId}`；
-    - 提供轻量级高频暂存接口（支持前端防抖 15~30s 自动上报），存储未发布的增量正文与游标信息，设置滑动过期时间；
-    - 用户重新进入编辑器时，检查 Redis 中是否存在比数据库 `updateTime` 更晚的未保存草稿，提示用户“是否恢复未保存内容”。
+> **架构决策**：知识库核心定位为外部文件资产导入（DeepDoc解析）、全文/向量检索与安全清理，彻底移除旧版基于 Redis 的协同草稿自动暂存（`kf:doc:draft:*`）机制，杜绝把知识库复杂化为协同文本编辑器的设计偏差。
 
 ---
 
@@ -191,8 +188,8 @@
 ### 任务组 8：CQRS 服务分层与 API 暴露
 
 - [x] **8.1 DTO / Request / Response（全 record 不可变设计）**
-    - `DocumentCreateRequest`、`DocumentUpdateRequest`、`DocumentPageRequest`
-    - `DocumentImportRequest` (支持 Multipart 文件上传与元数据透传)
+    - `DocumentUpdateRequest`（编辑/修改已有草稿正文与元数据，不允许凭空创建）、`DocumentPageRequest`
+    - `DocumentImportRequest`（**唯一创建入口**，支持 Multipart 文件上传与元数据透传）
     - `DocDiffResponse`、`DocVersionResponse`、`CategoryTreeResponse`
 - [x] **8.2 MapStruct 实体映射**
     - `DocumentMapper`、`DocCategoryMapper`、`DocVersionMapper`、`DocSourceFileMapper`
@@ -205,7 +202,6 @@
     - `DocumentController`（`/api/documents`）：文档核心操作
     - `DocumentCategoryController`（`/api/documents/categories`）：分类树维护
     - `DocumentVersionController`（`/api/documents/{docId}/versions`）：版本历史与 Diff
-    - `DocumentDraftController`（`/api/documents/{docId}/draft`）：Redis 自动保存与恢复
 
 ---
 
@@ -229,7 +225,7 @@
 | **Step 2.1：基础脚手架与状态机引擎** [x]已完成 | 引入 COLA StateMachine，搭建状态机转移矩阵；扩展 rustfs 存储防腐层与通用解析入口 `DocParserGateway` 抽象。   | `pom.xml`, `cola-statemachine`, `FileStorageGateway`, `DocParserGateway` |
 | **Step 2.2：充血模型与数据表落地** [x]已完成 | 完成 `DocumentEntity`、`DocSourceFileEntity`、`DocCategoryEntity`、`DocVersionEntity` 充血实体及 Repository。 | Entity 充血方法, MapStruct, JPA Repository             |
 | **Step 2.3：多格式导入与 MarkItDown 接入** [x]已完成 | 实现文件上传入 rustfs、源文件元数据落库、Word/PDF 转换管线与双轨制策略。                                      | `DocParserGateway`, `MockDocParserAdapter`, 导入流水线 |
-| **Step 2.4：版本快照、前端 Diff 契约与自动保存** [x]已完成 | 实现文档发布自动快照、提供前后端高效解耦的 `DocVersionCompareDTO` 比对契约、Redis 草稿暂存与恢复。              | 快照生成, 前端 Diff 契约, Redis 自动保存, 快照回滚    |
+| **Step 2.4：版本快照、前端 Diff 契约与自动保存** [x]已完成 | 实现文档发布自动快照、提供前后端高效解耦的 `DocVersionCompareDTO` 比对契约。              | 快照生成, 前端 Diff 契约, Redis 自动保存, 快照回滚    |
 | **Step 2.5：分类树、权限 ACL 与协作评论** [x]已完成 | 实现多级分类树递归查询、文档 ACL 访问断言、多级评论树与协同。                                                 | 分类树 API, ACL 拦截, 评论接口                         |
 | **Step 2.6：服务编排、Controller 与单元测试** [x]已完成 | 完善 CQRS Command/Query 服务、RESTful 控制器，编写覆盖核心业务的 Mockito 单元测试。                           | REST 接口, Mockito 单元测试 (100% 关键分支)            |
 | **Step 2.7：代码质量审查与架构加固** [x]已完成 | 修复事务代理失效、动态角色上下文、读写异步解耦、不可变实体、状态守卫、脱敏与测试扩展。 | 54 个单元测试 100% 通过，规则沉淀至 AGENTS.md |

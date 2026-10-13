@@ -3,9 +3,7 @@ package com.knowflow.application.user.service;
 import com.knowflow.application.enums.WorkSpaceRoleEnum;
 import com.knowflow.application.user.model.request.WorkSpaceMemberAddRequest;
 
-/**
- * 团队成员写操作服务
- */
+/** 团队成员写操作服务 */
 public interface WorkSpaceMemberCommandService {
 
   /**
@@ -17,18 +15,12 @@ public interface WorkSpaceMemberCommandService {
    */
   Long addMember(Long workSpaceId, WorkSpaceMemberAddRequest request);
 
-  /**
-   * 更新成员角色
-   */
+  /** 更新成员角色 */
   void updateMemberRole(Long workSpaceId, Long targetUserId, WorkSpaceRoleEnum newRole);
 
-  /**
-   * 移除团队成员
-   */
+  /** 移除团队成员 */
   void removeMember(Long workSpaceId, Long targetUserId);
 
-  /**
-   * 当前用户主动退出团队
-   */
+  /** 当前用户主动退出团队 */
   void leaveWorkSpace(Long workSpaceId);
 }

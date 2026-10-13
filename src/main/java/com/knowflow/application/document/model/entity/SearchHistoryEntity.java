@@ -24,9 +24,7 @@ import org.hibernate.annotations.Immutable;
 @Table(
     name = "kf_search_history",
     comment = "搜索历史归档表",
-    indexes = {
-      @Index(name = "idx_search_history_user", columnList = "user_id, search_at")
-    })
+    indexes = {@Index(name = "idx_search_history_user", columnList = "user_id, search_at")})
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class SearchHistoryEntity {
@@ -48,16 +46,12 @@ public class SearchHistoryEntity {
   @Column(name = "search_at", nullable = false)
   private LocalDateTime searchAt;
 
-  /**
-   * 静态工厂方法
-   */
+  /** 静态工厂方法 */
   public static SearchHistoryEntity of(Long userId, Long workspaceId, String keyword) {
     return of(userId, workspaceId, keyword, LocalDateTime.now());
   }
 
-  /**
-   * 静态工厂方法 (支持显式时间戳)
-   */
+  /** 静态工厂方法 (支持显式时间戳) */
   public static SearchHistoryEntity of(
       Long userId, Long workspaceId, String keyword, LocalDateTime searchAt) {
     Objects.requireNonNull(userId, "用户ID不能为空");

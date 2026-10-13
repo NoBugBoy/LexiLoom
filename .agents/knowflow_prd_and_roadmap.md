@@ -48,10 +48,14 @@ io.knowflow
 
 ### 2. 文档全生命周期与协同模块 (`module-document`)
 
+> **核心定位**：知识库是一个**内容摄入与沉淀中心**，所有文档必须通过**外部文件导入**进入系统，全流程由 **DeepDoc** 驱动解析，不提供空白手动在线创建功能。
+
+* **内容摄入来源（唯一核心来源）**：
+    * **外部文件导入**：支持 PDF、Word (DOCX)、PPT (PPTX)、Excel (XLSX)、Markdown、TXT 等格式批量导入；全流程由 **DeepDoc** 视觉版面识别引擎（YOLO版面感知 + KMeans行距聚类）深度驱动解析，提取干净 Markdown 正文与语义原子切片，导入后自动沉淀为可二次编辑的草稿。
 * **状态流转机**：
   $$\text{草稿 (DRAFT)} \xrightarrow{\text{提交}} \text{待审阅 (PENDING)} \xrightarrow[\text{驳回}]{\text{审批通过}} \text{已发布 (PUBLISHED)} \xrightarrow{\text{归档}} \text{已归档 (ARCHIVED)}$$
 * **Markdown 编辑与自动保存**：
-    * 前端定时增量上报，后端每隔 30 秒暂存至 Redis / 缓存区，避免意外丢失。
+    * 文件导入解析完成后进入 DRAFT 状态，支持用户在 Markdown 编辑器中二次编辑与修改；
 * **版本历史与 Diff 回溯**：
     * 每次正式发布或手动保存快照，生成唯一版本号（`v1.0`, `v1.1`）。
     * 支持两两版本间的 Myers Diff 算法对比（删除行红标、新增行绿标），支持一键回滚历史版本。
@@ -79,8 +83,9 @@ io.knowflow
 ### 5. AI 对话与 RAG 检索增强生成 (`module-ai`)
 
 * **模型集成**：支持统一接口调用 DeepSeek-V3/R1、Qwen（通义千问）或本地 Ollama。
-* **文档预处理（Chunking）**：
-    * 按语义标点或固定 Token 窗口（如 500 Token，Overlap 50 Token）自动切块。
+* **DeepDoc 语义原子切块与上下文帽子拼接**：
+    * 摒弃盲目的字符滑动窗口与 Overlap；基于 DeepDoc（YOLO版面感知 + KMeans行距聚类）直接以识别出的原子段落（DocTextChunk）为切块单元；
+    * 上下文帽子拼接：在向量化与检索前拼接"[文档: 《{title}》] > [章节: {headerPath}]"上下文前缀，并保留 page 与 bbox 坐标溯源。
 * **向量化（Embedding）**：调用 Embedding 接口生成 Dense Vector，写入 ES 密集向量索引或向量数据库。
 * **双路召回与混合重排（Hybrid Search with RRF）**：
     * 路径 1：BM25 关键词全文检索；
@@ -132,11 +137,11 @@ io.knowflow
 
 ### 阶段二：文档核心生命周期与版本回溯（第 4 ~ 8 天）
 
-- [ ] 设计文档核心表：`t_kb_document`、`t_kb_category`、`t_kb_doc_version`。
-- [ ] 实现文档分类树递归查询与文档基础 CRUD。
+- [ ] 设计文档核心表：`t_kb_document`、`t_kb_category`、`t_kb_doc_version`、`t_kb_doc_source_file`。
+- [ ] 实现文档分类树递归查询。
+- [ ] 实现文件上传导入管线（**唯一文档创建入口**）：Word/PDF/Markdown/TXT → MarkItDown 解析 → Markdown 落库为草稿（`sourceType=IMPORT`）。
 - [ ] 实现文档状态机流转：草稿 $\rightarrow$ 提交审批 $\rightarrow$ 审核通过/驳回 $\rightarrow$ 发布。
 - [ ] 集成版本快照存储与 Myers Diff 比对算法接口（返回两个版本差异行）。
-- [ ] 接入 Redis 实现前台 Markdown 编辑“自动保存草稿”接口。
 
 ### 阶段三：文件解析与 Elasticsearch 全文检索（第 9 ~ 13 天）
 
@@ -148,11 +153,14 @@ io.knowflow
 
 ### 阶段四：AI 智能问答与 RAG 落地（第 14 ~ 20 天）
 
-- [ ] 对接 LLM API（DeepSeek / Qwen），实现 Spring WebFlux / SSE 流式对话接口。
-- [ ] 编写文档智能切块器（RecursiveTextSplitter），将长文档切分成 500 Token 语义块。
-- [ ] 对接 Text Embedding 模型，将切片向量化并存入 ES 的 `dense_vector` 字段。
+> **AI 核心库规范**：**AI 模块必须基于 Spring AI 官方框架 (`spring-ai-core` / `spring-ai-bom`) 构建**，统一基于 `ChatModel` / `StreamingChatModel` / `ChatClient` 及 `EmbeddingModel` 契约驱动大模型与向量化交互，杜绝手写裸 HTTP 请求。
+
+- [ ] 引入并集成 **Spring AI**（`spring-ai-bom` / `spring-ai-core`），统一抽象 LLM 与 Embedding 模型接入层。
+- [ ] 基于 Spring AI 对接 LLM API（DeepSeek / Qwen / Ollama），实现 Spring WebMvc / SSE 流式对话接口（支持思维链推理与思考过程流式推送）。
+- [ ] 编写 DeepDoc 上下文帽子组装器（DeepDocContextEnricher），保护原子段落语义边界，拼接文档名与章节前缀并保留视觉坐标。
+- [ ] 基于 Spring AI `EmbeddingModel` 对接文本向量化模型，将切片向量化并存入 ES 的 `dense_vector` 字段。
 - [ ] 实现 **双路混合检索召回**：BM25 文本分值 + 向量余弦相似度分值通过 RRF 公式加权归一。
-- [ ] 组装 Prompt 提示词，实现携带召回切片上下文的流式 RAG 问答，并在末尾输出引用文档来源。
+- [ ] 组装 Prompt 提示词，实现携带召回切片上下文的流式 RAG 问答，并在末尾输出高保真引用源与视觉坐标。
 
 ### 阶段五：Neo4j 知识图谱与 KAG 增强（第 21 ~ 26 天）
 

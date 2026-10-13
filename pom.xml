@@ -28,6 +28,8 @@
         <groovy.version>4.0.24</groovy.version>
         <cola-statemachine.version>4.3.2</cola-statemachine.version>
         <elasticsearch.version>8.17.2</elasticsearch.version>
+        <pdfbox.version>3.0.4</pdfbox.version>
+        <spring-ai.version>1.0.0-M5</spring-ai.version>
         <sonar.coverage.exclusions>
             **/model/**,
             **/dto/**,
@@ -155,6 +157,26 @@
             <version>${cola-statemachine.version}</version>
         </dependency>
 
+        <!-- MinIO / S3 SDK (对接 RustFS 对象存储) -->
+        <dependency>
+            <groupId>io.minio</groupId>
+            <artifactId>minio</artifactId>
+            <version>${minio.version}</version>
+        </dependency>
+
+        <!-- Apache PDFBox: PDF 本地真实文本提取引擎 -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>${pdfbox.version}</version>
+        </dependency>
+
+        <!-- Spring AI 官方大模型与向量化框架核心契约 -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-core</artifactId>
+        </dependency>
+
         <!-- 测试框架 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -235,16 +257,16 @@
                 <version>${jackson-2-bom.version}</version>
             </dependency>
             <dependency>
-                <groupId>io.jsonwebtoken</groupId>
-                <artifactId>jjwt-bom</artifactId>
-                <version>0.13.0</version>
+                <groupId>org.springframework.modulith</groupId>
+                <artifactId>spring-modulith-bom</artifactId>
+                <version>${spring-modulith.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
             <dependency>
-                <groupId>org.springframework.modulith</groupId>
-                <artifactId>spring-modulith-bom</artifactId>
-                <version>${spring-modulith.version}</version>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-bom</artifactId>
+                <version>${spring-ai.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>

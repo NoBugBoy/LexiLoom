@@ -39,9 +39,7 @@ public class ElasticsearchIndexInitializer {
     try {
       IndexOperations indexOps = elasticsearchOperations.indexOps(DocSearchDocument.class);
       if (!indexOps.exists()) {
-        log.info(
-            "Elasticsearch 核心索引 [{}] 不存在，开始自动创建并初始化 Mapping...",
-            properties.getIndexName());
+        log.info("Elasticsearch 核心索引 [{}] 不存在，开始自动创建并初始化 Mapping...", properties.getIndexName());
         boolean created = indexOps.createWithMapping();
         log.info("Elasticsearch 核心索引 [{}] 初始化结果: {}", properties.getIndexName(), created);
         return created;
@@ -50,10 +48,7 @@ public class ElasticsearchIndexInitializer {
       return false;
     } catch (Exception ex) {
       log.error(
-          "Elasticsearch 核心索引 [{}] 自动初始化失败: {}",
-          properties.getIndexName(),
-          ex.getMessage(),
-          ex);
+          "Elasticsearch 核心索引 [{}] 自动初始化失败: {}", properties.getIndexName(), ex.getMessage(), ex);
       return false;
     }
   }

@@ -5,28 +5,25 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.knowflow.application.common.storage.FileStorageGateway;
+import com.knowflow.application.document.acl.DocAccessControlService;
 import com.knowflow.application.document.model.entity.DocSourceFileEntity;
 import com.knowflow.application.document.model.entity.DocumentEntity;
 import com.knowflow.application.document.model.enums.DocSourceTypeEnum;
-import com.knowflow.application.document.parser.DocParseCommand;
-import com.knowflow.application.document.parser.DocParseResult;
 import com.knowflow.application.document.parser.DocParseStatusEnum;
-import com.knowflow.application.document.parser.DocParserEngineEnum;
 import com.knowflow.application.document.parser.DocParserGateway;
 import com.knowflow.application.document.repository.DocSourceFileRepository;
 import com.knowflow.application.document.repository.DocumentRepository;
 import com.knowflow.application.document.statemachine.DocumentStateEnum;
-import com.knowflow.application.enums.WorkSpaceAclEnum;
 import com.knowflow.application.exception.BusinessException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -43,16 +40,30 @@ class DocumentImportPipelineTest {
   @Mock private DocParserGateway docParserGateway;
   @Mock private DocSourceFileRepository docSourceFileRepository;
   @Mock private DocumentRepository documentRepository;
+  @Mock private DocAccessControlService docAccessControlService;
+  @Mock private org.springframework.context.ApplicationEventPublisher eventPublisher;
+
+  @Mock
+  private com.knowflow.application.document.repository.DocVersionRepository docVersionRepository;
+
+  private static final Long OPERATOR_ID = 10L;
 
   private DocumentImportPipeline pipeline;
 
   @BeforeEach
   void setUp() {
     DocumentImportTransactionalService transactionalService =
-        new DocumentImportTransactionalService(docSourceFileRepository, documentRepository);
+        new DocumentImportTransactionalService(
+            docSourceFileRepository, documentRepository, docVersionRepository, eventPublisher);
     pipeline =
         new DocumentImportPipeline(
-            fileStorageGateway, docParserGateway, docSourceFileRepository, transactionalService);
+            fileStorageGateway,
+            docParserGateway,
+            docSourceFileRepository,
+            documentRepository,
+            transactionalService,
+            eventPublisher,
+            docAccessControlService);
   }
 
   @Test
@@ -63,7 +74,8 @@ class DocumentImportPipelineTest {
     DocumentImportCommand command =
         DocumentImportCommand.ofBytes(1L, 10L, "architecture.md", mdBytes, "text/markdown");
 
-    when(docSourceFileRepository.findByWorkSpaceIdAndFileHash(eq(1L), anyString()))
+    when(docSourceFileRepository.findFirstByWorkSpaceIdAndFileHashOrderByCreateTimeDesc(
+            eq(1L), anyString()))
         .thenReturn(Optional.empty());
     when(fileStorageGateway.upload(anyString(), any(InputStream.class), anyString(), anyLong()))
         .thenReturn("http://rustfs.knowflow.io/workspaces/1/docs/arch.md");
@@ -77,15 +89,6 @@ class DocumentImportPipelineTest {
               }
               return entity;
             });
-
-    when(docParserGateway.parse(any(DocParseCommand.class)))
-        .thenReturn(
-            DocParseResult.success(
-                new String(mdBytes),
-                new String(mdBytes),
-                "KnowFlow 架构指南",
-                DocParserEngineEnum.MOCK,
-                Map.of("wordCount", 30)));
 
     when(docSourceFileRepository.findById(100L))
         .thenAnswer(
@@ -114,17 +117,21 @@ class DocumentImportPipelineTest {
             });
 
     // Act
-    DocumentImportResult result = pipeline.importFile(command);
+    DocumentImportResult result = pipeline.importFile(command, OPERATOR_ID);
 
     // Assert
     assertThat(result.isSuccess()).isTrue();
     assertThat(result.documentId()).isEqualTo(200L);
     assertThat(result.sourceFileId()).isEqualTo(100L);
-    assertThat(result.suggestedTitle()).isEqualTo("KnowFlow 架构指南");
     assertThat(result.instantUpload()).isFalse();
-    assertThat(result.parseStatus()).isEqualTo(DocParseStatusEnum.SUCCESS);
+    assertThat(result.parseStatus()).isEqualTo(DocParseStatusEnum.ASYNC_PROCESSING);
 
-    verify(fileStorageGateway).upload(anyString(), any(InputStream.class), eq("text/markdown"), eq((long) mdBytes.length));
+    verify(fileStorageGateway)
+        .upload(
+            anyString(), any(InputStream.class), eq("text/markdown"), eq((long) mdBytes.length));
+    verify(eventPublisher)
+        .publishEvent(
+            any(com.knowflow.application.document.model.event.DocumentAsyncParseEvent.class));
   }
 
   @Test
@@ -133,9 +140,15 @@ class DocumentImportPipelineTest {
     // Arrange
     byte[] docxBytes = "dummy docx binary content".getBytes(StandardCharsets.UTF_8);
     DocumentImportCommand command =
-        DocumentImportCommand.ofBytes(1L, 20L, "项目规范.docx", docxBytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+        DocumentImportCommand.ofBytes(
+            1L,
+            20L,
+            "项目规范.docx",
+            docxBytes,
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
-    when(docSourceFileRepository.findByWorkSpaceIdAndFileHash(eq(1L), anyString()))
+    when(docSourceFileRepository.findFirstByWorkSpaceIdAndFileHashOrderByCreateTimeDesc(
+            eq(1L), anyString()))
         .thenReturn(Optional.empty());
     when(fileStorageGateway.upload(anyString(), any(InputStream.class), anyString(), anyLong()))
         .thenReturn("http://rustfs.knowflow.io/workspaces/1/docs/standard.docx");
@@ -149,16 +162,6 @@ class DocumentImportPipelineTest {
               }
               return entity;
             });
-
-    String convertedMd = "# 项目规范\n\n这是 Word 转换后的 Markdown 内容。";
-    when(docParserGateway.parse(any(DocParseCommand.class)))
-        .thenReturn(
-            DocParseResult.success(
-                convertedMd,
-                convertedMd,
-                "项目规范",
-                DocParserEngineEnum.MARKITDOWN,
-                Map.of("engine", "MARKITDOWN")));
 
     when(docSourceFileRepository.findById(101L))
         .thenAnswer(
@@ -187,14 +190,15 @@ class DocumentImportPipelineTest {
             });
 
     // Act
-    DocumentImportResult result = pipeline.importFile(command);
+    DocumentImportResult result = pipeline.importFile(command, OPERATOR_ID);
 
     // Assert
     assertThat(result.isSuccess()).isTrue();
     assertThat(result.documentId()).isEqualTo(201L);
-    assertThat(result.suggestedTitle()).isEqualTo("项目规范");
-    assertThat(result.markdownContent()).contains("这是 Word 转换后的 Markdown 内容。");
-    assertThat(result.parseStatus()).isEqualTo(DocParseStatusEnum.SUCCESS);
+    assertThat(result.parseStatus()).isEqualTo(DocParseStatusEnum.ASYNC_PROCESSING);
+    verify(eventPublisher)
+        .publishEvent(
+            any(com.knowflow.application.document.model.event.DocumentAsyncParseEvent.class));
   }
 
   @Test
@@ -205,7 +209,8 @@ class DocumentImportPipelineTest {
     DocumentImportCommand command =
         DocumentImportCommand.ofBytes(1L, 30L, "深度学习导论.pdf", pdfBytes, "application/pdf");
 
-    when(docSourceFileRepository.findByWorkSpaceIdAndFileHash(eq(1L), anyString()))
+    when(docSourceFileRepository.findFirstByWorkSpaceIdAndFileHashOrderByCreateTimeDesc(
+            eq(1L), anyString()))
         .thenReturn(Optional.empty());
     when(fileStorageGateway.upload(anyString(), any(InputStream.class), anyString(), anyLong()))
         .thenReturn("http://rustfs.knowflow.io/workspaces/1/docs/dl.pdf");
@@ -219,14 +224,6 @@ class DocumentImportPipelineTest {
               }
               return entity;
             });
-
-    when(docParserGateway.parse(any(DocParseCommand.class)))
-        .thenReturn(
-            DocParseResult.previewOnly(
-                "深度学习导论 原始提取摘要",
-                "深度学习导论",
-                DocParserEngineEnum.MINERU,
-                Map.of("dualTrackMode", "PREVIEW_ONLY")));
 
     when(docSourceFileRepository.findById(102L))
         .thenAnswer(
@@ -255,13 +252,15 @@ class DocumentImportPipelineTest {
             });
 
     // Act
-    DocumentImportResult result = pipeline.importFile(command);
+    DocumentImportResult result = pipeline.importFile(command, OPERATOR_ID);
 
     // Assert
     assertThat(result.isSuccess()).isTrue();
-    assertThat(result.parseStatus()).isEqualTo(DocParseStatusEnum.PREVIEW_ONLY);
-    assertThat(result.markdownContent()).contains("PDF 固化版面原件预览模式");
+    assertThat(result.parseStatus()).isEqualTo(DocParseStatusEnum.ASYNC_PROCESSING);
     assertThat(result.documentId()).isEqualTo(202L);
+    verify(eventPublisher)
+        .publishEvent(
+            any(com.knowflow.application.document.model.event.DocumentAsyncParseEvent.class));
   }
 
   @Test
@@ -283,7 +282,8 @@ class DocumentImportPipelineTest {
             "http://rustfs/old.txt");
     ReflectionTestUtils.setField(existing, "id", 999L);
 
-    when(docSourceFileRepository.findByWorkSpaceIdAndFileHash(eq(1L), anyString()))
+    when(docSourceFileRepository.findFirstByWorkSpaceIdAndFileHashOrderByCreateTimeDesc(
+            eq(1L), anyString()))
         .thenReturn(Optional.of(existing));
 
     when(docSourceFileRepository.save(any(DocSourceFileEntity.class)))
@@ -295,15 +295,6 @@ class DocumentImportPipelineTest {
               }
               return entity;
             });
-
-    when(docParserGateway.parse(any(DocParseCommand.class)))
-        .thenReturn(
-            DocParseResult.success(
-                new String(content),
-                new String(content),
-                "new_name",
-                DocParserEngineEnum.MOCK,
-                Map.of()));
 
     when(docSourceFileRepository.findById(103L))
         .thenAnswer(
@@ -335,12 +326,13 @@ class DocumentImportPipelineTest {
         DocumentImportCommand.ofBytes(1L, 0L, "new_name.txt", content, "text/plain");
 
     // Act
-    DocumentImportResult result = pipeline.importFile(command);
+    DocumentImportResult result = pipeline.importFile(command, OPERATOR_ID);
 
     // Assert
     assertThat(result.instantUpload()).isTrue();
     assertThat(result.storagePath()).isEqualTo("workspaces/1/docs/old.txt");
-    verify(fileStorageGateway, never()).upload(anyString(), any(InputStream.class), anyString(), anyLong());
+    verify(fileStorageGateway, never())
+        .upload(anyString(), any(InputStream.class), anyString(), anyLong());
   }
 
   @Test
@@ -349,16 +341,18 @@ class DocumentImportPipelineTest {
     // Arrange
     DocSourceFileEntity pdfSource =
         DocSourceFileEntity.create(
-            1L, null, "技术白皮书.pdf", 2048L, "pdf", "application/pdf", "pdfhash", "workspaces/1/docs/whitepaper.pdf", "http://rustfs/whitepaper.pdf");
+            1L,
+            null,
+            "技术白皮书.pdf",
+            2048L,
+            "pdf",
+            "application/pdf",
+            "pdfhash",
+            "workspaces/1/docs/whitepaper.pdf",
+            "http://rustfs/whitepaper.pdf");
     ReflectionTestUtils.setField(pdfSource, "id", 500L);
 
     when(docSourceFileRepository.findById(500L)).thenReturn(Optional.of(pdfSource));
-
-    String extractedContent = "# 技术白皮书 (提取在线版)\n\n第一章：架构演进...";
-    when(docParserGateway.parse(any(DocParseCommand.class)))
-        .thenReturn(
-            DocParseResult.success(
-                extractedContent, extractedContent, "技术白皮书 (提取在线版)", DocParserEngineEnum.MINERU, Map.of()));
 
     when(documentRepository.save(any(DocumentEntity.class)))
         .thenAnswer(
@@ -369,14 +363,19 @@ class DocumentImportPipelineTest {
             });
 
     // Act
-    DocumentEntity extractedDoc = pipeline.extractPdfToDocument(500L, 88L);
+    DocumentEntity extractedDoc = pipeline.extractPdfToDocument(500L, 88L, OPERATOR_ID);
 
     // Assert
     assertThat(extractedDoc).isNotNull();
     assertThat(extractedDoc.getId()).isEqualTo(600L);
-    assertThat(extractedDoc.getTitle()).isEqualTo("技术白皮书 (提取在线版)");
+    assertThat(extractedDoc.getTitle()).isEqualTo("技术白皮书 (提炼在线版)");
     assertThat(extractedDoc.getSourceType()).isEqualTo(DocSourceTypeEnum.IMPORT);
-    assertThat(extractedDoc.getStatus()).isEqualTo(DocumentStateEnum.DRAFT);
+    assertThat(extractedDoc.getStatus()).isEqualTo(DocumentStateEnum.PENDING_APPROVAL);
+    assertThat(extractedDoc.getParseStatus()).isEqualTo(DocParseStatusEnum.ASYNC_PROCESSING);
+    verify(docAccessControlService).assertCanReadWorkSpace(1L, OPERATOR_ID);
+    verify(eventPublisher)
+        .publishEvent(
+            any(com.knowflow.application.document.model.event.DocumentAsyncParseEvent.class));
   }
 
   @Test
@@ -386,56 +385,329 @@ class DocumentImportPipelineTest {
     DocumentImportCommand command =
         DocumentImportCommand.ofBytes(1L, 0L, "fail.txt", content, "text/plain");
 
-    when(docSourceFileRepository.findByWorkSpaceIdAndFileHash(eq(1L), anyString()))
+    when(docSourceFileRepository.findFirstByWorkSpaceIdAndFileHashOrderByCreateTimeDesc(
+            eq(1L), anyString()))
         .thenReturn(Optional.empty());
     when(fileStorageGateway.upload(anyString(), any(InputStream.class), anyString(), anyLong()))
         .thenThrow(new RuntimeException("Rustfs connection timeout"));
 
-    assertThatThrownBy(() -> pipeline.importFile(command))
+    assertThatThrownBy(() -> pipeline.importFile(command, OPERATOR_ID))
         .isInstanceOf(BusinessException.class)
         .hasMessageContaining("文件存储失败");
   }
 
   @Test
-  @DisplayName("异常流测试：解析网关返回 FAILED 时应正确标记并返回 failure 结果")
-  void testImportFileParseFails() {
-    byte[] content = "corrupt content".getBytes(StandardCharsets.UTF_8);
-    DocumentImportCommand command =
-        DocumentImportCommand.ofBytes(1L, 0L, "corrupt.docx", content, "application/docx");
+  @DisplayName("重新解析重试：状态重置为 ASYNC_PROCESSING 并重新发布异步解析领域事件")
+  void testRetryParse_resetsStatusAndDispatchesEvent() {
+    DocumentEntity doc =
+        DocumentEntity.createFromImport(
+            1L,
+            10L,
+            "文档",
+            null,
+            "",
+            777L,
+            com.knowflow.application.enums.WorkSpaceAclEnum.INTERNAL);
+    ReflectionTestUtils.setField(doc, "id", 100L);
+    doc.markParseFailed("前次解析超时");
 
-    when(docSourceFileRepository.findByWorkSpaceIdAndFileHash(eq(1L), anyString()))
+    DocSourceFileEntity sourceFile =
+        DocSourceFileEntity.create(
+            1L, 100L, "test.pdf", 1024L, "pdf", "application/pdf", "hash", "path", "url");
+    ReflectionTestUtils.setField(sourceFile, "id", 777L);
+
+    pipeline.retryParse(doc, sourceFile, OPERATOR_ID);
+
+    assertThat(doc.getParseStatus()).isEqualTo(DocParseStatusEnum.ASYNC_PROCESSING);
+    assertThat(sourceFile.getParseStatus()).isEqualTo(DocParseStatusEnum.ASYNC_PROCESSING);
+    verify(documentRepository).save(doc);
+    verify(docSourceFileRepository).save(sourceFile);
+    verify(eventPublisher)
+        .publishEvent(
+            any(com.knowflow.application.document.model.event.DocumentAsyncParseEvent.class));
+  }
+
+  @Test
+  @DisplayName("异步解析流：解析器返回 ASYNC_PROCESSING 时，生成占位文档并发布异步解析事件")
+  void testImportFileAsyncProcessingDispatchesEvent() {
+    byte[] content = "pdf content".getBytes(StandardCharsets.UTF_8);
+    DocumentImportCommand command =
+        DocumentImportCommand.ofBytes(1L, 10L, "paper.pdf", content, "application/pdf");
+
+    when(docSourceFileRepository.findFirstByWorkSpaceIdAndFileHashOrderByCreateTimeDesc(
+            eq(1L), anyString()))
         .thenReturn(Optional.empty());
     when(fileStorageGateway.upload(anyString(), any(InputStream.class), anyString(), anyLong()))
-        .thenReturn("http://rustfs/corrupt.docx");
+        .thenReturn("http://rustfs/paper.pdf");
 
     when(docSourceFileRepository.save(any(DocSourceFileEntity.class)))
         .thenAnswer(
             invocation -> {
               DocSourceFileEntity entity = invocation.getArgument(0);
               if (entity.getId() == null) {
-                ReflectionTestUtils.setField(entity, "id", 777L);
+                ReflectionTestUtils.setField(entity, "id", 888L);
               }
               return entity;
             });
 
-    when(docParserGateway.parse(any(DocParseCommand.class)))
-        .thenReturn(DocParseResult.failure(DocParserEngineEnum.MARKITDOWN, "文件已损坏"));
-
-    when(docSourceFileRepository.findById(777L))
+    when(docSourceFileRepository.findById(888L))
         .thenAnswer(
             inv -> {
               DocSourceFileEntity entity =
                   DocSourceFileEntity.create(
-                      1L, null, "corrupt.docx", (long) content.length, "docx", "application/docx", "hash", "path", "url");
-              ReflectionTestUtils.setField(entity, "id", 777L);
+                      1L,
+                      null,
+                      "paper.pdf",
+                      (long) content.length,
+                      "pdf",
+                      "application/pdf",
+                      "hash",
+                      "path",
+                      "url");
+              ReflectionTestUtils.setField(entity, "id", 888L);
               return Optional.of(entity);
             });
 
-    DocumentImportResult result = pipeline.importFile(command);
+    when(documentRepository.save(any(DocumentEntity.class)))
+        .thenAnswer(
+            inv -> {
+              DocumentEntity doc = inv.getArgument(0);
+              ReflectionTestUtils.setField(doc, "id", 999L);
+              return doc;
+            });
 
-    assertThat(result.isSuccess()).isFalse();
-    assertThat(result.parseStatus()).isEqualTo(DocParseStatusEnum.FAILED);
-    assertThat(result.errorMessage()).contains("文件已损坏");
-    assertThat(result.documentId()).isNull();
+    DocumentImportResult result = pipeline.importFile(command, OPERATOR_ID);
+
+    assertThat(result.isSuccess()).isTrue();
+    assertThat(result.isAsyncProcessing()).isTrue();
+    assertThat(result.parseStatus()).isEqualTo(DocParseStatusEnum.ASYNC_PROCESSING);
+    assertThat(result.documentId()).isEqualTo(999L);
+
+    verify(eventPublisher)
+        .publishEvent(
+            any(com.knowflow.application.document.model.event.DocumentAsyncParseEvent.class));
+  }
+
+  @Test
+  @DisplayName("安全：客户端文件名中的目录穿越片段被剥离，不会污染对象存储键")
+  void testImportSanitizesTraversalFileName() {
+    byte[] content = "hello".getBytes(StandardCharsets.UTF_8);
+    DocumentImportCommand command =
+        DocumentImportCommand.ofBytes(1L, 0L, "../../../etc/passwd.md", content, "text/markdown");
+
+    when(docSourceFileRepository.findFirstByWorkSpaceIdAndFileHashOrderByCreateTimeDesc(
+            eq(1L), anyString()))
+        .thenReturn(Optional.empty());
+    when(fileStorageGateway.upload(anyString(), any(InputStream.class), anyString(), anyLong()))
+        .thenThrow(new RuntimeException("stop-after-key-capture"));
+
+    assertThatThrownBy(() -> pipeline.importFile(command, OPERATOR_ID))
+        .isInstanceOf(BusinessException.class);
+
+    verify(fileStorageGateway)
+        .upload(
+            argThat(key -> key.startsWith("workspaces/1/docs/") && !key.contains("..")),
+            any(InputStream.class),
+            anyString(),
+            anyLong());
+  }
+
+  @Test
+  @DisplayName("安全：PDF 提炼前校验来源文件所属工作空间的读权限")
+  void testExtractPdfAssertsWorkspaceReadAccess() {
+    byte[] content = "pdf".getBytes(StandardCharsets.UTF_8);
+    DocSourceFileEntity sourceFile =
+        DocSourceFileEntity.create(
+            7L,
+            null,
+            "paper.pdf",
+            (long) content.length,
+            "pdf",
+            "application/pdf",
+            "hash",
+            "path",
+            "url");
+    ReflectionTestUtils.setField(sourceFile, "id", 300L);
+    when(docSourceFileRepository.findById(300L)).thenReturn(Optional.of(sourceFile));
+
+    when(documentRepository.save(any(DocumentEntity.class)))
+        .thenAnswer(
+            inv -> {
+              DocumentEntity doc = inv.getArgument(0);
+              ReflectionTestUtils.setField(doc, "id", 301L);
+              return doc;
+            });
+
+    pipeline.extractPdfToDocument(300L, 5L, OPERATOR_ID);
+
+    verify(docAccessControlService).assertCanReadWorkSpace(7L, OPERATOR_ID);
+  }
+
+  @Test
+  @DisplayName("安全：导入前校验目标工作空间的写权限")
+  void testImportAssertsWorkspaceWriteAccess() {
+    byte[] content = "hello".getBytes(StandardCharsets.UTF_8);
+    DocumentImportCommand command =
+        DocumentImportCommand.ofBytes(9L, 0L, "a.md", content, "text/markdown");
+
+    org.mockito.Mockito.doThrow(
+            new BusinessException(
+                com.knowflow.application.common.ErrorCode.Document.DOC_ACCESS_DENIED, "无权导入"))
+        .when(docAccessControlService)
+        .assertCanWriteWorkSpace(9L, OPERATOR_ID);
+
+    assertThatThrownBy(() -> pipeline.importFile(command, OPERATOR_ID))
+        .isInstanceOf(BusinessException.class);
+
+    verify(fileStorageGateway, never())
+        .upload(anyString(), any(InputStream.class), anyString(), anyLong());
+  }
+
+  @Test
+  @DisplayName("多次导入同名文件且哈希一致：命中秒传，不递增版本")
+  void testImportSameFileWithSameHash_ReturnsVersionUnchangedWithoutIncrement() {
+    byte[] content = "# Hello World".getBytes(StandardCharsets.UTF_8);
+    DocumentImportCommand command =
+        DocumentImportCommand.ofBytes(1L, 0L, "guide.md", content, "text/markdown");
+    String computedHash = DocumentImportPipeline.calculateSha256(content);
+
+    DocSourceFileEntity existingSourceFile =
+        DocSourceFileEntity.create(
+            1L,
+            500L,
+            "guide.md",
+            (long) content.length,
+            "md",
+            "text/markdown",
+            computedHash,
+            "workspaces/1/docs/guide.md",
+            "http://rustfs/workspaces/1/docs/guide.md");
+    ReflectionTestUtils.setField(existingSourceFile, "id", 200L);
+
+    DocumentEntity existingDoc =
+        DocumentEntity.createFromImport(
+            1L,
+            0L,
+            "guide",
+            "摘要",
+            "# Hello World",
+            200L,
+            "guide.md",
+            com.knowflow.application.enums.WorkSpaceAclEnum.INTERNAL,
+            com.knowflow.application.document.parser.DocParseStatusEnum.SUCCESS);
+    ReflectionTestUtils.setField(existingDoc, "id", 500L);
+
+    when(docSourceFileRepository.findFirstByWorkSpaceIdAndOriginalFileNameOrderByCreateTimeDesc(
+            eq(1L), eq("guide.md")))
+        .thenReturn(Optional.of(existingSourceFile));
+    when(documentRepository.findByIdAndWorkSpaceId(500L, 1L)).thenReturn(Optional.of(existingDoc));
+    when(docSourceFileRepository.findById(200L)).thenReturn(Optional.of(existingSourceFile));
+
+    // Act
+    DocumentImportResult result = pipeline.importFile(command, OPERATOR_ID);
+
+    // Assert
+    assertThat(result.isSuccess()).isTrue();
+    assertThat(result.versionUnchanged()).isTrue();
+    assertThat(result.instantUpload()).isTrue();
+    assertThat(result.documentId()).isEqualTo(500L);
+    verify(fileStorageGateway, never()).upload(anyString(), any(), anyString(), anyLong());
+    verify(documentRepository, never()).save(any());
+  }
+
+  @Test
+  @DisplayName("多次导入同名文件且哈希不同：自增版本号为 v2.0，保存快照且原发布状态回归未审批")
+  void testImportSameFileWithDifferentHash_IncrementsVersionAndSavesNewSnapshot() {
+    byte[] oldContent = "# Old Content".getBytes(StandardCharsets.UTF_8);
+    byte[] newContent = "# New Updated Content".getBytes(StandardCharsets.UTF_8);
+    String oldHash = DocumentImportPipeline.calculateSha256(oldContent);
+    String newHash = DocumentImportPipeline.calculateSha256(newContent);
+
+    DocSourceFileEntity oldSourceFile =
+        DocSourceFileEntity.create(
+            1L,
+            500L,
+            "guide.md",
+            (long) oldContent.length,
+            "md",
+            "text/markdown",
+            oldHash,
+            "workspaces/1/docs/guide_old.md",
+            "http://rustfs/workspaces/1/docs/guide_old.md");
+    ReflectionTestUtils.setField(oldSourceFile, "id", 200L);
+
+    DocumentEntity existingDoc =
+        DocumentEntity.createFromImport(
+            1L,
+            0L,
+            "guide",
+            "摘要",
+            "# Old Content",
+            200L,
+            "guide.md",
+            com.knowflow.application.enums.WorkSpaceAclEnum.INTERNAL,
+            com.knowflow.application.document.parser.DocParseStatusEnum.SUCCESS);
+    ReflectionTestUtils.setField(existingDoc, "id", 500L);
+    existingDoc.publish("v1.0"); // Published version 1
+
+    DocumentImportCommand command =
+        DocumentImportCommand.ofBytes(1L, 0L, "guide.md", newContent, "text/markdown");
+
+    when(docSourceFileRepository.findFirstByWorkSpaceIdAndOriginalFileNameOrderByCreateTimeDesc(
+            eq(1L), eq("guide.md")))
+        .thenReturn(Optional.of(oldSourceFile));
+    when(documentRepository.findByIdAndWorkSpaceId(500L, 1L)).thenReturn(Optional.of(existingDoc));
+    when(docSourceFileRepository.findById(200L)).thenReturn(Optional.of(oldSourceFile));
+
+    // Upload new content
+    when(docSourceFileRepository.findFirstByWorkSpaceIdAndFileHashOrderByCreateTimeDesc(
+            eq(1L), eq(newHash)))
+        .thenReturn(Optional.empty());
+    when(fileStorageGateway.upload(anyString(), any(InputStream.class), anyString(), anyLong()))
+        .thenReturn("http://rustfs/workspaces/1/docs/new.md");
+
+    DocSourceFileEntity newSourceFile =
+        DocSourceFileEntity.create(
+            1L,
+            null,
+            "guide.md",
+            (long) newContent.length,
+            "md",
+            "text/markdown",
+            newHash,
+            "workspaces/1/docs/new.md",
+            "http://rustfs/workspaces/1/docs/new.md");
+    ReflectionTestUtils.setField(newSourceFile, "id", 201L);
+
+    when(docSourceFileRepository.save(any(DocSourceFileEntity.class))).thenReturn(newSourceFile);
+    when(docSourceFileRepository.findById(201L)).thenReturn(Optional.of(newSourceFile));
+
+    when(documentRepository.findById(500L)).thenReturn(Optional.of(existingDoc));
+    when(documentRepository.save(any(DocumentEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+
+    // Act
+    DocumentImportResult result = pipeline.importFile(command, OPERATOR_ID);
+
+    // Assert
+    assertThat(result.isSuccess()).isTrue();
+    assertThat(result.versionUnchanged()).isFalse();
+    assertThat(existingDoc.getCurrentVersion()).isEqualTo(2);
+    assertThat(existingDoc.getCurrentVersionTag()).isEqualTo("v2.0");
+    assertThat(existingDoc.getStatus()).isEqualTo(DocumentStateEnum.PENDING_APPROVAL);
+    assertThat(existingDoc.getPublishedVersion()).isNull();
+
+    // Verify state transition event published to trigger ES cleanup
+    org.mockito.ArgumentCaptor<
+            com.knowflow.application.document.statemachine.DocumentStateTransitionEvent>
+        eventCaptor =
+            org.mockito.ArgumentCaptor.forClass(
+                com.knowflow.application.document.statemachine.DocumentStateTransitionEvent.class);
+    verify(eventPublisher, org.mockito.Mockito.atLeastOnce()).publishEvent(eventCaptor.capture());
+    assertThat(eventCaptor.getValue().documentId()).isEqualTo(500L);
+    assertThat(eventCaptor.getValue().toState()).isEqualTo(DocumentStateEnum.PENDING_APPROVAL);
+
+    verify(eventPublisher, org.mockito.Mockito.atLeastOnce())
+        .publishEvent(
+            any(com.knowflow.application.document.model.event.DocumentAsyncParseEvent.class));
   }
 }

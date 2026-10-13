@@ -24,6 +24,29 @@ knowflow:
   elasticsearch:
     index-name: knowflow_doc_index_test
     auto-create-index: false
+  parser:
+    default-engine: AUTO
+    deepdoc:
+      endpoint: http://localhost:8001
+  ai:
+    enabled: true
+    model-provider: MOCK
+    chunk-index-name: knowflow_chunk_index_test
+    auto-create-index: false
+    embedding:
+      provider: MOCK
+      dimension: 1536
+    rerank:
+      enabled: false
+      strategy: NONE
+      provider: MOCK
+    chunk:
+      context-prefix-enabled: true
+      max-token-limit: 2000
+    rag:
+      top-k: 5
+      similarity-threshold: 0.60
+      history-turns: 3
 htz:
   security:
     public-key: ${publicKey:MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAlSnQiREiSDwZgQiisReWhCEm7NIyakSctL6SWS6Vgm2bty1/MjWTCZelvdpyLkahcMlROKkTlregsiblPwiOGd4XmbrfeBbiuxnVqf/aKVi70/M4L39Ai101hi/qg9mKqXV20f/drsuNaifaPONfw4KDHKmrqbfM+nGiz047W2a9nQKLrEPA43rkvtf/AglBFktdjsd58dF/Lw+J57898f6xo42V9M6Bv8DrjD8pkXqHGp2rg6HXJ5D5ueeF16yhclyycdZqBL0eBHzBhWAgzqbA5Oz128NeGqNywF0FN62D7GMUCbj+uisySQJ7DVqBs5brxMnicr6Z5iQgjhnR0QIDAQAB}

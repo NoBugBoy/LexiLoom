@@ -14,6 +14,7 @@ trigger: always_on
 5. 非纯CRUD，涉及多模块，或业务逻辑较多的情况，对应的service和usecase要补充mock单元测试,仅覆盖sonar.coverage包之外即可
 6. 非必要禁止自己实现工具方法，优先使用spring、hutools提供的工具类
 7. 简单实体，可以不强制分为Query和Command service
+8. **AI 与 RAG 智能中枢核心生态规范**：AI 库必须使用 **Spring AI** (`org.springframework.ai`) 进行统一构建与模型交互，大模型对话与文本向量化必须基于 Spring AI 官方标准抽象（如 `ChatModel`, `StreamingChatModel`, `ChatClient`, `EmbeddingModel`），严禁手写裸 HTTP 请求或引入零散第三方未受管 SDK。
 
 
 

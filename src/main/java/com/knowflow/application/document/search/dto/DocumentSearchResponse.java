@@ -3,14 +3,8 @@ package com.knowflow.application.document.search.dto;
 import java.util.Collections;
 import java.util.List;
 
-/**
- * 全文检索分页响应 (不可变 record)
- */
-public record DocumentSearchResponse(
-    long total,
-    int pages,
-    List<DocSearchItemVO> items
-) {
+/** 全文检索分页响应 (不可变 record) */
+public record DocumentSearchResponse(long total, int pages, List<DocSearchItemVO> items) {
   public DocumentSearchResponse {
     items = items == null ? Collections.emptyList() : List.copyOf(items);
   }

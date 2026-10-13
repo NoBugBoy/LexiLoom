@@ -14,9 +14,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/**
- * 团队成员实体
- */
+/** 团队成员实体 */
 @Entity
 @Table(
     name = "kf_work_space_member",
@@ -38,10 +36,9 @@ public class WorkSpaceMemberEntity extends BaseEntity {
   @Column(nullable = false, length = 20)
   private WorkSpaceRoleEnum role;
 
-  /**
-   * 静态工厂：创建团队成员关联
-   */
-  public static WorkSpaceMemberEntity create(Long workSpaceId, Long userId, WorkSpaceRoleEnum role) {
+  /** 静态工厂：创建团队成员关联 */
+  public static WorkSpaceMemberEntity create(
+      Long workSpaceId, Long userId, WorkSpaceRoleEnum role) {
     Objects.requireNonNull(workSpaceId, "团队ID不能为空");
     Objects.requireNonNull(userId, "用户ID不能为空");
     Objects.requireNonNull(role, "成员角色不能为空");
@@ -53,9 +50,7 @@ public class WorkSpaceMemberEntity extends BaseEntity {
     return member;
   }
 
-  /**
-   * 变更角色（普通角色流转，禁止直接降级 OWNER）
-   */
+  /** 变更角色（普通角色流转，禁止直接降级 OWNER） */
   public void changeRole(WorkSpaceRoleEnum newRole) {
     Objects.requireNonNull(newRole, "新角色不能为空");
     if (this.role == WorkSpaceRoleEnum.OWNER && newRole != WorkSpaceRoleEnum.OWNER) {
@@ -64,9 +59,7 @@ public class WorkSpaceMemberEntity extends BaseEntity {
     this.role = newRole;
   }
 
-  /**
-   * 所有权转让时的所有者角色降级
-   */
+  /** 所有权转让时的所有者角色降级 */
   public void demoteFromOwner(WorkSpaceRoleEnum newRole) {
     Objects.requireNonNull(newRole, "新角色不能为空");
     if (this.role != WorkSpaceRoleEnum.OWNER) {

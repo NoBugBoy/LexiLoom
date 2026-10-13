@@ -14,5 +14,4 @@ public record WorkSpaceDTO(
     Integer maxMembers,
     WorkSpaceStatusEnum status,
     WorkSpaceAclEnum visibility,
-    LocalDateTime createTime
-) {}
+    LocalDateTime createTime) {}

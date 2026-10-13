@@ -2,9 +2,7 @@ package com.knowflow.application.document.statemachine;
 
 import java.time.LocalDateTime;
 
-/**
- * 文档状态流转成功的领域事件
- */
+/** 文档状态流转成功的领域事件 */
 public record DocumentStateTransitionEvent(
     Long documentId,
     DocumentStateEnum fromState,
@@ -12,8 +10,7 @@ public record DocumentStateTransitionEvent(
     DocumentEventEnum triggerEvent,
     Long operatorId,
     String comment,
-    LocalDateTime timestamp
-) {
+    LocalDateTime timestamp) {
 
   /** 目标状态别名，对齐状态机流转语义 */
   public DocumentStateEnum targetState() {

@@ -19,7 +19,7 @@ public class LocalStorageAdapter implements FileStorageGateway {
   public String upload(
       String objectKey, InputStream inputStream, String contentType, long contentLength) {
     try {
-      Path targetPath = Paths.get(UPLOAD_DIR, objectKey);
+      Path targetPath = StoragePathGuard.resolveWithin(Paths.get(UPLOAD_DIR), objectKey);
       File file = targetPath.toFile();
       FileUtil.mkdir(file.getParentFile());
       FileUtil.writeFromStream(inputStream, file);
@@ -38,7 +38,7 @@ public class LocalStorageAdapter implements FileStorageGateway {
       if (cleanKey.startsWith("/uploads/")) {
         cleanKey = cleanKey.substring("/uploads/".length());
       }
-      Path targetPath = Paths.get(UPLOAD_DIR, cleanKey);
+      Path targetPath = StoragePathGuard.resolveWithin(Paths.get(UPLOAD_DIR), cleanKey);
       FileUtil.del(targetPath.toFile());
       log.info("本地存储删除文件成功: path={}", targetPath);
     } catch (Exception e) {
@@ -59,7 +59,7 @@ public class LocalStorageAdapter implements FileStorageGateway {
       if (cleanKey.startsWith("/uploads/")) {
         cleanKey = cleanKey.substring("/uploads/".length());
       }
-      Path targetPath = Paths.get(UPLOAD_DIR, cleanKey);
+      Path targetPath = StoragePathGuard.resolveWithin(Paths.get(UPLOAD_DIR), cleanKey);
       File file = targetPath.toFile();
       if (!file.exists()) {
         throw BusinessException.notFound("存储文件不存在: " + objectKeyOrUrl);
@@ -79,7 +79,7 @@ public class LocalStorageAdapter implements FileStorageGateway {
     if (cleanKey.startsWith("/uploads/")) {
       cleanKey = cleanKey.substring("/uploads/".length());
     }
-    Path targetPath = Paths.get(UPLOAD_DIR, cleanKey);
+    Path targetPath = StoragePathGuard.resolveWithin(Paths.get(UPLOAD_DIR), cleanKey);
     return targetPath.toFile().exists();
   }
 }

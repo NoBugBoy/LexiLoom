@@ -34,7 +34,8 @@ class DocCategoryServiceTest {
 
   @BeforeEach
   void setUp() {
-    categoryService = new DocCategoryService(docCategoryRepository, documentRepository, docCategoryMapper);
+    categoryService =
+        new DocCategoryService(docCategoryRepository, documentRepository, docCategoryMapper);
   }
 
   @Test
@@ -67,8 +68,7 @@ class DocCategoryServiceTest {
   @Test
   @DisplayName("移动分类：禁止将分类移动至自身或自身子目录下")
   void testMoveCategoryToSelfOrDescendantFails() {
-    DocCategoryEntity parent =
-        DocCategoryEntity.create(1L, 0L, "根目录", 1, "/0/", 0);
+    DocCategoryEntity parent = DocCategoryEntity.create(1L, 0L, "根目录", 1, "/0/", 0);
     ReflectionTestUtils.setField(parent, "id", 10L);
     ReflectionTestUtils.setField(parent, "path", "/0/10/");
 
@@ -80,8 +80,7 @@ class DocCategoryServiceTest {
         .hasMessageContaining("不能将分类移动到自己内部");
 
     // 尝试移动到子目录
-    DocCategoryEntity child =
-        DocCategoryEntity.create(1L, 10L, "子目录", 1, "/0/10/", 1);
+    DocCategoryEntity child = DocCategoryEntity.create(1L, 10L, "子目录", 1, "/0/10/", 1);
     ReflectionTestUtils.setField(child, "id", 20L);
     ReflectionTestUtils.setField(child, "path", "/0/10/20/");
 
@@ -103,8 +102,8 @@ class DocCategoryServiceTest {
 
     when(docCategoryRepository.findByWorkSpaceIdOrderBySortOrderAsc(1L))
         .thenReturn(List.of(c1, c2));
-    when(documentRepository.countByWorkSpaceIdAndCategoryId(1L, 100L)).thenReturn(5L);
-    when(documentRepository.countByWorkSpaceIdAndCategoryId(1L, 101L)).thenReturn(3L);
+    when(documentRepository.countGroupByCategoryId(1L))
+        .thenReturn(List.<Object[]>of(new Object[] {100L, 5L}, new Object[] {101L, 3L}));
 
     List<DocCategoryNodeDTO> tree = categoryService.getCategoryTree(1L);
 
@@ -117,5 +116,38 @@ class DocCategoryServiceTest {
     DocCategoryNodeDTO child = root.children().get(0);
     assertThat(child.id()).isEqualTo(101L);
     assertThat(child.docCount()).isEqualTo(3L);
+  }
+
+  @Test
+  @DisplayName("移动分类：禁止跨团队空间移动分类")
+  void testMoveCategory_crossWorkspace_fails() {
+    DocCategoryEntity catSpace1 = DocCategoryEntity.create(1L, 0L, "空间1分类", 1, "/0/", 0);
+    ReflectionTestUtils.setField(catSpace1, "id", 10L);
+
+    DocCategoryEntity catSpace2 = DocCategoryEntity.create(2L, 0L, "空间2分类", 1, "/0/", 0);
+    ReflectionTestUtils.setField(catSpace2, "id", 20L);
+
+    when(docCategoryRepository.findById(10L)).thenReturn(Optional.of(catSpace1));
+    when(docCategoryRepository.findById(20L)).thenReturn(Optional.of(catSpace2));
+
+    assertThatThrownBy(() -> categoryService.moveCategory(10L, 20L))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("不能跨团队空间移动分类");
+  }
+
+  @Test
+  @DisplayName("创建分类：父分类层级达到 10 层时禁止继续嵌套创建")
+  void testCreateCategory_exceedMaxLevel_fails() {
+    DocCategoryEntity deepParent =
+        DocCategoryEntity.create(1L, 99L, "第10层目录", 1, "/0/1/2/3/4/5/6/7/8/9/99/", 10);
+    ReflectionTestUtils.setField(deepParent, "id", 99L);
+
+    when(docCategoryRepository.existsByWorkSpaceIdAndParentIdAndName(1L, 99L, "第11层目录"))
+        .thenReturn(false);
+    when(docCategoryRepository.findById(99L)).thenReturn(Optional.of(deepParent));
+
+    assertThatThrownBy(() -> categoryService.createCategory(1L, 99L, "第11层目录", 1))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("最多支持 10 层");
   }
 }

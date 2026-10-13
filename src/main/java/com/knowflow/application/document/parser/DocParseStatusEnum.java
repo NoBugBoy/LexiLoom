@@ -2,9 +2,7 @@ package com.knowflow.application.document.parser;
 
 import lombok.Getter;
 
-/**
- * 文档解析状态枚举
- */
+/** 文档解析状态枚举 */
 @Getter
 public enum DocParseStatusEnum {
 

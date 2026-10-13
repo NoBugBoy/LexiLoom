@@ -3,7 +3,6 @@ package com.knowflow.application.document.controller;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -55,9 +54,7 @@ class DocumentSearchControllerTest {
     validator.afterPropertiesSet();
 
     mockMvc =
-        MockMvcBuilders.standaloneSetup(documentSearchController)
-            .setValidator(validator)
-            .build();
+        MockMvcBuilders.standaloneSetup(documentSearchController).setValidator(validator).build();
 
     SecurityHolder.setAuthentication(TEST_USER_ID);
   }
@@ -79,7 +76,7 @@ class DocumentSearchControllerTest {
             "聚合根与防腐层是 <em class=\"hl\">DDD</em> 的基石",
             "10",
             List.of("java", "ddd"),
-            "MANUAL",
+            "IMPORT",
             LocalDateTime.now());
     DocumentSearchResponse response = DocumentSearchResponse.of(1, 20, List.of(item));
 
@@ -115,9 +112,7 @@ class DocumentSearchControllerTest {
   @Test
   @DisplayName("GET /api/search - 缺少必填参数 workspaceId 返回 400")
   void testSearch_MissingWorkspaceId_Returns400() throws Exception {
-    mockMvc
-        .perform(get("/api/search").param("keyword", "DDD"))
-        .andExpect(status().isBadRequest());
+    mockMvc.perform(get("/api/search").param("keyword", "DDD")).andExpect(status().isBadRequest());
   }
 
   @Test
@@ -135,10 +130,7 @@ class DocumentSearchControllerTest {
         .thenReturn(List.of("微服务架构设计", "微服务拆分原则", "微服务治理实践"));
 
     mockMvc
-        .perform(
-            get("/api/search/suggest")
-                .param("workspaceId", "1")
-                .param("keyword", "微服务"))
+        .perform(get("/api/search/suggest").param("workspaceId", "1").param("keyword", "微服务"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$", hasSize(3)))
         .andExpect(jsonPath("$[0]", is("微服务架构设计")))
@@ -196,9 +188,7 @@ class DocumentSearchControllerTest {
   void testDeleteHistory_QueryParam_Success() throws Exception {
     mockMvc
         .perform(
-            delete("/api/search/history")
-                .param("workspaceId", "1")
-                .param("keyword", "C++ & CI/CD"))
+            delete("/api/search/history").param("workspaceId", "1").param("keyword", "C++ & CI/CD"))
         .andExpect(status().isOk());
 
     verify(searchHistoryService).delete(TEST_USER_ID, 1L, "C++ & CI/CD");

@@ -1,5 +1,6 @@
 package com.knowflow.application.config;
 
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -11,6 +12,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NullMarked;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -44,16 +47,25 @@ public class HttpLoggingFilter extends OncePerRequestFilter {
       HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
       throws ServletException, IOException {
 
-    // 包装 Request 和 Response 以支持重复读取 Payload
+    boolean isStreaming = isStreamingRequest(request);
+
+    // 包装 Request 以支持重复读取 Payload
     ContentCachingRequestWrapper requestWrapper =
         request instanceof ContentCachingRequestWrapper req
             ? req
             : new ContentCachingRequestWrapper(request, MAX_PAYLOAD_LENGTH);
 
+    // 重点：SSE / 异步流式响应严禁被 ContentCachingResponseWrapper 包裹！
+    // 否则 doFilter 会在流开始前返回，finally 里 copyBodyToResponse() 会提前提交空响应体，
+    // 后续 emitter 推送的数据只进内存缓存，前端永远收不到。
     ContentCachingResponseWrapper responseWrapper =
-        response instanceof ContentCachingResponseWrapper resp
-            ? resp
-            : new ContentCachingResponseWrapper(response);
+        isStreaming
+            ? null
+            : (response instanceof ContentCachingResponseWrapper resp
+                ? resp
+                : new ContentCachingResponseWrapper(response));
+
+    HttpServletResponse responseToUse = responseWrapper != null ? responseWrapper : response;
 
     long startTime = System.currentTimeMillis();
     String uri = request.getRequestURI();
@@ -63,37 +75,72 @@ public class HttpLoggingFilter extends OncePerRequestFilter {
     String clientIp = getClientIp(request);
 
     try {
-      filterChain.doFilter(requestWrapper, responseWrapper);
+      filterChain.doFilter(requestWrapper, responseToUse);
     } finally {
       long duration = System.currentTimeMillis() - startTime;
-      int status = responseWrapper.getStatus();
+      int status = responseToUse.getStatus();
 
       String requestBody =
           getPayload(requestWrapper.getContentAsByteArray(), request.getContentType());
-      String responseBody =
-          getPayload(responseWrapper.getContentAsByteArray(), responseWrapper.getContentType());
 
-      log.info(
-          """
+      if (responseWrapper == null || request.isAsyncStarted()) {
+        log.info(
+            """
 
-          ====================== [HTTP LOG] ======================
-          --> {} {} (IP: {})
-          Request Body : {}
-          <-- {} (Cost: {} ms)
-          Response Body: {}
-          =======================================================
-          """,
-          method,
-          fullUri,
-          clientIp,
-          StringUtils.hasText(requestBody) ? requestBody : "[EMPTY]",
-          status,
-          duration,
-          StringUtils.hasText(responseBody) ? responseBody : "[EMPTY]");
+            ====================== [HTTP LOG] ======================
+            --> {} {} (IP: {})
+            Request Body : {}
+            <-- {} (Cost: {} ms) [STREAMING/ASYNC]
+            Response Body: [STREAMING_RESPONSE_NOT_CACHED]
+            =======================================================
+            """,
+            method,
+            fullUri,
+            clientIp,
+            StringUtils.hasText(requestBody) ? requestBody : "[EMPTY]",
+            status,
+            duration);
+      } else {
+        String responseBody =
+            getPayload(responseWrapper.getContentAsByteArray(), responseWrapper.getContentType());
 
-      // 必须将缓存的响应体内容回写至真实 Response
-      responseWrapper.copyBodyToResponse();
+        log.info(
+            """
+
+            ====================== [HTTP LOG] ======================
+            --> {} {} (IP: {})
+            Request Body : {}
+            <-- {} (Cost: {} ms)
+            Response Body: {}
+            =======================================================
+            """,
+            method,
+            fullUri,
+            clientIp,
+            StringUtils.hasText(requestBody) ? requestBody : "[EMPTY]",
+            status,
+            duration,
+            StringUtils.hasText(responseBody) ? responseBody : "[EMPTY]");
+
+        // 仅在非异步/非流式的普通响应中，将缓存的响应体内容回写至真实 Response
+        responseWrapper.copyBodyToResponse();
+      }
     }
+  }
+
+  private boolean isStreamingRequest(HttpServletRequest request) {
+    if (request.getDispatcherType() == DispatcherType.ASYNC) {
+      return true;
+    }
+    String uri = request.getRequestURI();
+    if (uri != null && (uri.contains("/stream") || uri.endsWith(".sse"))) {
+      return true;
+    }
+    String accept = request.getHeader(HttpHeaders.ACCEPT);
+    return accept != null
+        && (accept.contains(MediaType.TEXT_EVENT_STREAM_VALUE)
+            || accept.contains("text/event-stream")
+            || accept.contains("application/x-ndjson"));
   }
 
   private String getPayload(byte[] buf, String contentType) {

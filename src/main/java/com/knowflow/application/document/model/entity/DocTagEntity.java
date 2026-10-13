@@ -12,9 +12,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/**
- * 文档标签实体
- */
+/** 文档标签实体 */
 @Entity
 @Table(
     name = "kf_doc_tag",

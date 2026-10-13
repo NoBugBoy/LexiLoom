@@ -1,6 +1,7 @@
 package com.knowflow.application.config;
 
 import com.knowflow.application.enums.AdminRoleEnum;
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import lombok.RequiredArgsConstructor;
@@ -45,7 +46,11 @@ public class SecurityConfig {
         // 3. 粗粒度 URL 白名单路由
         .authorizeHttpRequests(
             auth ->
-                auth.requestMatchers(
+                auth
+                    // 允许异步分派（如 SSE 流式响应 emitter.complete() 后的容器内部收尾调度）与错误分派
+                    .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR)
+                    .permitAll()
+                    .requestMatchers(
                         "/auth/**", // 登录、注册、短信验证码
                         "/admin/auth/**", // 后台管理认证
                         "/v3/api-docs/**", // OpenAPI / Swagger 文档

@@ -46,7 +46,7 @@ public class AdminRegisterUseCase implements UseCase<String, String>, CommandLin
 
   @Override
   public void run(String... args) throws Exception {
-    var email = "admin@shenwu.com";
+    var email = "admin@knowflow.com";
     if (adminQueryService.findAdminByEmail(email).isEmpty()) {
       String password = passwordEncoder.encode("123456");
       Long superAdminId = adminCommandService.saveAdminUser(email, password);

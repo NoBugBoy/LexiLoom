@@ -32,7 +32,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
-@DisplayName("DocumentSearchSyncListener 异步同步监听器测试")
 class DocumentSearchSyncListenerTest {
 
   @Mock private DocumentRepository documentRepository;
@@ -45,15 +44,15 @@ class DocumentSearchSyncListenerTest {
   @InjectMocks private DocumentSearchSyncListener listener;
 
   @Test
-  @DisplayName("PUBLISHED 事件：文档已发布时应组装原文件纯文本与标签并保存至 ES 索引")
-  void shouldIndexDocumentOnPublishedEvent() {
+  @DisplayName("APPROVED 事件：文档审批通过时应组装原文件纯文本与标签并保存至 ES 索引")
+  void shouldIndexDocumentOnApprovedEvent() {
     Long docId = 101L;
     Long workspaceId = 1L;
     DocumentEntity doc =
-        DocumentEntity.createManual(
+        DocumentEntity.createFromImport(
             workspaceId, 2L, "Spring 实战", "摘要", "# 正文内容", WorkSpaceAclEnum.PUBLIC);
     doc.setId(docId);
-    doc.transitionTo(DocumentStateEnum.PUBLISHED);
+    doc.transitionTo(DocumentStateEnum.APPROVED);
 
     DocSourceFileEntity sourceFile =
         DocSourceFileEntity.create(
@@ -66,7 +65,7 @@ class DocumentSearchSyncListenerTest {
             "hash_123456",
             "storage/path/spring.docx",
             "http://rustfs/spring.docx");
-    sourceFile.markParseSuccess("从 docx 提取的纯文本", DocParserEngineEnum.MARKITDOWN);
+    sourceFile.markParseSuccess("从 docx 提取的纯文本", DocParserEngineEnum.DEEPDOC);
 
     DocTagRelationEntity relation = DocTagRelationEntity.create(docId, 301L);
     DocTagEntity tag = DocTagEntity.create(workspaceId, "后端", "#FFFFFF");
@@ -83,8 +82,8 @@ class DocumentSearchSyncListenerTest {
     DocumentStateTransitionEvent event =
         new DocumentStateTransitionEvent(
             docId,
-            DocumentStateEnum.PENDING_REVIEW,
-            DocumentStateEnum.PUBLISHED,
+            DocumentStateEnum.PENDING_APPROVAL,
+            DocumentStateEnum.APPROVED,
             DocumentEventEnum.APPROVE,
             10L,
             "通过审批",
@@ -96,17 +95,17 @@ class DocumentSearchSyncListenerTest {
   }
 
   @Test
-  @DisplayName("ARCHIVED 事件：文档归档时应从 ES 索引中删除")
-  void shouldRemoveFromIndexOnArchivedEvent() {
+  @DisplayName("REJECTED 事件：文档审批驳回时应从 ES 索引中安全移除")
+  void shouldRemoveFromIndexOnRejectedEvent() {
     Long docId = 102L;
     DocumentStateTransitionEvent event =
         new DocumentStateTransitionEvent(
             docId,
-            DocumentStateEnum.PUBLISHED,
-            DocumentStateEnum.ARCHIVED,
-            DocumentEventEnum.ARCHIVE,
+            DocumentStateEnum.APPROVED,
+            DocumentStateEnum.REJECTED,
+            DocumentEventEnum.REJECT,
             10L,
-            "归档封存",
+            "审批驳回",
             LocalDateTime.now());
 
     listener.onDocumentStateTransition(event);
@@ -116,17 +115,17 @@ class DocumentSearchSyncListenerTest {
   }
 
   @Test
-  @DisplayName("DRAFT 事件：文档退回草稿时应从 ES 索引中删除")
-  void shouldRemoveFromIndexOnDraftEvent() {
+  @DisplayName("PENDING_APPROVAL 事件：文档重回待审核时应从 ES 索引中删除")
+  void shouldRemoveFromIndexOnPendingApprovalEvent() {
     Long docId = 103L;
     DocumentStateTransitionEvent event =
         new DocumentStateTransitionEvent(
             docId,
-            DocumentStateEnum.PUBLISHED,
-            DocumentStateEnum.DRAFT,
-            DocumentEventEnum.REVERT_DRAFT,
+            DocumentStateEnum.APPROVED,
+            DocumentStateEnum.PENDING_APPROVAL,
+            DocumentEventEnum.SUBMIT,
             10L,
-            "退回草稿修改",
+            "重新提交审核",
             LocalDateTime.now());
 
     listener.onDocumentStateTransition(event);
@@ -136,42 +135,7 @@ class DocumentSearchSyncListenerTest {
   }
 
   @Test
-  @DisplayName("PENDING_REVIEW / REJECTED 事件：不进行 ES 索引写入或删除")
-  void shouldIgnoreOtherStateEvents() {
-    Long docId = 104L;
-    DocumentStateTransitionEvent pendingEvent =
-        new DocumentStateTransitionEvent(
-            docId,
-            DocumentStateEnum.DRAFT,
-            DocumentStateEnum.PENDING_REVIEW,
-            DocumentEventEnum.SUBMIT,
-            10L,
-            "提交审阅",
-            LocalDateTime.now());
-
-    listener.onDocumentStateTransition(pendingEvent);
-
-    verify(docSearchRepository, never()).save(any());
-    verify(docSearchRepository, never()).deleteById(any());
-
-    DocumentStateTransitionEvent rejectedEvent =
-        new DocumentStateTransitionEvent(
-            docId,
-            DocumentStateEnum.PENDING_REVIEW,
-            DocumentStateEnum.REJECTED,
-            DocumentEventEnum.REJECT,
-            10L,
-            "驳回",
-            LocalDateTime.now());
-
-    listener.onDocumentStateTransition(rejectedEvent);
-
-    verify(docSearchRepository, never()).save(any());
-    verify(docSearchRepository, never()).deleteById(any());
-  }
-
-  @Test
-  @DisplayName("PUBLISHED 事件但文档未在数据库中找到：不应触发 ES 写入")
+  @DisplayName("APPROVED 事件但文档未在数据库中找到：不应触发 ES 写入")
   void shouldNotIndexWhenDocNotFound() {
     Long docId = 999L;
     when(documentRepository.findById(docId)).thenReturn(Optional.empty());
@@ -179,8 +143,8 @@ class DocumentSearchSyncListenerTest {
     DocumentStateTransitionEvent event =
         new DocumentStateTransitionEvent(
             docId,
-            DocumentStateEnum.PENDING_REVIEW,
-            DocumentStateEnum.PUBLISHED,
+            DocumentStateEnum.PENDING_APPROVAL,
+            DocumentStateEnum.APPROVED,
             DocumentEventEnum.APPROVE,
             10L,
             "通过审批",
@@ -192,20 +156,20 @@ class DocumentSearchSyncListenerTest {
   }
 
   @Test
-  @DisplayName("PUBLISHED 事件但文档状态并非 PUBLISHED（并发不一致保护）：不应触发 ES 写入")
-  void shouldNotIndexWhenDocStatusIsNotPublished() {
+  @DisplayName("APPROVED 事件但文档状态并非 APPROVED（并发不一致保护）：不应触发 ES 写入")
+  void shouldNotIndexWhenDocStatusIsNotApproved() {
     Long docId = 105L;
     DocumentEntity doc =
-        DocumentEntity.createManual(1L, 0L, "测试", "摘要", "内容", WorkSpaceAclEnum.PUBLIC);
+        DocumentEntity.createFromImport(1L, 0L, "测试", "摘要", "内容", WorkSpaceAclEnum.PUBLIC);
     doc.setId(docId);
-    // 状态仍为 DRAFT
+    // 状态仍为 PENDING_APPROVAL
     when(documentRepository.findById(docId)).thenReturn(Optional.of(doc));
 
     DocumentStateTransitionEvent event =
         new DocumentStateTransitionEvent(
             docId,
-            DocumentStateEnum.PENDING_REVIEW,
-            DocumentStateEnum.PUBLISHED,
+            DocumentStateEnum.PENDING_APPROVAL,
+            DocumentStateEnum.APPROVED,
             DocumentEventEnum.APPROVE,
             10L,
             "通过审批",
@@ -221,9 +185,9 @@ class DocumentSearchSyncListenerTest {
   void shouldHandleEsSaveExceptionGracefully() {
     Long docId = 106L;
     DocumentEntity doc =
-        DocumentEntity.createManual(1L, 0L, "标题", "摘要", "内容", WorkSpaceAclEnum.PUBLIC);
+        DocumentEntity.createFromImport(1L, 0L, "标题", "摘要", "内容", WorkSpaceAclEnum.PUBLIC);
     doc.setId(docId);
-    doc.transitionTo(DocumentStateEnum.PUBLISHED);
+    doc.transitionTo(DocumentStateEnum.APPROVED);
 
     when(documentRepository.findById(docId)).thenReturn(Optional.of(doc));
     when(docSourceFileRepository.findByDocumentId(docId)).thenReturn(Optional.empty());
@@ -235,8 +199,8 @@ class DocumentSearchSyncListenerTest {
     DocumentStateTransitionEvent event =
         new DocumentStateTransitionEvent(
             docId,
-            DocumentStateEnum.PENDING_REVIEW,
-            DocumentStateEnum.PUBLISHED,
+            DocumentStateEnum.PENDING_APPROVAL,
+            DocumentStateEnum.APPROVED,
             DocumentEventEnum.APPROVE,
             10L,
             "通过审批",
@@ -259,5 +223,29 @@ class DocumentSearchSyncListenerTest {
 
     verify(docSearchRepository).deleteById("107");
     verify(docSearchRepository, never()).save(any());
+  }
+
+  @Test
+  @DisplayName("DocumentUpdatedEvent 事件：审批通过文档内容更新时应刷新 ES 索引")
+  void shouldRefreshIndexOnDocumentUpdatedEvent() {
+    Long docId = 108L;
+    DocumentEntity doc =
+        DocumentEntity.createFromImport(1L, 0L, "更新后的标题", "摘要", "新正文", WorkSpaceAclEnum.PUBLIC);
+    doc.setId(docId);
+    doc.transitionTo(DocumentStateEnum.APPROVED);
+
+    when(documentRepository.findById(docId)).thenReturn(Optional.of(doc));
+    when(docSourceFileRepository.findByDocumentId(docId)).thenReturn(Optional.empty());
+    when(docTagRelationRepository.findByDocumentId(docId)).thenReturn(List.of());
+    when(docSearchMapper.toSearchDoc(eq(doc), any(), any()))
+        .thenReturn(DocSearchDocument.builder().id("108").build());
+
+    com.knowflow.application.document.model.event.DocumentUpdatedEvent event =
+        new com.knowflow.application.document.model.event.DocumentUpdatedEvent(docId, 1L, 10L);
+
+    listener.onDocumentUpdated(event);
+
+    verify(docSearchRepository).save(any());
+    verify(docSearchRepository, never()).deleteById(any());
   }
 }
