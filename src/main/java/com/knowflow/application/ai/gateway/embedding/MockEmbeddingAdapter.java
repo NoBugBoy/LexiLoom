@@ -1,5 +1,6 @@
 package com.knowflow.application.ai.gateway.embedding;
 
+import com.knowflow.application.ai.config.AiProperties;
 import com.knowflow.application.ai.enums.EmbeddingProviderEnum;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -9,23 +10,44 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
  * 测试与断网降级 Mock 向量化适配器
  *
- * <p>基于输入文本内容 SHA-256 哈希值作为随机种子，生成确定性的 L2 归一化单位向量 (默认 1536 维)。 确保相同文本生成一致向量，无需任何外部网络或显卡依赖。
+ * <p>基于输入文本内容 SHA-256 哈希值作为随机种子，生成确定性的 L2 归一化单位向量。 确保相同文本生成一致向量，无需任何外部网络或显卡依赖。
  */
 @Slf4j
 @Component
 public class MockEmbeddingAdapter implements EmbeddingGateway {
 
-  private static final int DEFAULT_DIMENSION = 1536;
+  private static final int DEFAULT_FALLBACK_DIMENSION = 1536;
+  private final int dimension;
+
+  public MockEmbeddingAdapter() {
+    this(DEFAULT_FALLBACK_DIMENSION);
+  }
+
+  public MockEmbeddingAdapter(int dimension) {
+    this.dimension = dimension > 0 ? dimension : DEFAULT_FALLBACK_DIMENSION;
+  }
+
+  @Autowired
+  public MockEmbeddingAdapter(@Autowired(required = false) AiProperties aiProperties) {
+    if (aiProperties != null
+        && aiProperties.getEmbedding() != null
+        && aiProperties.getEmbedding().getDimension() > 0) {
+      this.dimension = aiProperties.getEmbedding().getDimension();
+    } else {
+      this.dimension = DEFAULT_FALLBACK_DIMENSION;
+    }
+  }
 
   @Override
   public float[] embed(String text) {
     if (text == null || text.isBlank()) {
-      return new float[DEFAULT_DIMENSION];
+      return new float[this.dimension];
     }
 
     long start = System.currentTimeMillis();
@@ -36,9 +58,9 @@ public class MockEmbeddingAdapter implements EmbeddingGateway {
     long seed = ByteBuffer.wrap(hash, 0, 8).getLong();
     Random random = new Random(seed);
 
-    float[] vector = new float[DEFAULT_DIMENSION];
+    float[] vector = new float[this.dimension];
     double sumSquares = 0.0;
-    for (int i = 0; i < DEFAULT_DIMENSION; i++) {
+    for (int i = 0; i < this.dimension; i++) {
       float val = (float) (random.nextGaussian());
       vector[i] = val;
       sumSquares += val * val;
@@ -47,7 +69,7 @@ public class MockEmbeddingAdapter implements EmbeddingGateway {
     // L2 范数归一化，使其成为单位向量 (余弦相似度 = 点积)
     double norm = Math.sqrt(sumSquares);
     if (norm > 0) {
-      for (int i = 0; i < DEFAULT_DIMENSION; i++) {
+      for (int i = 0; i < this.dimension; i++) {
         vector[i] = (float) (vector[i] / norm);
       }
     }
@@ -55,7 +77,7 @@ public class MockEmbeddingAdapter implements EmbeddingGateway {
     log.info(
         "【MockEmbedding】模拟向量生成完成: 耗时={}ms, 维度={} (Mock 环境无实际 Token 消耗)",
         latency,
-        DEFAULT_DIMENSION);
+        this.dimension);
     return vector;
   }
 
@@ -74,7 +96,7 @@ public class MockEmbeddingAdapter implements EmbeddingGateway {
 
   @Override
   public int getDimension() {
-    return DEFAULT_DIMENSION;
+    return this.dimension;
   }
 
   @Override

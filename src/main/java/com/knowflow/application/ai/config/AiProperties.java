@@ -99,8 +99,8 @@ public class AiProperties {
     /** 重排模型名称 (如 gte-rerank, bge-reranker-v2-m3) */
     private String model = "gte-rerank";
 
-    /** 重排截取 Top-K 数量 */
-    private int topK = 5;
+    /** 重排截取 Top-K 数量 (默认 12) */
+    private int topK = 12;
 
     /** 最小相关度过滤阈值 (0.0 ~ 1.0) */
     private double minScore = 0.60;
@@ -127,11 +127,22 @@ public class AiProperties {
   @Getter
   @Setter
   public static class RagProperties {
-    /** 初始检索召回切片数 */
-    private int topK = 5;
+    /** 初始检索召回切片数 (默认 12) */
+    private int topK = 12;
 
-    /** 候选切片最小相关度过滤阈值 */
-    private double similarityThreshold = 0.60;
+    /**
+     * 候选切片最小语义相似度过滤阈值 (真实 Cosine 相似度，非重排模拟分)
+     *
+     * <p>默认 0.30 对齐 1024 维中文向量模型的真实相似度分布：相关切片通常落在 0.35~0.7， 无关切片通常低于 0.25。阈值过高会大量误杀真实相关内容。
+     */
+    private double similarityThreshold = 0.30;
+
+    /**
+     * 单篇文档在同一批检索结果中允许出现的最大切片数量 (文档级多样性保护)
+     *
+     * <p>防止关键词在单篇文档内高频重复导致同一文档切片刷屏、挤占其他文档的召回位。 {@code <= 0} 表示不限制。
+     */
+    private int maxChunksPerDocument = 8;
 
     /** 多轮对话上下文保留轮数 */
     private int historyTurns = 3;

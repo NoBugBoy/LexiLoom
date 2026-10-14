@@ -88,9 +88,6 @@ public class DocAccessControlService {
       return false;
     }
 
-    // 先校验文档自身生命周期状态是否允许编辑
-    doc.assertCanEdit();
-
     WorkSpaceAclEnum visibility = doc.getVisibility();
     if (visibility == null) {
       visibility = WorkSpaceAclEnum.INTERNAL;

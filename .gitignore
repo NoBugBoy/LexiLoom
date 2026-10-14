@@ -16,6 +16,13 @@ target/
 .sts4-cache
 
 ### IntelliJ IDEA ###
+*.txt
+*.docx
+*.zip
+*.pickle
+*.model
+*.tab
+*.lock
 .idea
 *.iws
 *.iml
@@ -41,3 +48,5 @@ tsp-output/
 ### Python ###
 __pycache__/
 *.pyc
+/model_cache/
+/rustfs-data/

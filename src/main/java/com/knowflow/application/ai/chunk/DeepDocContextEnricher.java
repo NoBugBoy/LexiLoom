@@ -6,7 +6,6 @@ import com.knowflow.application.document.api.dto.DocSourceFileDTO;
 import com.knowflow.application.document.api.dto.DocumentDTO;
 import com.knowflow.application.document.parser.DocumentContentCleaner;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -35,9 +34,9 @@ public class DeepDocContextEnricher {
   private static final Pattern MARKDOWN_HEADER_PATTERN = Pattern.compile("^(#{1,6})\\s+(.+)$");
   private static final Pattern HTML_HEADER_PATTERN =
       Pattern.compile("^<h([1-6])\\b[^>]*>(.*?)</h\\1>$", Pattern.CASE_INSENSITIVE);
-  // 匹配多级数字点编号标题 (如 3. 总体方案设计, 3.1 总体结构, 3.2.1 模块划分, 2.3 条件与限制)
+  // 匹配多级数字点编号标题 (如 3. 总体方案设计, 3.1 总体结构, 3.2.1 模块划分, 2.3 条件与限制, 以及行内紧跟正文的标题)
   private static final Pattern NUMBERED_HEADER_PATTERN =
-      Pattern.compile("^(\\d+(?:\\.\\d+){0,4})[、.\\s]+([^。！？；\\n]+)$");
+      Pattern.compile("^(\\d+(?:\\.\\d+){0,4})[、.\\s]+(.+)$");
   // 匹配中文章节大纲编号 (如 第一章 总体方案设计, 一、总体结构)
   private static final Pattern CJK_CHAPTER_PATTERN =
       Pattern.compile("^(?:第[一二三四五六七八九十0-9]+[章节篇部分条]|[一二三四五六七八九十]+[、.])[\\s]*([^。！？；\\n]+)$");
@@ -57,7 +56,10 @@ public class DeepDocContextEnricher {
       Pattern.compile("([\\u4e00-\\u9fa5])([ \\t　]+)([，。！？；：、“”‘’（）《》【】])");
   private static final Pattern CJK_PUNCT_SPACES_2 =
       Pattern.compile("([，。！？；：、“”‘’（）《》【】])([ \\t　]+)([\\u4e00-\\u9fa5])");
-
+  private static final Pattern BLOCK_TAG_START_PATTERN =
+      Pattern.compile("(?<!\\n\\n)\\s*(<(?:table|figure|pre)[\\s>])");
+  private static final Pattern BLOCK_TAG_END_PATTERN =
+      Pattern.compile("(</(?:table|figure|pre)>)\\s*(?!\\n\\n)");
   private static final int DEFAULT_TARGET_CHUNK_TOKENS = 512;
   private static final int DEFAULT_OVERLAP_TOKENS = 64;
   private static final int DEFAULT_MAX_TOKEN_LIMIT = 2000;
@@ -175,10 +177,9 @@ public class DeepDocContextEnricher {
     return List.copyOf(results);
   }
 
-  /**
-   * 兼容保留旧版重载签名：基于原始 DocTextChunk 列表富化 (用于历史单测和向后兼容)
-   */
-  public List<EnrichedDocChunk> enrich(String title, List<com.knowflow.application.document.parser.DocTextChunk> rawChunks) {
+  /** 兼容保留旧版重载签名：基于原始 DocTextChunk 列表富化 (用于历史单测和向后兼容) */
+  public List<EnrichedDocChunk> enrich(
+      String title, List<com.knowflow.application.document.parser.DocTextChunk> rawChunks) {
     if (rawChunks == null || rawChunks.isEmpty()) {
       return List.of();
     }
@@ -212,66 +213,238 @@ public class DeepDocContextEnricher {
     cleaned = CJK_PUNCT_SPACES_1.matcher(cleaned).replaceAll("$1$3");
     cleaned = CJK_PUNCT_SPACES_2.matcher(cleaned).replaceAll("$1$3");
 
+    // 修复 OCR 将章节编号与标题跨行断开的缺陷 (如 "6.1.4\n数据库设计" 或 "数据库设计\n6.1.4")
+    cleaned =
+        Pattern.compile("(?m)^(\\d+(?:\\.\\d+)+)\\s*\\n+\\s*([^\\d\\n#<\\|\\s][^\\n]{1,60})$")
+            .matcher(cleaned)
+            .replaceAll("$1 $2");
+    cleaned =
+        Pattern.compile("(?m)^([^\\d\\n#<\\|\\s][^\\n]{1,60})\\s*\\n+\\s*(\\d+(?:\\.\\d+)+)$")
+            .matcher(cleaned)
+            .replaceAll("$2 $1");
+    // 修复数字编号内部格式断裂 (如 "6.1. 4")
+    cleaned =
+        Pattern.compile("(\\d+)\\s*\\.\\s*(\\d+)")
+            .matcher(cleaned)
+            .replaceAll("$1.$2");
+
+    // 确保 HTML 块级标签 (table, figure, pre) 与周围段落拥有双换行间隔，以便被精准切分为独立结构块
+    cleaned = BLOCK_TAG_START_PATTERN.matcher(cleaned).replaceAll("\n\n$1");
+    cleaned = BLOCK_TAG_END_PATTERN.matcher(cleaned).replaceAll("$1\n\n");
+
     return cleaned.trim();
   }
 
-  /** 识别文本行是否为标题，返回对应的大纲层级 (1~6) 与标题文本 */
+  /** 识别文本行是否为标题 (向后兼容封装) */
   private HeadingInfo detectHeading(String line) {
+    return detectHeadingOrInline(line);
+  }
+
+  /**
+   * 智能标题与行内标题探测 (Inline Heading & Outline Detection)
+   *
+   * <p>支持标准 Markdown/HTML/点编号标题，并攻克 DeepDoc OCR 输出将标题与正文首句挤在同一行的缺陷，
+   * 自动将前置大纲切出并保留后续正文，同时严防正文长数字列表项污染一级大纲。
+   */
+  private HeadingInfo detectHeadingOrInline(String line) {
     if (StrUtil.isBlank(line)) {
       return null;
     }
     String trimmed = line.trim();
-    // 标题行通常较短，且绝不以句末标点结尾
-    if (trimmed.length() > 60
-        || trimmed.endsWith("。")
-        || trimmed.endsWith("；")
-        || trimmed.endsWith(";")
-        || trimmed.endsWith("!")
-        || trimmed.endsWith("？")) {
-      return null;
-    }
 
     // 1. Markdown 标题: # 总体方案设计
     Matcher mdMatcher = MARKDOWN_HEADER_PATTERN.matcher(trimmed);
     if (mdMatcher.matches()) {
       int level = Math.min(6, mdMatcher.group(1).length());
-      return new HeadingInfo(level, mdMatcher.group(2).trim());
+      return new HeadingInfo(level, mdMatcher.group(2).trim(), null);
     }
 
     // 2. HTML 标题: <h1>总体方案设计</h1>
     Matcher htmlMatcher = HTML_HEADER_PATTERN.matcher(trimmed);
     if (htmlMatcher.matches()) {
       int level = Math.min(6, Integer.parseInt(htmlMatcher.group(1)));
-      return new HeadingInfo(level, htmlMatcher.group(2).trim());
+      return new HeadingInfo(level, htmlMatcher.group(2).trim(), null);
     }
 
-    // 3. 数字编号多级标题: 3. 总体方案设计, 3.1 系统总体结构, 3.2.1 模块划分, 2.3 条件与限制
-    Matcher numMatcher = NUMBERED_HEADER_PATTERN.matcher(trimmed);
-    if (numMatcher.matches()) {
-      String numStr = numMatcher.group(1);
-      int dots = 0;
-      for (int i = 0; i < numStr.length(); i++) {
-        if (numStr.charAt(i) == '.') {
-          dots++;
-        }
-      }
-      int level = Math.min(6, dots + 1);
-      return new HeadingInfo(level, trimmed);
-    }
-
-    // 4. 中文章节大纲编号: 第一章 总体方案设计, 一、总体结构
+    // 3. 中文章节大纲编号: 第一章 总体方案设计, 一、总体结构 (中文大写数字，排除 1、等阿拉伯数字列表)
     Matcher cjkChapterMatcher = CJK_CHAPTER_PATTERN.matcher(trimmed);
     if (cjkChapterMatcher.matches()) {
-      return new HeadingInfo(1, trimmed);
+      return new HeadingInfo(1, trimmed, null);
     }
 
-    // 5. 中文小节编号: （一）模块划分, (1) 模块划分
+    // 4. 中文小节编号: （一）模块划分, (1) 模块划分
     Matcher cjkSubMatcher = CJK_SUBCHAPTER_PATTERN.matcher(trimmed);
     if (cjkSubMatcher.matches()) {
-      return new HeadingInfo(2, trimmed);
+      return new HeadingInfo(2, trimmed, null);
+    }
+
+    // 5. 数字编号多级标题及行内合并标题探测
+    return tryExtractNumberedHeading(trimmed);
+  }
+
+  /** 探测多级数字点编号标题 (如 3. 总体方案设计, 6.1 数据库设计, 6.1.4 物理设计) 及行内合并场景 */
+  private HeadingInfo tryExtractNumberedHeading(String trimmed) {
+    // 0. 针对独立纯数字编号行（如 "6.1.4"），提取为对应层级
+    if (trimmed.matches("^\\d+(?:\\.\\d+)+[、.]?$")) {
+      String cleanNum = trimmed.replaceAll("[、.]+$", "");
+      int dotCount = StrUtil.count(cleanNum, '.');
+      int level = Math.min(6, dotCount + 1);
+      return new HeadingInfo(level, cleanNum, null);
+    }
+
+    Matcher numMatcher = NUMBERED_HEADER_PATTERN.matcher(trimmed);
+    if (!numMatcher.matches()) {
+      return null;
+    }
+    String numStr = numMatcher.group(1);
+    int dots = 0;
+    for (int i = 0; i < numStr.length(); i++) {
+      if (numStr.charAt(i) == '.') {
+        dots++;
+      }
+    }
+    String rest = numMatcher.group(2).trim();
+
+    if (rest.matches("^\\d+$")) {
+      String fullNum = numStr + "." + rest;
+      int dotCount = StrUtil.count(fullNum, '.');
+      int level = Math.min(6, dotCount + 1);
+      return new HeadingInfo(level, fullNum, null);
+    }
+
+    // 1. 若整行本身就是短小完整的小节标题 (<= 40 字符，且不以句末标点结尾)
+    if (rest.length() <= 40 && !endsWithSentencePunctuation(rest)) {
+      int level = Math.min(6, dots + 1);
+      if (dots == 0) {
+        if (isValidLevel1Heading(rest)) {
+          return new HeadingInfo(1, numStr + ". " + rest, null);
+        }
+        return null; // dots == 0 的长步骤列表项过滤，不作为大纲
+      }
+      return new HeadingInfo(level, numStr + " " + rest, null);
+    }
+
+    // 2. 超出短行或含有句末标点的行：基于标点符号或空白符进行通用行内标题拆分
+    // (例如: "6.1 数据库设计：关系数据库使用..." 或 "6.1 数据库设计。本系统采用..." 或 "6.1 数据库设计\t本系统...")
+    int sepIdx = findFirstHeadingSeparator(rest);
+    if (sepIdx > 0 && sepIdx <= 30) {
+      String titlePart = rest.substring(0, sepIdx).trim();
+      String bodyPart = rest.substring(sepIdx + 1).trim();
+      if (bodyPart.startsWith("：") || bodyPart.startsWith(":") || bodyPart.startsWith("。")) {
+        bodyPart = bodyPart.substring(1).trim();
+      }
+      int level = Math.min(6, dots + 1);
+      if (dots == 0 && !isValidLevel1Heading(titlePart)) {
+        return null;
+      }
+      String fullTitle = (dots == 0) ? (numStr + ". " + titlePart) : (numStr + " " + titlePart);
+      return new HeadingInfo(level, fullTitle, bodyPart);
     }
 
     return null;
+  }
+
+  private int findFirstHeadingSeparator(String text) {
+    if (StrUtil.isBlank(text)) {
+      return -1;
+    }
+    for (int i = 0; i < Math.min(text.length(), 30); i++) {
+      char c = text.charAt(i);
+      if (c == '：' || c == ':' || c == '。' || c == '；' || c == ';' || c == '\t') {
+        return i;
+      }
+    }
+    int dblSpace = text.indexOf("  ");
+    if (dblSpace > 0 && dblSpace <= 30) {
+      return dblSpace;
+    }
+    int space = text.indexOf(' ');
+    if (space >= 2 && space <= 25) {
+      String remaining = text.substring(space + 1).trim();
+      if (endsWithSentencePunctuation(remaining)) {
+        return space;
+      }
+    }
+    return -1;
+  }
+
+  private boolean isValidLevel1Heading(String title) {
+    if (StrUtil.isBlank(title) || title.length() > 25) {
+      return false;
+    }
+    // 包含句子级标点的一律不是一级章节大纲
+    if (title.contains("，")
+        || title.contains(",")
+        || title.contains("：")
+        || title.contains(":")
+        || title.contains("；")
+        || title.contains(";")
+        || title.contains("“")
+        || title.contains("”")
+        || title.contains("\"")) {
+      return false;
+    }
+    // 排除正文长操作/描述谓词
+    List<String> actionPrefixes =
+        List.of(
+            "根据", "支持", "通过", "调用", "点击", "修改", "删除", "录入", "展示", "获取", "新建", "如果", "当", "需", "允许",
+            "向");
+    for (String act : actionPrefixes) {
+      if (title.startsWith(act) || (title.length() >= 4 && title.substring(0, 4).contains(act))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private boolean endsWithSentencePunctuation(String text) {
+    return text.endsWith("。")
+        || text.endsWith("；")
+        || text.endsWith(";")
+        || text.endsWith("!")
+        || text.endsWith("！")
+        || text.endsWith("？")
+        || text.endsWith("?");
+  }
+
+  /**
+   * 通用前置引导与说明段落向上吸纳 (Generic Lead-in Absorption)
+   *
+   * <p>在各类文档（技术规范、API 文档、系统设计、财务报表等）中，表格或图表上方往往紧贴简短的引导短语、
+   * 说明行或前置描述（如字段说明、前置条件、标题引言等）。
+   * 若将这些不足以独立成篇的短文本孤立切块，会产生无实际检索价值的超短碎片块，且割裂表格的上下文描述。
+   * 因此，在纯通用层面，若当前结构块紧邻同章节下的简短纯文本段落（累计字符数不超过阈值），自动向上吸纳合并至表格头部，
+   * 彻底杜绝任何业务关键字硬编码，保障图表与说明语义完整性。
+   */
+  private String extractPrecedingLeadIn(List<LogicalSection> sections) {
+    if (sections == null || sections.isEmpty()) {
+      return "";
+    }
+
+    // 最多向前吸纳累计不超过 300 字符的简短前置引导段落
+    int maxLeadInChars = 300;
+    List<String> absorbedTexts = new ArrayList<>();
+    int accumulatedLength = 0;
+
+    while (!sections.isEmpty()) {
+      LogicalSection prev = sections.get(sections.size() - 1);
+      // 仅吸纳纯文本段落
+      if (!"text".equals(prev.type()) || StrUtil.isBlank(prev.content())) {
+        break;
+      }
+
+      String prevContent = prev.content().trim();
+      // 若该段落本身篇幅较长（超过阈值），说明属于独立长篇正文，不应整体吸纳
+      if (accumulatedLength + prevContent.length() > maxLeadInChars) {
+        break;
+      }
+
+      absorbedTexts.add(0, prevContent);
+      accumulatedLength += prevContent.length();
+      sections.remove(sections.size() - 1);
+    }
+
+    return String.join("\n\n", absorbedTexts).trim();
   }
 
   /** 将 Markdown 解析为结构化的逻辑段落片段并记录章节层级 */
@@ -294,7 +467,18 @@ public class DeepDocContextEnricher {
       // 特殊结构块（表格、插图卡片、代码块）
       String type = detectSectionType(trimmed);
       if (!"text".equals(type)) {
-        sections.add(new LogicalSection(trimmed, resolveHeaderPath(activeHeaders), type, 0));
+        String effectiveHeaderPath = resolveHeaderPath(activeHeaders);
+
+        if ("table".equals(type)) {
+          // 通用向前吸纳紧邻的前置简短引导/说明段落 (Generic Lead-in Absorption)
+          String leadInText = extractPrecedingLeadIn(sections);
+          String tableContent =
+              StrUtil.isNotBlank(leadInText) ? (leadInText + "\n\n" + trimmed) : trimmed;
+          sections.add(new LogicalSection(tableContent, effectiveHeaderPath, "table", 0));
+          continue;
+        }
+
+        sections.add(new LogicalSection(trimmed, effectiveHeaderPath, type, 0));
         continue;
       }
 
@@ -304,7 +488,7 @@ public class DeepDocContextEnricher {
       int currentSectionHeadingLevel = 0;
 
       for (String line : lines) {
-        HeadingInfo heading = detectHeading(line);
+        HeadingInfo heading = detectHeadingOrInline(line);
         if (heading != null) {
           if (!paragraphBuffer.isEmpty()) {
             sections.add(
@@ -320,11 +504,13 @@ public class DeepDocContextEnricher {
             activeHeaders[i] = null;
           }
           currentSectionHeadingLevel = heading.level();
-          // 若为纯 Markdown 标题 (# 标题)，只作为章节大纲栈更新，不强行注入正文正文
-          if (line.startsWith("#")) {
-            continue;
+
+          // 若行内拆分出剩余正文，装入段落缓冲；否则若是纯 Markdown 标题则不重复注入正文
+          if (StrUtil.isNotBlank(heading.remainingContent())) {
+            paragraphBuffer.append(heading.remainingContent()).append("\n");
+          } else if (!line.startsWith("#")) {
+            paragraphBuffer.append(line).append("\n");
           }
-          paragraphBuffer.append(line).append("\n");
         } else {
           paragraphBuffer.append(line).append("\n");
         }
@@ -346,12 +532,9 @@ public class DeepDocContextEnricher {
   /**
    * 语义边界感知贪心装箱分块与真正滑动重叠堆叠 (Hierarchical Semantic Packing with True Overlap)
    *
-   * <p>规则：
-   * 1. 遇到重大独立章节切换 (Level 1 或 Level 2 标题)，若当前已有实质内容，封包当前 Chunk，保持章节独立性；
-   * 2. 三级及以下子小节 (如 3.2.1, 3.2.2) 贪心聚合在同一个 Chunk 中，保持上下文连贯；
-   * 3. 若放入下一小节会导致该小节被腰斩截断，提前封包当前 Chunk，将下一小节完整放到新 Chunk 开头；
-   * 4. 封包后提取上一 Chunk 末尾完整句子作为 Overlap 注入新 Chunk 开头，确保切片首尾呼应；
-   * 5. 若单段本身极端超长，按标点符号断句并进行滑动重叠切分。
+   * <p>规则： 1. 遇到重大独立章节切换 (Level 1 或 Level 2 标题)，若当前已有实质内容，封包当前 Chunk，保持章节独立性； 2. 三级及以下子小节 (如 3.2.1,
+   * 3.2.2) 贪心聚合在同一个 Chunk 中，保持上下文连贯； 3. 若放入下一小节会导致该小节被腰斩截断，提前封包当前 Chunk，将下一小节完整放到新 Chunk 开头； 4.
+   * 封包后提取上一 Chunk 末尾完整句子作为 Overlap 注入新 Chunk 开头，确保切片首尾呼应； 5. 若单段本身极端超长，按标点符号断句并进行滑动重叠切分。
    */
   private List<RawChunkItem> chunkAndOverlap(
       List<LogicalSection> sections, int targetTokens, int overlapTokens, int maxLimit) {
@@ -369,12 +552,21 @@ public class DeepDocContextEnricher {
           lastOverlapTail = extractTailOverlap(flushedContent, overlapTokens);
           currentBuffer.setLength(0);
         }
-        if ("table".equals(sec.type())
-            && sec.content().startsWith("<table")
-            && estimateTokens(sec.content()) > targetTokens) {
-          chunkLargeHtmlTable(items, sec.content(), sec.headerPath(), targetTokens, maxLimit);
+        if ("table".equals(sec.type())) {
+          if (sec.content().contains("<table") && estimateTokens(sec.content()) > targetTokens) {
+            chunkLargeHtmlTable(items, sec.content(), sec.headerPath(), targetTokens, maxLimit);
+          } else {
+            // 表格块保留完整结构，严禁截断导致 HTML 语法损坏与表格字段丢失
+            items.add(new RawChunkItem(sec.content(), sec.headerPath(), "table", null, null));
+          }
         } else {
-          items.add(new RawChunkItem(truncateToLimit(sec.content(), maxLimit), sec.headerPath(), sec.type(), null, null));
+          items.add(
+              new RawChunkItem(
+                  truncateToLimit(sec.content(), maxLimit),
+                  sec.headerPath(),
+                  sec.type(),
+                  null,
+                  null));
         }
         lastOverlapTail = "";
         continue;
@@ -390,7 +582,8 @@ public class DeepDocContextEnricher {
           currentBuffer.setLength(0);
         }
         List<RawChunkItem> subChunks =
-            splitLongSectionWithOverlap(sec.content(), sec.headerPath(), targetTokens, overlapTokens, maxLimit);
+            splitLongSectionWithOverlap(
+                sec.content(), sec.headerPath(), targetTokens, overlapTokens, maxLimit);
         if (!subChunks.isEmpty()) {
           items.addAll(subChunks);
           lastOverlapTail = extractTailOverlap(subChunks.getLast().content(), overlapTokens);
@@ -445,11 +638,9 @@ public class DeepDocContextEnricher {
   }
 
   /**
-   * 判断两个章节路径是否属于可以聚合的同门模块
-   * 1. 若 pathB 是 pathA 的子章节 (如 3.2 的子章节 3.2.1)，允许聚合；
-   * 2. 若 pathA 是 pathB 的父章节，允许聚合；
-   * 3. 若两者具有相同的二级大纲前缀 (如 3.2.1 与 3.2.2 均属于 3.2)，允许在 Token 允许范围内聚合；
-   * 4. 否则 (如从 3.1 切换到 3.2，或从 存储设计 切换到 缓存设计)，属于不同独立分支，应封包。
+   * 判断两个章节路径是否属于可以聚合的同门模块 1. 若 pathB 是 pathA 的子章节 (如 3.2 的子章节 3.2.1)，允许聚合； 2. 若 pathA 是 pathB
+   * 的父章节，允许聚合； 3. 若两者具有相同的二级大纲前缀 (如 3.2.1 与 3.2.2 均属于 3.2)，允许在 Token 允许范围内聚合； 4. 否则 (如从 3.1 切换到
+   * 3.2，或从 存储设计 切换到 缓存设计)，属于不同独立分支，应封包。
    */
   private boolean isCompatibleSection(String currentPath, String nextPath) {
     if (currentPath == null || nextPath == null || currentPath.equals(nextPath)) {
@@ -526,7 +717,8 @@ public class DeepDocContextEnricher {
     }
 
     if (validSentences.isEmpty()) {
-      return List.of(new RawChunkItem(truncateToLimit(text, maxLimit), headerPath, "text", null, null));
+      return List.of(
+          new RawChunkItem(truncateToLimit(text, maxLimit), headerPath, "text", null, null));
     }
 
     List<RawChunkItem> result = new ArrayList<>();
@@ -595,7 +787,8 @@ public class DeepDocContextEnricher {
   }
 
   private String detectSectionType(String text) {
-    if (text.startsWith("<table") || (text.startsWith("|") && text.contains("|") && text.contains("\n"))) {
+    if (text.startsWith("<table")
+        || (text.startsWith("|") && text.contains("|") && text.contains("\n"))) {
       return "table";
     }
     if (text.startsWith("<figure")) {
@@ -609,30 +802,47 @@ public class DeepDocContextEnricher {
 
   /** 超长 HTML 表格按 <tr> 分行切分，并为每个切片自动复制第一行表头 (Header-Preserved Chunking) */
   private void chunkLargeHtmlTable(
-      List<RawChunkItem> items, String tableHtml, String headerPath, int targetTokens, int maxLimit) {
-    Matcher rowMatcher = Pattern.compile("<tr\\b[^>]*>[\\s\\S]*?</tr>", Pattern.CASE_INSENSITIVE).matcher(tableHtml);
+      List<RawChunkItem> items,
+      String tableContent,
+      String headerPath,
+      int targetTokens,
+      int maxLimit) {
+    String leadIn = "";
+    String tableHtml = tableContent;
+    int tableStartIdx = tableContent.indexOf("<table");
+    if (tableStartIdx > 0) {
+      leadIn = tableContent.substring(0, tableStartIdx).trim();
+      tableHtml = tableContent.substring(tableStartIdx);
+    }
+
+    Matcher rowMatcher =
+        Pattern.compile("<tr\\b[^>]*>[\\s\\S]*?</tr>", Pattern.CASE_INSENSITIVE).matcher(tableHtml);
     List<String> rows = new ArrayList<>();
     while (rowMatcher.find()) {
       rows.add(rowMatcher.group(0));
     }
 
     if (rows.size() <= 2) {
-      items.add(new RawChunkItem(truncateToLimit(tableHtml, maxLimit), headerPath, "table", null, null));
+      items.add(new RawChunkItem(tableContent, headerPath, "table", null, null));
       return;
     }
 
     String headerRow = rows.getFirst();
     StringBuilder currentBatch = new StringBuilder();
     int currentTokens = estimateTokens(headerRow);
+    boolean isFirstBatch = true;
 
     for (int i = 1; i < rows.size(); i++) {
       String row = rows.get(i);
       int rowTokens = estimateTokens(row);
       if (currentTokens + rowTokens > targetTokens && !currentBatch.isEmpty()) {
         String subTable = "<table>\n" + headerRow + "\n" + currentBatch + "</table>";
-        items.add(new RawChunkItem(truncateToLimit(subTable, maxLimit), headerPath, "table", null, null));
+        String contentToSave =
+            (isFirstBatch && StrUtil.isNotBlank(leadIn)) ? (leadIn + "\n\n" + subTable) : subTable;
+        items.add(new RawChunkItem(contentToSave, headerPath, "table", null, null));
         currentBatch.setLength(0);
         currentTokens = estimateTokens(headerRow);
+        isFirstBatch = false;
       }
       currentBatch.append(row).append("\n");
       currentTokens += rowTokens;
@@ -640,7 +850,9 @@ public class DeepDocContextEnricher {
 
     if (!currentBatch.isEmpty()) {
       String subTable = "<table>\n" + headerRow + "\n" + currentBatch + "</table>";
-      items.add(new RawChunkItem(truncateToLimit(subTable, maxLimit), headerPath, "table", null, null));
+      String contentToSave =
+          (isFirstBatch && StrUtil.isNotBlank(leadIn)) ? (leadIn + "\n\n" + subTable) : subTable;
+      items.add(new RawChunkItem(contentToSave, headerPath, "table", null, null));
     }
   }
 
@@ -663,7 +875,8 @@ public class DeepDocContextEnricher {
       return false;
     }
     long tocCount = lines.stream().filter(this::isTocLine).count();
-    return tocCount == lines.size() || (lines.size() >= 2 && (double) tocCount / lines.size() >= 0.7);
+    return tocCount == lines.size()
+        || (lines.size() >= 2 && (double) tocCount / lines.size() >= 0.7);
   }
 
   private boolean isTocLine(String text) {
@@ -708,12 +921,15 @@ public class DeepDocContextEnricher {
         || aiProperties.getChunk().isContextPrefixEnabled();
   }
 
-  /** 内部标题探测信息值对象 */
-  private record HeadingInfo(int level, String title) {}
+  /** 内部标题探测信息值对象 (包含层级、标题文本及行内分离的正文) */
+  private record HeadingInfo(int level, String title, String remainingContent) {
+    HeadingInfo(int level, String title) {
+      this(level, title, null);
+    }
+  }
 
   /** 内部逻辑段落值对象 */
-  private record LogicalSection(
-      String content, String headerPath, String type, int headingLevel) {}
+  private record LogicalSection(String content, String headerPath, String type, int headingLevel) {}
 
   /** 内部中间切块数据项 */
   private record RawChunkItem(

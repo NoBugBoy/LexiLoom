@@ -44,8 +44,9 @@ knowflow:
       context-prefix-enabled: true
       max-token-limit: 2000
     rag:
-      top-k: 5
-      similarity-threshold: 0.60
+      top-k: 12
+      similarity-threshold: 0.30
+      max-chunks-per-document: 8
       history-turns: 3
 htz:
   security:

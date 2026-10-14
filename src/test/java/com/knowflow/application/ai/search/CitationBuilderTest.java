@@ -85,9 +85,9 @@ class CitationBuilderTest {
   }
 
   @Test
-  @DisplayName("buildCitations：超长文本安全截断生成摘要片段并追加省略号")
-  void testBuildCitations_SnippetTruncation() {
-    String longText = "A".repeat(500);
+  @DisplayName("buildCitations：召回切片保持完整内容不截断，确保表格及上下文完整无损")
+  void testBuildCitations_PreservesFullContent() {
+    String longText = "A".repeat(1500);
     DocChunkDocument doc =
         DocChunkDocument.builder()
             .id("10_0")
@@ -100,8 +100,7 @@ class CitationBuilderTest {
         citationBuilder.buildCitations(List.of(ScoredDocChunkVO.of(doc, 0.9, 1)));
 
     assertThat(citations).hasSize(1);
-    assertThat(citations.getFirst().snippet()).hasSize(403);
-    assertThat(citations.getFirst().snippet()).endsWith("...");
+    assertThat(citations.getFirst().snippet()).isEqualTo(longText);
   }
 
   @Test

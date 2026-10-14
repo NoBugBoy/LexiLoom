@@ -70,6 +70,7 @@ knowflow:
     # DeepDoc：对接部署在 Docker 中的 RAGFlow DeepDoc 服务
     deepdoc:
       endpoint: ${DEEPDOC_ENDPOINT:http://localhost:9390}
+      callback-url: ${DEEPDOC_CALLBACK_URL:http://host.docker.internal:8080/api/documents/parse-callback}
 
   # ── Elasticsearch 全文检索 ───────────────────────────────────────────────────
   elasticsearch:
@@ -102,14 +103,17 @@ knowflow:
       api-key: ${AI_RERANK_API_KEY:}
       base-url: ${AI_RERANK_BASE_URL:}
       model: ${AI_RERANK_MODEL:gte-rerank}
-      top-k: 5
+      top-k: 12
       min-score: 0.60
     chunk:
       context-prefix-enabled: true
       max-token-limit: 2000
     rag:
-      top-k: 5
-      similarity-threshold: 0.60
+      top-k: 12
+      # 真实 Cosine 相似度阈值 (非重排模拟分)，0.30 对齐 1024 维中文向量模型分布
+      similarity-threshold: 0.30
+      # 单篇文档在同一批结果中的最大切片数，配合两阶段回填保证多文档多样性与单文档不漏切片 (<=0 关闭)
+      max-chunks-per-document: 8
       history-turns: 3
       session-expire-seconds: 604800
 

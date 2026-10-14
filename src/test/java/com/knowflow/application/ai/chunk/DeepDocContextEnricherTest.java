@@ -26,11 +26,11 @@ class DeepDocContextEnricherTest {
     String markdown =
         """
         # 总体方案设计
-        
+
         第一段介绍系统背景。
-        
+
         第二段说明核心目标。
-        
+
         第三段阐述技术选型。
         """;
 
@@ -43,8 +43,7 @@ class DeepDocContextEnricherTest {
     assertThat(chunk.content()).contains("第二段说明核心目标");
     assertThat(chunk.content()).contains("第三段阐述技术选型");
     assertThat(chunk.headerPath()).isEqualTo("总体方案设计");
-    assertThat(chunk.contextPrefix())
-        .isEqualTo("[文档: 《技术规格书》] > [章节: 总体方案设计] > [类型: text]");
+    assertThat(chunk.contextPrefix()).isEqualTo("[文档: 《技术规格书》] > [章节: 总体方案设计] > [类型: text]");
   }
 
   @Test
@@ -79,13 +78,13 @@ class DeepDocContextEnricherTest {
     String markdown =
         """
         # 系统架构
-        
+
         ## 存储设计
-        
+
         KnowFlow 采用 Elasticsearch 8.x 密集向量存储。
-        
+
         ## 缓存设计
-        
+
         KnowFlow 采用 Redis 7.x 缓存热点元数据。
         """;
 
@@ -96,8 +95,7 @@ class DeepDocContextEnricherTest {
     EnrichedDocChunk chunk1 = results.get(0);
     assertThat(chunk1.headerPath()).isEqualTo("系统架构 / 存储设计");
     assertThat(chunk1.content()).isEqualTo("KnowFlow 采用 Elasticsearch 8.x 密集向量存储。");
-    assertThat(chunk1.contextPrefix())
-        .isEqualTo("[文档: 《架构白皮书》] > [章节: 系统架构 / 存储设计] > [类型: text]");
+    assertThat(chunk1.contextPrefix()).isEqualTo("[文档: 《架构白皮书》] > [章节: 系统架构 / 存储设计] > [类型: text]");
 
     EnrichedDocChunk chunk2 = results.get(1);
     assertThat(chunk2.headerPath()).isEqualTo("系统架构 / 缓存设计");
@@ -110,14 +108,14 @@ class DeepDocContextEnricherTest {
     String markdown =
         """
         # 成本核算
-        
+
         以下是服务器资源配置表：
-        
+
         | 节点类型 | CPU | 内存 |
         |---|---|---|
         | ES Master | 4核 | 16G |
         | Redis | 2核 | 8G |
-        
+
         正文后续总结说明。
         """;
 
@@ -131,8 +129,7 @@ class DeepDocContextEnricherTest {
     assertThat(tableChunk.content()).contains("| 节点类型 | CPU | 内存 |");
     assertThat(tableChunk.content()).contains("| ES Master | 4核 | 16G |");
     assertThat(tableChunk.headerPath()).isEqualTo("成本核算");
-    assertThat(tableChunk.contextPrefix())
-        .isEqualTo("[文档: 《成本核算表》] > [章节: 成本核算] > [类型: table]");
+    assertThat(tableChunk.contextPrefix()).isEqualTo("[文档: 《成本核算表》] > [章节: 成本核算] > [类型: table]");
   }
 
   @Test
@@ -167,7 +164,7 @@ class DeepDocContextEnricherTest {
         1. 总体方案设计 ...... 2
         1.1. 系统结构设计 ...... 2
         1.2. 数据流设计 ...... 3
-        
+
         系统总体方案由接入层、服务层和数据层组成。
         """;
 
@@ -224,7 +221,8 @@ class DeepDocContextEnricherTest {
     tableBuilder.append("<table>\n");
     tableBuilder.append("  <tr><th>指标项</th><th>阈值</th><th>告警级别</th></tr>\n");
     for (int i = 1; i <= 15; i++) {
-      tableBuilder.append(String.format("  <tr><td>指标_%d</td><td>%d ms</td><td>CRITICAL</td></tr>\n", i, i * 100));
+      tableBuilder.append(
+          String.format("  <tr><td>指标_%d</td><td>%d ms</td><td>CRITICAL</td></tr>\n", i, i * 100));
     }
     tableBuilder.append("</table>\n");
 
@@ -307,7 +305,7 @@ class DeepDocContextEnricherTest {
         3.2.1 系统结构设计及模块划分
         S16RTE编排系统主要包括脚本管理、脚本详情与编排工具三大功能模块，支持全流程操作。
         脚本管理模块支持用户通过Web界面创建脚本，涉及SOA接口调用。
-        
+
         3.2.2 编排工具模块设计
         RTE编排工具是个低代码流程编排工具，支持画布自由绘制与节点连线。
         """;
@@ -339,5 +337,89 @@ class DeepDocContextEnricherTest {
             .orElseThrow();
     assertThat(sec32Chunk.content()).contains("3.2 系统模块设计");
     assertThat(sec32Chunk.content()).contains("脚本管理模块支持用户通过Web界面创建脚本");
+  }
+
+  @Test
+  @DisplayName("结构化表格与自然章节归属测试：表格继承所在章节，并保留表格内部定义")
+  void testGenericTableMetadataExtractionAndHierarchy() {
+    String docMarkdown =
+        """
+        # 系统设计说明书
+
+        3. 核心业务模块
+
+        3.1 订单交易设计：负责处理用户下单与结算。
+
+        <table>
+        <tr><td>序号</td><td>字段名</td><td>数据类型</td><td>是否非空</td><td>默认值</td><td>字段说明</td></tr>
+        <tr><td>1</td><td>id</td><td>bigint</td><td>是</td><td></td><td>订单主键</td></tr>
+        <tr><td>2</td><td>order_no</td><td>varchar(64)</td><td>是</td><td></td><td>业务订单号</td></tr>
+        <tr><td>3</td><td>status</td><td>tinyint(1)</td><td>是</td><td>0</td><td>订单状态</td></tr>
+        </table>
+        """;
+
+    List<EnrichedDocChunk> results = enricher.enrichFromMarkdown("电商交易系统设计", docMarkdown);
+
+    EnrichedDocChunk tableChunk =
+        results.stream().filter(c -> "table".equals(c.chunkType())).findFirst().orElseThrow();
+
+    assertThat(tableChunk.headerPath())
+        .contains("3. 核心业务模块 / 3.1 订单交易设计");
+
+    assertThat(tableChunk.contextPrefix())
+        .contains("[章节: 3. 核心业务模块 / 3.1 订单交易设计]")
+        .contains("[类型: table]");
+
+    assertThat(tableChunk.content())
+        .contains("order_no")
+        .contains("订单主键");
+  }
+
+  @Test
+  @DisplayName("通用前置说明/引言段落与表格分离时自动向上吸纳融合，避免孤立碎片分块并保障表格上下文完整")
+  void testPrecedingLeadInAbsorption() {
+    String docMarkdown =
+        """
+        # 6. 中间件设计
+
+        ## 6.1 数据库设计
+
+        ### 6.1.4 MySQL数据库设计
+
+        表名：script_version_info
+
+        表注释：脚本版本表
+
+        <table>
+        <tr><th>序号</th><th>字段名</th><th>数据类型</th><th>是否非空</th><th>默认值</th><th>字段说明</th></tr>
+        <tr><td>1</td><td>id</td><td>bigint</td><td>是</td><td>-</td><td>主键</td></tr>
+        <tr><td>2</td><td>script_id</td><td>bigint</td><td>是</td><td>-</td><td>脚本id</td></tr>
+        <tr><td>3</td><td>script_major_version</td><td>int</td><td>是</td><td>-</td><td>大版本</td></tr>
+        </table>
+        """;
+
+    List<EnrichedDocChunk> results = enricher.enrichFromMarkdown("S16详细设计书", docMarkdown);
+
+    // 1. 验证不存在孤立的前置碎片纯文本块
+    assertThat(results.stream().filter(c -> "text".equals(c.chunkType())))
+        .noneMatch(c -> c.content().contains("表名：script_version_info"));
+
+    // 2. 验证表格切块成功吸纳了前置引导说明段落，且保持自然章节路径
+    EnrichedDocChunk tableChunk =
+        results.stream().filter(c -> "table".equals(c.chunkType())).findFirst().orElseThrow();
+
+    assertThat(tableChunk.headerPath())
+        .isEqualTo("6. 中间件设计 / 6.1 数据库设计 / 6.1.4 MySQL数据库设计");
+
+    assertThat(tableChunk.contextPrefix())
+        .contains("[章节: 6. 中间件设计 / 6.1 数据库设计 / 6.1.4 MySQL数据库设计]")
+        .contains("[类型: table]");
+
+    // 验证切块内容同时包含前置说明文字与完整字段数据
+    assertThat(tableChunk.content())
+        .contains("表名：script_version_info")
+        .contains("表注释：脚本版本表")
+        .contains("script_id")
+        .contains("大版本");
   }
 }

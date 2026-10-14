@@ -222,4 +222,43 @@ class DocVectorSyncListenerTest {
     verify(docChunkRepository)
         .deleteByWorkspaceIdAndDocumentId(org.mockito.ArgumentMatchers.any(), eq("5"));
   }
+
+  @Test
+  @DisplayName("向量结果条数与切块数量不一致时快速失败：不写入索引、不塞零向量兜底，并回滚文档状态")
+  void testVectorCountMismatchFailsFast() {
+    Long docId = 6L;
+    DocumentDTO doc = createSampleDoc(docId, DocumentStateEnum.APPROVED);
+    when(documentQueryApi.findDocumentById(docId)).thenReturn(Optional.of(doc));
+
+    EnrichedDocChunk chunk0 =
+        EnrichedDocChunk.of(
+            0, "c_0", "系统架构设计", "正文", "段落1", "[帽子]", "[帽子]\n\n段落1", "text", 1, null, "段落_1");
+    EnrichedDocChunk chunk1 =
+        EnrichedDocChunk.of(
+            1, "c_1", "系统架构设计", "正文", "段落2", "[帽子]", "[帽子]\n\n段落2", "text", 1, null, "段落_2");
+    when(enricher.enrich(eq(doc), any())).thenReturn(List.of(chunk0, chunk1));
+
+    // 模型只返回 1 条向量，属于残缺返回，必须快速失败
+    when(embeddingGateway.embedBatch(anyList())).thenReturn(List.of(new float[1536]));
+    when(embeddingGateway.getDimension()).thenReturn(1536);
+
+    DocumentStateTransitionEvent event =
+        new DocumentStateTransitionEvent(
+            docId,
+            DocumentStateEnum.PENDING_APPROVAL,
+            DocumentStateEnum.APPROVED,
+            DocumentEventEnum.APPROVE,
+            1L,
+            "审核通过",
+            LocalDateTime.now());
+
+    listener.onDocumentStateTransition(event);
+
+    verify(docChunkRepository, never()).saveAll(anyList());
+    verify(documentStateApi)
+        .rollbackState(
+            eq(docId),
+            eq(DocumentStateEnum.PENDING_APPROVAL),
+            org.mockito.ArgumentMatchers.contains("向量化结果条数与切块数量不一致"));
+  }
 }

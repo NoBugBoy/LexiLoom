@@ -44,7 +44,7 @@ class RerankGatewayTest {
   }
 
   @Test
-  @DisplayName("NoOpRerankAdapter：零额外开销透传并截取 Top-K")
+  @DisplayName("NoOpRerankAdapter：零额外开销透传并截取 Top-K，且不编造相似度分数")
   void testNoOpRerankAdapter() {
     DocChunkDocument c1 = createChunk("1", "A", "Content A");
     DocChunkDocument c2 = createChunk("2", "B", "Content B");
@@ -55,10 +55,10 @@ class RerankGatewayTest {
 
     assertThat(results).hasSize(2);
     assertThat(results.get(0).chunk().getId()).isEqualTo("1");
-    assertThat(results.get(0).score()).isEqualTo(1.0);
+    assertThat(results.get(0).score()).isEqualTo(NoOpRerankAdapter.NO_SCORE);
     assertThat(results.get(0).originalRank()).isEqualTo(1);
     assertThat(results.get(1).chunk().getId()).isEqualTo("2");
-    assertThat(results.get(1).score()).isEqualTo(0.95);
+    assertThat(results.get(1).score()).isEqualTo(NoOpRerankAdapter.NO_SCORE);
     assertThat(results.get(1).originalRank()).isEqualTo(2);
 
     assertThat(noOpAdapter.isEnabled()).isFalse();

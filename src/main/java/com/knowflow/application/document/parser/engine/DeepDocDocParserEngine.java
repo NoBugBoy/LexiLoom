@@ -49,6 +49,9 @@ public class DeepDocDocParserEngine implements DocParserEngine {
   @Value("${knowflow.parser.deepdoc.endpoint:}")
   private String deepdocEndpoint;
 
+  @Value("${knowflow.parser.deepdoc.callback-url:}")
+  private String callbackUrl;
+
   private static final Set<String> SUPPORTED_EXTS =
       Set.of("pdf", "docx", "pptx", "xlsx", "xls", "txt", "md");
 
@@ -146,6 +149,26 @@ public class DeepDocDocParserEngine implements DocParserEngine {
             };
         body.add("file", resource);
 
+        String effectiveCallbackUrl =
+            command.extraOptions().get("callbackUrl") != null
+                ? String.valueOf(command.extraOptions().get("callbackUrl"))
+                : callbackUrl;
+        if (StrUtil.isNotBlank(effectiveCallbackUrl)) {
+          body.add("callback_url", effectiveCallbackUrl);
+          if (command.extraOptions().get("documentId") != null) {
+            body.add("document_id", String.valueOf(command.extraOptions().get("documentId")));
+          }
+          if (command.extraOptions().get("sourceFileId") != null) {
+            body.add("source_file_id", String.valueOf(command.extraOptions().get("sourceFileId")));
+          }
+          if (command.extraOptions().get("workspaceId") != null) {
+            body.add("workspace_id", String.valueOf(command.extraOptions().get("workspaceId")));
+          }
+          if (command.extraOptions().get("operatorId") != null) {
+            body.add("operator_id", String.valueOf(command.extraOptions().get("operatorId")));
+          }
+        }
+
         responseBody =
             restClient
                 .post()
@@ -189,6 +212,24 @@ public class DeepDocDocParserEngine implements DocParserEngine {
     }
 
     try {
+      // 检查是否为异步接收成功的响应 (PROCESSING)
+      if (StrUtil.isNotBlank(responseBody) && responseBody.trim().startsWith("{")) {
+        JsonNode rootNode = objectMapper.readTree(responseBody);
+        String respStatus = rootNode.hasNonNull("status") ? rootNode.get("status").asText() : "";
+        if ("PROCESSING".equalsIgnoreCase(respStatus) || "ACCEPTED".equalsIgnoreCase(respStatus)) {
+          String taskId = rootNode.hasNonNull("task_id") ? rootNode.get("task_id").asText() : null;
+          log.info(
+              "【DeepDoc】远程微服务已接收异步解析任务，进入等待回调模式: file={}, taskId={}",
+              fileName,
+              taskId);
+          Map<String, Object> meta = new HashMap<>(command.extraOptions());
+          if (taskId != null) {
+            meta.put("taskId", taskId);
+          }
+          return DocParseResult.asyncProcessing(getEngineType(), null, taskId, meta);
+        }
+      }
+
       DeepDocParsedDocument parsedDoc = DeepDocCoordinateUtil.parseResponse(responseBody);
       String rawMarkdown = parsedDoc.markdown();
       String markdownWithStorageUrls = transferFiguresToStorage(rawMarkdown);
@@ -268,7 +309,7 @@ public class DeepDocDocParserEngine implements DocParserEngine {
     return body;
   }
 
-  private String extractTitleFromMarkdown(String content, String defaultTitle) {
+  public static String extractTitleFromMarkdown(String content, String defaultTitle) {
     if (StrUtil.isBlank(content)) {
       return defaultTitle;
     }
@@ -293,7 +334,7 @@ public class DeepDocDocParserEngine implements DocParserEngine {
    * @param content 原始包含 /static/figures/... 相对路径的正文
    * @return 替换为 RustFS HTTP URL 后的正文
    */
-  String transferFiguresToStorage(String content) {
+  public String transferFiguresToStorage(String content) {
     if (StrUtil.isBlank(content) || fileStorageGateway == null || StrUtil.isBlank(deepdocEndpoint)) {
       return content;
     }

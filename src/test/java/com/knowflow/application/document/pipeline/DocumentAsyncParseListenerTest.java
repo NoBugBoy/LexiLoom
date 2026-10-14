@@ -118,6 +118,30 @@ class DocumentAsyncParseListenerTest {
   }
 
   @Test
+  @DisplayName("DeepDoc 异步模式接受解析：返回 ASYNC_PROCESSING 时不执行事务写库，静候 HTTP 回调通知")
+  void testOnAsyncParseDispatched_AsyncProcessing() {
+    DocumentAsyncParseEvent event =
+        new DocumentAsyncParseEvent(
+            105L, 205L, null, null, DocParserEngineEnum.DEEPDOC, "large_manual.pdf", 1L, 10L);
+
+    DocSourceFileEntity sourceFile =
+        DocSourceFileEntity.create(
+            1L, 105L, "large_manual.pdf", 1048576L, "pdf", "application/pdf", "hash", "path", "url");
+    when(docSourceFileRepository.findById(205L)).thenReturn(Optional.of(sourceFile));
+
+    DocParseResult asyncResult =
+        DocParseResult.asyncProcessing(DocParserEngineEnum.DEEPDOC, null, "task_12345", Map.of());
+    when(docParserGateway.parse(any(DocParseCommand.class))).thenReturn(asyncResult);
+
+    listener.onAsyncParseDispatched(event);
+
+    verify(transactionalService, never())
+        .completeAsyncParse(any(), any(), any(), any(), any(), any(), any());
+    verify(transactionalService, never()).failAsyncParse(any(), any(), any());
+    verify(eventPublisher, never()).publishEvent(any(DocumentUpdatedEvent.class));
+  }
+
+  @Test
   @DisplayName("边界值：event 或 documentId 为空时直接忽略")
   void testOnAsyncParseDispatched_NullEventOrDocId() {
     listener.onAsyncParseDispatched(null);

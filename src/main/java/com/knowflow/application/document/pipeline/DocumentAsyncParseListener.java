@@ -57,6 +57,18 @@ public class DocumentAsyncParseListener {
       if ("pdf".equalsIgnoreCase(sourceFile.getFileExt())) {
         extraOptions.put("ocr", true);
       }
+      if (event.documentId() != null) {
+        extraOptions.put("documentId", event.documentId());
+      }
+      if (event.sourceFileId() != null) {
+        extraOptions.put("sourceFileId", event.sourceFileId());
+      }
+      if (event.workSpaceId() != null) {
+        extraOptions.put("workspaceId", event.workSpaceId());
+      }
+      if (event.operatorId() != null) {
+        extraOptions.put("operatorId", event.operatorId());
+      }
 
       DocParseCommand parseCmd =
           DocParseCommand.of(
@@ -70,8 +82,17 @@ public class DocumentAsyncParseListener {
       // 2. 调用统一解析网关（后台线程执行：DeepDoc HTTP POST）
       DocParseResult parseResult = docParserGateway.parse(parseCmd);
 
+      if (parseResult.isAsyncProcessing()) {
+        log.info(
+            "【DocumentAsyncParseListener】解析任务已提交至异步解析引擎，等待 HTTP 回调通知: docId={}, sourceFileId={}, engine={}",
+            event.documentId(),
+            event.sourceFileId(),
+            parseResult.engineUsed());
+        return;
+      }
+
       if (parseResult.isSuccess() || parseResult.isPreviewOnly()) {
-        // 针对 DeepDoc 解析引擎同步返回解析结果
+        // 针对非回调引擎或同步返回解析结果（向后兼容）
         transactionalService.completeAsyncParse(
             event.documentId(),
             event.sourceFileId(),

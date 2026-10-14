@@ -24,8 +24,6 @@ import org.springframework.stereotype.Component;
 @Component
 public class CitationBuilder {
 
-  private static final int DEFAULT_MAX_SNIPPET_LENGTH = 400;
-
   /**
    * 将经过精排排序后的切块候选列表构建为引用源列表 (1-indexed)
    *
@@ -50,7 +48,7 @@ public class CitationBuilder {
       Long documentId = parseLongSafe(chunk.getDocumentId());
       String docTitle = StrUtil.blankToDefault(chunk.getTitle(), "未知文档").trim();
       String headerPath = StrUtil.blankToDefault(chunk.getHeaderPath(), "正文").trim();
-      String snippet = truncateSnippet(chunk.getContent(), DEFAULT_MAX_SNIPPET_LENGTH);
+      String snippet = StrUtil.blankToDefault(chunk.getContent(), "").trim();
       Double score = item.score();
       Integer page = chunk.getPage();
       List<Float> bbox = chunk.getBbox() != null ? chunk.getBbox() : List.of();
@@ -107,16 +105,5 @@ public class CitationBuilder {
     } catch (NumberFormatException e) {
       return null;
     }
-  }
-
-  private String truncateSnippet(String content, int maxLength) {
-    if (StrUtil.isBlank(content)) {
-      return "";
-    }
-    String trimmed = content.trim();
-    if (trimmed.length() <= maxLength) {
-      return trimmed;
-    }
-    return trimmed.substring(0, maxLength) + "...";
   }
 }

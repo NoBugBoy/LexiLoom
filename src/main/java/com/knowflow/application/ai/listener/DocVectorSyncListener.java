@@ -166,6 +166,10 @@ public class DocVectorSyncListener {
       vectors.addAll(embeddingGateway.embedBatch(textsToEmbed.subList(i, end)));
     }
 
+    // 5.1 向量结果强校验：条数与维度必须严格对齐，否则宁可快速失败回滚文档状态，
+    //     也不能用零向量兜底把错位/残缺向量写进索引 (零向量会让 kNN 相似度彻底失真)
+    validateVectors(textsToEmbed.size(), vectors);
+
     // 6. 构造 Elasticsearch 切块实体列表
     List<DocChunkDocument> chunkDocuments = new ArrayList<>(enrichedChunks.size());
     String wsIdStr = String.valueOf(doc.workSpaceId());
@@ -173,8 +177,7 @@ public class DocVectorSyncListener {
 
     for (int i = 0; i < enrichedChunks.size(); i++) {
       EnrichedDocChunk chunk = enrichedChunks.get(i);
-      float[] vector =
-          (i < vectors.size()) ? vectors.get(i) : new float[embeddingGateway.getDimension()];
+      float[] vector = vectors.get(i);
 
       DocChunkDocument esChunk =
           DocChunkDocument.builder()
@@ -225,6 +228,32 @@ public class DocVectorSyncListener {
           e.getMessage(),
           e);
       throw e;
+    }
+  }
+
+  /**
+   * 校验批量向量化结果与入参文本严格一一对应
+   *
+   * @param expectedCount 期望的向量条数 (与入参文本条数一致)
+   * @param vectors 实际返回的向量列表
+   * @throws IllegalStateException 条数缺失、维度不一致或出现空向量时抛出，触发文档状态回滚
+   */
+  private void validateVectors(int expectedCount, List<float[]> vectors) {
+    if (vectors.size() != expectedCount) {
+      throw new IllegalStateException(
+          String.format("向量化结果条数与切块数量不一致，禁止写入索引: 期望=%d, 实际=%d", expectedCount, vectors.size()));
+    }
+
+    int expectedDimension = embeddingGateway.getDimension();
+    for (int i = 0; i < vectors.size(); i++) {
+      float[] vector = vectors.get(i);
+      if (vector == null || vector.length == 0) {
+        throw new IllegalStateException(String.format("第 %d 个切块未返回有效向量 (空向量)，禁止写入索引", i));
+      }
+      if (expectedDimension > 0 && vector.length != expectedDimension) {
+        throw new IllegalStateException(
+            String.format("第 %d 个切块向量维度与配置不一致: 期望=%d, 实际=%d", i, expectedDimension, vector.length));
+      }
     }
   }
 

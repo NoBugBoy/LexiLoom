@@ -38,7 +38,7 @@ class AiPropertiesTest {
     assertThat(properties.getRerank().getStrategy()).isEqualTo(RerankStrategyEnum.NONE);
     assertThat(properties.getRerank().getProvider()).isEqualTo(RerankProviderEnum.DASHSCOPE);
     assertThat(properties.getRerank().getModel()).isEqualTo("gte-rerank");
-    assertThat(properties.getRerank().getTopK()).isEqualTo(5);
+    assertThat(properties.getRerank().getTopK()).isEqualTo(12);
     assertThat(properties.getRerank().getMinScore()).isEqualTo(0.60);
 
     // DeepDoc 上下文帽子与切块默认值
@@ -48,8 +48,10 @@ class AiPropertiesTest {
 
     // 在线 RAG 默认值
     assertThat(properties.getRag()).isNotNull();
-    assertThat(properties.getRag().getTopK()).isEqualTo(5);
-    assertThat(properties.getRag().getSimilarityThreshold()).isEqualTo(0.60);
+    assertThat(properties.getRag().getTopK()).isEqualTo(12);
+    // 阈值语义已从"重排模拟分"切换为真实 Cosine 相似度，默认值同步对齐真实向量分布
+    assertThat(properties.getRag().getSimilarityThreshold()).isEqualTo(0.30);
+    assertThat(properties.getRag().getMaxChunksPerDocument()).isEqualTo(8);
     assertThat(properties.getRag().getHistoryTurns()).isEqualTo(3);
   }
 

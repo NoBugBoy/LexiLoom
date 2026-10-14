@@ -56,7 +56,9 @@ public class SecurityConfig {
                         "/v3/api-docs/**", // OpenAPI / Swagger 文档
                         "/swagger-ui/**",
                         "/actuator/health", // 探活检查
-                        "/uploads/**" // 静态上传图片资源
+                        "/uploads/**", // 静态上传图片资源
+                        "/api/documents/parse-callback", // DeepDoc 异步解析结果回调 (免鉴权)
+                        "/documents/parse-callback"
                         )
                     .permitAll()
                     .requestMatchers("/admin/**")

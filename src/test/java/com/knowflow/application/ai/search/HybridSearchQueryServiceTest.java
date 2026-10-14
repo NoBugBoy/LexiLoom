@@ -129,6 +129,18 @@ class HybridSearchQueryServiceTest {
 
     List<NativeQuery> queries = queryCaptor.getAllValues();
     assertThat(queries).hasSize(2);
+
+    // 路径 1：词法检索采用 best_fields + tie_breaker，正文权重最高、文档级冗余字段降权，
+    // 防止关键词命中文档标题时同文档全部切片 BM25 并列刷屏
+    var multiMatch = queries.get(0).getQuery().bool().must().getFirst().multiMatch();
+    assertThat(multiMatch).isNotNull();
+    assertThat(multiMatch.tieBreaker()).isEqualTo(0.5);
+    assertThat(multiMatch.fields())
+        .containsExactly("content^3", "contextPrefix^2.5", "title^1", "headerPath^1.5");
+
+    // 路径 2：向量检索使用 kNN 命中 content_vector
+    assertThat(queries.get(1).getKnnSearches()).hasSize(1);
+    assertThat(queries.get(1).getKnnSearches().getFirst().field()).isEqualTo("content_vector");
   }
 
   @Test
@@ -234,5 +246,184 @@ class HybridSearchQueryServiceTest {
 
     assertThat(results).isEmpty();
     verify(rerankGateway, never()).rerank(any());
+  }
+
+  @Test
+  @DisplayName("文档级多样性上限：单文档切片刷屏时被截断，为其他文档腾出召回位")
+  void testMaxChunksPerDocumentDiversity() {
+    Long wsId = 100L;
+    aiProperties.getRag().setMaxChunksPerDocument(2);
+    HybridSearchCommand command = HybridSearchCommand.of(wsId, "脚本", 5);
+
+    List<DocChunkDocument> bm25Docs = new ArrayList<>();
+    for (int i = 0; i < 5; i++) {
+      bm25Docs.add(
+          DocChunkDocument.builder().id("1_" + i).workspaceId("100").documentId("1").build());
+    }
+    for (int i = 0; i < 3; i++) {
+      bm25Docs.add(
+          DocChunkDocument.builder().id("2_" + i).workspaceId("100").documentId("2").build());
+    }
+    DocChunkDocument otherDoc =
+        DocChunkDocument.builder().id("3_0").workspaceId("100").documentId("3").build();
+    bm25Docs.add(otherDoc);
+
+    SearchHits<DocChunkDocument> bm25Hits = createSearchHits(bm25Docs);
+    SearchHits<DocChunkDocument> knnHits = createSearchHits(List.of());
+    when(elasticsearchOperations.search(any(NativeQuery.class), eq(DocChunkDocument.class)))
+        .thenReturn(bm25Hits, knnHits);
+
+    when(rerankGateway.getStrategy()).thenReturn(RerankStrategyEnum.NONE);
+    when(rerankGateway.rerank(any(RerankCommand.class)))
+        .thenAnswer(
+            invocation -> {
+              RerankCommand cmd = invocation.getArgument(0);
+              List<ScoredDocChunkVO> scored = new ArrayList<>();
+              for (int i = 0; i < cmd.candidates().size(); i++) {
+                scored.add(ScoredDocChunkVO.of(cmd.candidates().get(i), 1.0 - i * 0.01, i + 1));
+              }
+              return scored;
+            });
+
+    List<ScoredDocChunkVO> results = service.hybridSearch(command);
+
+    // 单文档最多 2 条：doc-1 只有 2 条入围，doc-2 有 2 条，doc-3 有 1 条，共 5 条
+    assertThat(results).hasSize(5);
+    assertThat(results.stream().filter(r -> "1".equals(r.chunk().getDocumentId()))).hasSize(2);
+    assertThat(results.stream().filter(r -> "2".equals(r.chunk().getDocumentId()))).hasSize(2);
+    assertThat(results.stream().filter(r -> "3".equals(r.chunk().getDocumentId()))).hasSize(1);
+  }
+
+  @Test
+  @DisplayName("多样性两阶段回填：当候选集中仅有单一文档时，首轮受限后第二阶段自动从回填池补齐至目标 TopK")
+  void testDiversityBackfillWhenSingleDocument() {
+    Long wsId = 100L;
+    aiProperties.getRag().setMaxChunksPerDocument(2);
+    HybridSearchCommand command = HybridSearchCommand.of(wsId, "数据库设计", 5);
+
+    List<DocChunkDocument> bm25Docs = new ArrayList<>();
+    for (int i = 0; i < 5; i++) {
+      bm25Docs.add(
+          DocChunkDocument.builder().id("1_" + i).workspaceId("100").documentId("1").build());
+    }
+
+    SearchHits<DocChunkDocument> bm25Hits = createSearchHits(bm25Docs);
+    SearchHits<DocChunkDocument> knnHits = createSearchHits(List.of());
+    when(elasticsearchOperations.search(any(NativeQuery.class), eq(DocChunkDocument.class)))
+        .thenReturn(bm25Hits, knnHits);
+
+    when(rerankGateway.getStrategy()).thenReturn(RerankStrategyEnum.NONE);
+    when(rerankGateway.rerank(any(RerankCommand.class)))
+        .thenAnswer(
+            invocation -> {
+              RerankCommand cmd = invocation.getArgument(0);
+              List<ScoredDocChunkVO> scored = new ArrayList<>();
+              for (int i = 0; i < cmd.candidates().size(); i++) {
+                scored.add(ScoredDocChunkVO.of(cmd.candidates().get(i), 1.0 - i * 0.01, i + 1));
+              }
+              return scored;
+            });
+
+    List<ScoredDocChunkVO> results = service.hybridSearch(command);
+
+    // 虽然单文档限制为 2，但由于缺乏其他文档且目标 TopK 为 5，第二阶段回填机制自动补齐至 5 条，
+    // 彻底杜绝单文档内容全貌被误杀丢弃的问题
+    assertThat(results).hasSize(5);
+    assertThat(results.stream().filter(r -> "1".equals(r.chunk().getDocumentId()))).hasSize(5);
+  }
+
+  @Test
+  @DisplayName("表结构宽松阈值：table 切片或包含数据表结构定义时，即使向量余弦较低也不会被严格阈值误杀")
+  void testTableChunkRelaxedThreshold() {
+    Long wsId = 100L;
+    // 构造查询向量与候选向量，余弦相似度为 0.25 (低于普通 0.30 阈值，但高于表结构宽松阈值 0.195)
+    float[] queryVector = new float[] {1.0f, 0.0f};
+    HybridSearchCommand command = HybridSearchCommand.of(wsId, "数据表结构", queryVector, 5);
+
+    // 两个切片，余弦均为 0.25：一个是 table 类型，一个是普通 text 类型
+    // 向量为 [0.25, sqrt(1 - 0.25^2)] 保证模长为 1，dot product = 0.25
+    float y = (float) Math.sqrt(1.0 - 0.25 * 0.25);
+    float[] vectorWith025Cosine = new float[] {0.25f, y};
+
+    DocChunkDocument tableDoc =
+        DocChunkDocument.builder()
+            .id("t_1")
+            .workspaceId("100")
+            .documentId("1")
+            .chunkType("table")
+            .content("【数据表结构定义】tb_user 用户表")
+            .contentVector(vectorWith025Cosine)
+            .build();
+
+    DocChunkDocument normalDoc =
+        DocChunkDocument.builder()
+            .id("n_1")
+            .workspaceId("100")
+            .documentId("2")
+            .chunkType("text")
+            .content("普通无关描述文本")
+            .contentVector(vectorWith025Cosine)
+            .build();
+
+    SearchHits<DocChunkDocument> bm25Hits = createSearchHits(List.of(tableDoc, normalDoc));
+    SearchHits<DocChunkDocument> knnHits = createSearchHits(List.of());
+    when(elasticsearchOperations.search(any(NativeQuery.class), eq(DocChunkDocument.class)))
+        .thenReturn(bm25Hits, knnHits);
+
+    when(rerankGateway.getStrategy()).thenReturn(RerankStrategyEnum.NONE);
+    when(rerankGateway.rerank(any(RerankCommand.class)))
+        .thenReturn(
+            List.of(
+                // 模拟原始排名：让 normalDoc 排名第 10 (非 <=5)，tableDoc 排名第 6
+                ScoredDocChunkVO.of(normalDoc, 0.85, 10),
+                ScoredDocChunkVO.of(tableDoc, 0.80, 6)));
+
+    List<ScoredDocChunkVO> results = service.hybridSearch(command);
+
+    // normalDoc 因余弦 0.25 < 0.30 被过滤，而 tableDoc 因表结构保护宽松阈值 (0.30 * 0.65 = 0.195) 成功保留
+    assertThat(results).hasSize(1);
+    assertThat(results.getFirst().chunk().getId()).isEqualTo("t_1");
+  }
+
+  @Test
+  @DisplayName("真实 Cosine 打分：模拟重排分数被真实向量相似度覆盖，低相似度切片按阈值过滤")
+  void testRealCosineScoringAndThreshold() {
+    Long wsId = 100L;
+    float[] queryVector = new float[] {1.0f, 0.0f};
+    HybridSearchCommand command = HybridSearchCommand.of(wsId, "脚本", queryVector, 8);
+
+    // 与查询向量完全同向 -> 余弦 1.0；正交 -> 余弦 0.0
+    DocChunkDocument relevant =
+        DocChunkDocument.builder()
+            .id("7_0")
+            .workspaceId("100")
+            .documentId("7")
+            .contentVector(new float[] {1.0f, 0.0f})
+            .build();
+    DocChunkDocument irrelevant =
+        DocChunkDocument.builder()
+            .id("8_0")
+            .workspaceId("100")
+            .documentId("8")
+            .contentVector(new float[] {0.0f, 1.0f})
+            .build();
+
+    SearchHits<DocChunkDocument> bm25Hits = createSearchHits(List.of(relevant, irrelevant));
+    SearchHits<DocChunkDocument> knnHits = createSearchHits(List.of());
+    when(elasticsearchOperations.search(any(NativeQuery.class), eq(DocChunkDocument.class)))
+        .thenReturn(bm25Hits, knnHits);
+
+    when(rerankGateway.getStrategy()).thenReturn(RerankStrategyEnum.NONE);
+    // 适配器编造的模拟分数 (0.9 / 0.8) 必须被真实余弦覆盖，且低相似度切片需被阈值过滤
+    when(rerankGateway.rerank(any(RerankCommand.class)))
+        .thenReturn(
+            List.of(
+                ScoredDocChunkVO.of(relevant, 0.90, 1), ScoredDocChunkVO.of(irrelevant, 0.80, 2)));
+
+    List<ScoredDocChunkVO> results = service.hybridSearch(command);
+
+    assertThat(results).hasSize(1);
+    assertThat(results.getFirst().chunk().getId()).isEqualTo("7_0");
+    assertThat(results.getFirst().score()).isEqualTo(1.0);
   }
 }
