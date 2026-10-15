@@ -107,11 +107,14 @@ public class DocVectorSyncListener {
       return;
     }
 
-    Optional<DocumentDTO> docOpt = documentQueryApi.findDocumentById(event.documentId());
-    if (docOpt.isPresent() && docOpt.get().status() == DocumentStateEnum.APPROVED) {
-      log.info("【DocVectorSyncListener】已发布文档发生更新，重新同步向量索引: docId={}", event.documentId());
-      syncDocumentChunks(event.documentId());
-    }
+    documentQueryApi
+        .findDocumentById(event.documentId())
+        .filter(doc -> doc.status() == DocumentStateEnum.APPROVED)
+        .ifPresent(
+            doc -> {
+              log.info("【DocVectorSyncListener】已发布文档发生更新，重新同步向量索引: docId={}", event.documentId());
+              syncDocumentChunks(event.documentId());
+            });
   }
 
   /**

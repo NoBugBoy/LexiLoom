@@ -169,12 +169,7 @@ public class ConversationSessionService {
       List<String> expiredSessionIds = new ArrayList<>();
 
       for (String sId : sessionIds) {
-        Optional<ConversationSessionVO> metaOpt = getSessionMeta(sId);
-        if (metaOpt.isPresent()) {
-          list.add(metaOpt.get());
-        } else {
-          expiredSessionIds.add(sId);
-        }
+        getSessionMeta(sId).ifPresentOrElse(list::add, () -> expiredSessionIds.add(sId));
       }
 
       // 惰性移除已过期的会话索引
@@ -307,32 +302,34 @@ public class ConversationSessionService {
       String json = objectMapper.writeValueAsString(existing);
       redisTemplate.opsForValue().set(messageKey, json, Duration.ofSeconds(getExpireSeconds()));
 
+      final int messageCount = existing.size();
+
       // 2. 维护/更新会话元数据与标题
-      Optional<ConversationSessionVO> metaOpt = getSessionMeta(sessionId);
-      ConversationSessionVO meta;
-      if (metaOpt.isPresent()) {
-        ConversationSessionVO oldMeta = metaOpt.get();
-        String title = oldMeta.title();
-        if (("新对话".equals(title) || StrUtil.isBlank(title)) && "user".equals(role)) {
-          title = StrUtil.sub(content.trim(), 0, 30);
-        }
-        Long actualWsId = workspaceId != null ? workspaceId : oldMeta.workspaceId();
-        Long actualUserId = userId != null ? userId : oldMeta.userId();
-        meta =
-            new ConversationSessionVO(
-                sessionId,
-                title,
-                actualWsId,
-                actualUserId,
-                existing.size(),
-                oldMeta.createTime(),
-                now);
-      } else {
-        String title = "user".equals(role) ? StrUtil.sub(content.trim(), 0, 30) : "新对话";
-        meta =
-            new ConversationSessionVO(
-                sessionId, title, workspaceId, userId, existing.size(), now, now);
-      }
+      ConversationSessionVO meta =
+          getSessionMeta(sessionId)
+              .map(
+                  oldMeta -> {
+                    String title = oldMeta.title();
+                    if (("新对话".equals(title) || StrUtil.isBlank(title)) && "user".equals(role)) {
+                      title = StrUtil.sub(content.trim(), 0, 30);
+                    }
+                    Long actualWsId = workspaceId != null ? workspaceId : oldMeta.workspaceId();
+                    Long actualUserId = userId != null ? userId : oldMeta.userId();
+                    return new ConversationSessionVO(
+                        sessionId,
+                        title,
+                        actualWsId,
+                        actualUserId,
+                        messageCount,
+                        oldMeta.createTime(),
+                        now);
+                  })
+              .orElseGet(
+                  () -> {
+                    String title = "user".equals(role) ? StrUtil.sub(content.trim(), 0, 30) : "新对话";
+                    return new ConversationSessionVO(
+                        sessionId, title, workspaceId, userId, messageCount, now, now);
+                  });
 
       saveMeta(meta);
 
@@ -366,19 +363,19 @@ public class ConversationSessionService {
       return;
     }
     try {
-      Optional<ConversationSessionVO> metaOpt = getSessionMeta(sessionId);
-      if (metaOpt.isPresent()) {
-        ConversationSessionVO meta = metaOpt.get();
-        if (currentUserId != null
-            && meta.userId() != null
-            && !meta.userId().equals(currentUserId)) {
-          throw BusinessException.forbidden("无权删除他人会话");
-        }
-        if (meta.userId() != null && meta.workspaceId() != null) {
-          String zsetKey = buildUserSessionsKey(meta.userId(), meta.workspaceId());
-          redisTemplate.opsForZSet().remove(zsetKey, sessionId);
-        }
-      }
+      getSessionMeta(sessionId)
+          .ifPresent(
+              meta -> {
+                if (currentUserId != null
+                    && meta.userId() != null
+                    && !meta.userId().equals(currentUserId)) {
+                  throw BusinessException.forbidden("无权删除他人会话");
+                }
+                if (meta.userId() != null && meta.workspaceId() != null) {
+                  String zsetKey = buildUserSessionsKey(meta.userId(), meta.workspaceId());
+                  redisTemplate.opsForZSet().remove(zsetKey, sessionId);
+                }
+              });
 
       redisTemplate.delete(List.of(buildMessageKey(sessionId), buildMetaKey(sessionId)));
       log.info("【ConversationSessionService】成功销毁会话: sessionId={}", sessionId);

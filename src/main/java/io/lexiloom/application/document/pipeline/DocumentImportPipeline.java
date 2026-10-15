@@ -17,6 +17,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -76,15 +77,15 @@ public class DocumentImportPipeline {
                   () -> BusinessException.notFound("指定导入的目标文档不存在: " + command.documentId()));
       docAccessControlService.assertCanWrite(existingDoc, operatorId);
     } else {
-      Optional<DocSourceFileEntity> sameFileOpt =
-          docSourceFileRepository.findFirstByWorkSpaceIdAndOriginalFileNameOrderByCreateTimeDesc(
-              command.workSpaceId(), fileName);
-      if (sameFileOpt.isPresent() && sameFileOpt.get().getDocumentId() != null) {
-        existingDoc =
-            documentRepository
-                .findByIdAndWorkSpaceId(sameFileOpt.get().getDocumentId(), command.workSpaceId())
-                .orElse(null);
-      }
+      existingDoc =
+          docSourceFileRepository
+              .findFirstByWorkSpaceIdAndOriginalFileNameOrderByCreateTimeDesc(
+                  command.workSpaceId(), fileName)
+              .map(DocSourceFileEntity::getDocumentId)
+              .filter(Objects::nonNull)
+              .flatMap(
+                  docId -> documentRepository.findByIdAndWorkSpaceId(docId, command.workSpaceId()))
+              .orElse(null);
     }
 
     // 3. 多次导入判定：如果同一文件 hash 相同，则命中秒传，不递增版本直接返回
