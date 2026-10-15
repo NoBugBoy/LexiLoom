@@ -20,9 +20,9 @@ minio:
 aliyun:
   oss:
     enabled: false
-knowflow:
+lexiloom:
   elasticsearch:
-    index-name: knowflow_doc_index_test
+    index-name: lexiloom_doc_index_test
     auto-create-index: false
   parser:
     default-engine: AUTO
@@ -31,7 +31,7 @@ knowflow:
   ai:
     enabled: true
     model-provider: MOCK
-    chunk-index-name: knowflow_chunk_index_test
+    chunk-index-name: lexiloom_chunk_index_test
     auto-create-index: false
     embedding:
       provider: MOCK
@@ -48,7 +48,6 @@ knowflow:
       similarity-threshold: 0.30
       max-chunks-per-document: 8
       history-turns: 3
-htz:
   security:
     public-key: ${publicKey:MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAlSnQiREiSDwZgQiisReWhCEm7NIyakSctL6SWS6Vgm2bty1/MjWTCZelvdpyLkahcMlROKkTlregsiblPwiOGd4XmbrfeBbiuxnVqf/aKVi70/M4L39Ai101hi/qg9mKqXV20f/drsuNaifaPONfw4KDHKmrqbfM+nGiz047W2a9nQKLrEPA43rkvtf/AglBFktdjsd58dF/Lw+J57898f6xo42V9M6Bv8DrjD8pkXqHGp2rg6HXJ5D5ueeF16yhclyycdZqBL0eBHzBhWAgzqbA5Oz128NeGqNywF0FN62D7GMUCbj+uisySQJ7DVqBs5brxMnicr6Z5iQgjhnR0QIDAQAB}
     private-key: ${privateKey:MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCVKdCJESJIPBmBCKKxF5aEISbs0jJqRJy0vpJZLpWCbZu3LX8yNZMJl6W92nIuRqFwyVE4qROWt6CyJuU/CI4Z3heZut94FuK7GdWp/9opWLvT8zgvf0CLXTWGL+qD2YqpdXbR/92uy41qJ9o841/DgoMcqaupt8z6caLPTjtbZr2dAousQ8DjeuS+1/8CCUEWS12Ox3nx0X8vD4nnvz3x/rGjjZX0zoG/wOuMPymReocanauDodcnkPm554XXrKFyXLJx1moEvR4EfMGFYCDOpsDk7PXbw14ao3LAXQU3rYPsYxQJuP66KzJJAnsNWoGzluvEyeJyvpnmJCCOGdHRAgMBAAECggEACkCYATvIv+9Fj31g9UwaP9Wpf8CIz44MuU2Z8IBHrXHMMKBzbCeLhi7CqRRxIaYgJYjoyLyySHsxk90hh54Wake+FoZmIrJr/hEuAuO/gnUDX/OJKpaUAKA09BaqB0r2AWS9+HweKAv8mc3IbcPxCpaXXWp6Do3ADHywBJCresIvnICvacCWT0iTfDnIWcHjwMFQW8gL6MsxjfbfZfF23kywdc71RmfPxig+8VHNfj+GktlFSfHzlXJ4lCss4X2aSXcNj49MrcS0CYapEXfi0zZ8w9dtDs4AGECNpAXDnMBqaKAggAEjPKWJ7HEw1bBd6MzH2VAYv/yL7ZQvWVljeQKBgQDRJZaNKD7w03R+/qW1nocRDM6geWnyyHxUsOKPqNb3YuyrFSqfTYlms6F8XExn4kAfPEMYU9Ry2HLjioyPinCFB1vGWc/O0PWlVX3bpljG2HJPUECm03EW27Z11CJsH6eU1A+PbDT+RJU+tYa5gmN+xBAwWfKgLruNnYYl7B2TjQKBgQC2lDgGrLXl3XNxYln6wmBCIT1AMIlVq3jkwD9BwDyKM9LBu5KcyAASqpkMm76m+HSG0h2HjWQb2pvTfBBsj02SMtWO03dDIxsN04cIpSXagp5+WWowulgxzka0FpL+HKdFZGTYPHeR/XSdj9b0q4vvLVIDDICzNvO8kc90l6gkVQKBgQCpN7Fc2mA6d8v86Eno7a+4gtU3j6TCU6YM2+UjeOcc18RHE+Qdah2uo84XkZIcRzm8TAS5TTJKDYi/Q51AkjFB4NdHX+k8G2N09vvS2P9hO0UZmQQGNnN8nB4/rXiAZQgw6XcBgvpJc/IQ/8xWkgGwUjAK/uvI4KbNCNO+IRE5DQKBgGQJ4IzfsycI6Mk2j4DTYjS5y7rRHV7AfpQwNjjLoSBEdvVJ1nJrL4cKzKNY7uTD++0nUaDFOxX7+Seusb0Z4/H4QoVons89fAReY328J3qL2VX3njSm1c4sbRcdy1rKzmg6Mvs8XnOygWQXvTsAh8L8fRRIlHgd4vzuk9IZirqlAoGACseSN444DR77d+bMrXPUhLH0Mmabl7zDE2nW6WLuGNrKkR1hy9It7aOfR4gdm8qf8uA/TdsUF0RiW+YRbeF8Jw+xZof/VdvFN55ujhP3njwMFj79u+pAj5zLm3BISKhUHpQjCG6xYjb1zaKMfPzefxGh/TFnEQtdXufA3rEo9Qs=}

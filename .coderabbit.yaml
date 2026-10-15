@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "zh-CN"
+early_access: false
+
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - "main"
+      - "master"
+      - "hook"
+
+  path_filters:
+    - "!target/**"
+    - "!**/target/**"
+    - "!**/Q*.java" # 忽略 Querydsl 自动生成的 QClass
+    - "!src/main/resources/templates/**"
+    - "!*.json"
+    - "!pom.xml"
+
+  path_instructions:
+    - path: "src/main/java/**/*.java"
+      instructions: |
+        你是一位精通现代 Java 技术栈（Java 21/25、Spring Boot 4.x、Spring Modulith、Spring Data JPA）的资深架构师。
+        在审查本项目 Java 代码时，请严格遵守以下工程规范与坏味道检查：
+
+        1. 【语言新特性与不可变性】
+           - 所有 DTO、Event、VO 优先且强制使用 Java `record`。
+           - 优先使用模式匹配（Pattern Matching for instanceof / switch）消除冗长 if-else。
+           - 禁止滥用 `null`；对于可能为空的返回值一律使用 `Optional<T>`，严禁将 `Optional` 用作方法参数或实体/Record 字段。
+           - 只读集合强制使用 `List.of()`, `Set.of()`, `Map.of()`；防御性拷贝使用 `Collections.unmodifiableList()`。
+
+        2. 【领域驱动设计与 CQRS】
+           - 领域实体/聚合根必须具备自闭合的充血行为，严禁“万能上帝类（God Service）”和“贫血数据包（Anemic POJO）”。
+           - 历史快照与审计实体（如 DocVersionEntity, SearchHistoryEntity）必须使用 Hibernate `@Immutable`。
+           - `BaseEntity` 严禁滥用全局 `@Setter`。
+           - 读写分离解耦：读接口（Query Service）严禁混入写事务或行锁操作；统计/审计写操作通过异步领域事件（`ApplicationEventPublisher`）或 Redis 解耦。
+
+        3. 【事务边界与并发安全】
+           - `@Transactional` 仅允许在业务编排层（Application / Service），禁止加在 Controller 上。
+           - 事务内严禁包含耗时网络 IO（外部 HTTP/RPC、发邮件、大模型对话、文件上传），必须“大事务拆小事务、IO 操作移出事务”。
+           - 严防 Self-Invocation：禁止在同类内部通过 `this.method()` 调用带 `@Transactional` 的方法。
+           - 计数器递增禁止在应用内存中读-改-写，必须使用 Repository 原子 SQL 或 Redis 原子递增。
+
+        4. 【架构防腐与 Controller 纯粹性】
+           - Entity 与 DTO 相互转换强制使用 MapStruct。
+           - Controller 层仅负责入参校验（`jakarta.validation`）与路由转发，严禁在 Controller 层注入 Mapper 进行转换，严禁在 Controller 手动拆包解构 Request。
+           - 对外暴露的 DTO 严禁包含底层物理文件路径（如 rustfs 内部私网存储路径），仅暴露安全访问链接。
+           - 外部第三方 API（HTTP/RPC）调用必须提取防腐层（ACL Gateway）。
+
+        5. 【Spring AI 规范】
+           - AI 与 RAG 智能交互必须使用 Spring AI (`org.springframework.ai`) 官方标准抽象（`ChatModel`, `ChatClient`, `EmbeddingModel` 等），严禁手写裸 HTTP 请求或未受管 SDK。
+
+        6. 【禁止虚假修复】
+           - 修复代码缺陷或提供 suggestion 时，禁止通过针对特定参数硬编码写死来糊弄测试，必须针对业务逻辑本质进行修复。
+           - 若发现可优化的代码，请优先以 GitHub standard ````suggestion 差异代码块形式提供可一键应用的修复建议。
+
+chat:
+  auto_reply: true

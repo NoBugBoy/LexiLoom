@@ -1,6 +1,6 @@
 # 阶段二：文档全生命周期与协同模块（任务实施全景清单）
 
-> **所属项目**：KnowFlow 知识库管理系统  
+> **所属项目**：LexiLoom 知识库管理系统  
 > **模块定位**： **内容资产中心（Content Asset Center）**  
 > **架构技术规范**：JDK 25 + Spring Boot 4.x + Spring Modulith + Spring Data JPA + CQRS + DDD 充血模型 + COLA
 > StateMachine + MapStruct + rustfs 存储防腐层 + DeepDoc / MarkItDown 解析防腐层
@@ -22,7 +22,7 @@
                                         │
                                         ▼
                   ╔═══════════════════════════════════════════╗
-                  ║           KnowFlow 内容资产中心           ║
+                  ║           LexiLoom 内容资产中心           ║
                   ║  ┌─────────────────────────────────────┐  ║
                   ║  │ 状态机引擎 (COLA StateMachine)       │  ║
                   ║  │ 统一存储底座 (rustfs / 对象存储)     │  ║
@@ -62,7 +62,7 @@
 3. **统一存储底座与源文件溯源（rustfs Storage & Source Link）**：
     - 所有上传的文件、正文转化的 Markdown 资产、图片附件均通过 `FileStorageGateway` 统一存储至 **rustfs**（兼容 S3
       协议的高性能分布式对象存储底座）；
-    - 建立 **文档源文件资产关联表 (`kf_doc_source_file`)**，记录原文件 MD5/SHA256、文件大小、rustfs 存储路径、原始扩展名与解析状态；
+    - 建立 **文档源文件资产关联表 (`ll_doc_source_file`)**，记录原文件 MD5/SHA256、文件大小、rustfs 存储路径、原始扩展名与解析状态；
     - **核心价值**：后续阶段在 Elasticsearch 全文检索和 RAG 问答双路召回时，不仅能定位正文段落，还能 **精准将原始上传文件（PDF/Word
       原件）检索召回并提供原文定位下载**。
 
@@ -141,7 +141,7 @@
     - `MarkItDownDocParserEngine`：预留微软 MarkItDown 微服务适配器；
     - `MinerUDocParserEngine`：预留 MinerU 官方开源模型/云端 API 适配器；
     - `DefaultDocParserGateway`：动态策略路由分发器，业务层完全解耦，未来落地任何真实引擎零改动。
-    - 预留基于 HTTP REST / gRPC 远程调用真实 Python `markitdown` 服务的配置开关（`knowflow.parser.mode=mock|remote`）。
+    - 预留基于 HTTP REST / gRPC 远程调用真实 Python `markitdown` 服务的配置开关（`lexiloom.parser.mode=mock|remote`）。
 - [x] **4.3 实现导入流水线编排服务 (`DocumentImportPipeline`)**
     - 步骤一：入库存储防腐层 `rustfs`，生成唯一文件存储路径与 SHA-256 哈希；
     - 步骤二：记录 `DocSourceFileEntity`，状态设为 PENDING；
@@ -167,7 +167,7 @@
 
 ### 任务组 6：草稿模块废除与生命周期极简收敛（架构认知纠偏）
 
-> **架构决策**：知识库核心定位为外部文件资产导入（DeepDoc解析）、全文/向量检索与安全清理，彻底移除旧版基于 Redis 的协同草稿自动暂存（`kf:doc:draft:*`）机制，杜绝把知识库复杂化为协同文本编辑器的设计偏差。
+> **架构决策**：知识库核心定位为外部文件资产导入（DeepDoc解析）、全文/向量检索与安全清理，彻底移除旧版基于 Redis 的协同草稿自动暂存（`ll:doc:draft:*`）机制，杜绝把知识库复杂化为协同文本编辑器的设计偏差。
 
 ---
 

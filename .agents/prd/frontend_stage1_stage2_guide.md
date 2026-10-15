@@ -1,4 +1,4 @@
-# KnowFlow 知识库管理系统 —— 前端开发对接指南 (Stage 1 & Stage 2)
+# LexiLoom 知识库管理系统 —— 前端开发对接指南 (Stage 1 & Stage 2)
 
 > **文档状态**：已冻结（对应后端代码交付版本）  
 > **覆盖范围**：**Stage 1（用户认证、多空间体系与成员权限）** + **Stage 2（文档生命周期、分类树、版本快照、前端 Diff 渲染、草稿协同与评论树）**  
@@ -43,7 +43,7 @@ Authorization: Bearer <accessToken>
 ## 二、 阶段一：用户认证与团队空间模块 (`module-auth`)
 
 ### 2.1 业务描述
-- **多空间体系 (Workspace)**：KnowFlow 采用多租户空间模型。每个用户可属于多个空间，每个空间拥有独立的文档树、分类及成员体系。
+- **多空间体系 (Workspace)**：LexiLoom 采用多租户空间模型。每个用户可属于多个空间，每个空间拥有独立的文档树、分类及成员体系。
 - **空间成员 RBAC 角色等级**：
   | 角色代码 | 枚举名称 | 等级权重 | 权限说明 |
   |:---|:---|:---|:---|
@@ -179,7 +179,7 @@ stateDiagram-v2
 ### 3.2 接口详细规范
 
 > [!IMPORTANT]
-> **KnowFlow 不提供"空白新建文档"功能。** 所有文档必须通过文件导入（`POST /documents/import`）由 DeepDoc 引擎解析进入系统，导入完成后自动生成草稿（`DRAFT`）供用户在 Markdown 编辑器中二次编辑精修。
+> **LexiLoom 不提供"空白新建文档"功能。** 所有文档必须通过文件导入（`POST /documents/import`）由 DeepDoc 引擎解析进入系统，导入完成后自动生成草稿（`DRAFT`）供用户在 Markdown 编辑器中二次编辑精修。
 
 #### 1. 查阅文档详情
 - **请求方式**：`GET /documents/{id}`
@@ -290,7 +290,7 @@ stateDiagram-v2
     "title": "产品需求规格说明书",
     "originalFileName": "prd_v1.0.docx",
     "storagePath": "workspaces/1/docs/a1b2c3d4_prd_v1.0.docx",
-    "storageUrl": "http://localhost:9000/knowflow/workspaces/1/docs/...",
+    "storageUrl": "http://localhost:9000/lexiloom/workspaces/1/docs/...",
     "parseStatus": "SUCCESS",     // SUCCESS | PREVIEW_ONLY | FAILED
     "engineUsed": "MARKITDOWN",
     "instantUpload": false,       // 是否秒传命中

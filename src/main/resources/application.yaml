@@ -1,6 +1,6 @@
 spring:
   application:
-    name: trade
+    name: lexiloom
   profiles:
     active: local
   servlet:
@@ -13,9 +13,9 @@ spring:
     socket-timeout: 30s
     connection-timeout: 5s
 
-knowflow:
+lexiloom:
   elasticsearch:
-    index-name: knowflow_doc_index
+    index-name: lexiloom_doc_index
     auto-create-index: true
   parser:
     default-engine: AUTO
@@ -29,7 +29,7 @@ knowflow:
     base-url: ${AI_BASE_URL:https://api.deepseek.com}
     chat-model: ${AI_CHAT_MODEL:deepseek-chat}
     reasoning-model: ${AI_REASONING_MODEL:deepseek-reasoner}
-    chunk-index-name: ${AI_CHUNK_INDEX:knowflow_chunk_index}
+    chunk-index-name: ${AI_CHUNK_INDEX:lexiloom_chunk_index}
     auto-create-index: true
     embedding:
       provider: ${AI_EMBEDDING_PROVIDER:MOCK}

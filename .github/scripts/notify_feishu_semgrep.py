@@ -16,7 +16,7 @@ def send_feishu_alert():
         print("⚠️ [Feishu] 未检测到 FEISHU_WEBHOOK_URL 环境变量，跳过报警卡片发送。")
         return
 
-    repo = os.environ.get("GITHUB_REPOSITORY", "NoBugBoy/htz")
+    repo = os.environ.get("GITHUB_REPOSITORY", "NoBugBoy/LexiLoom")
     ref = os.environ.get("GITHUB_REF_NAME", "unknown")
     actor = os.environ.get("GITHUB_ACTOR", "unknown")
     run_id = os.environ.get("GITHUB_RUN_ID", "")

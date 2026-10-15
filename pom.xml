@@ -3,7 +3,11 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-
+    <description>
+        LexiLoom（织机隐喻：将碎片文本“编织”成知识织锦）
+        词源：Lexi（希腊语词根，词汇、语义、文本）+ Loom（织布机）。
+        寓意：散落在企业各处的非结构化，就像一团团零散的棉麻丝线。你的系统就是一台现代智能**“织机（Loom）”**，把碎片化的切片、表格、段落精巧地“编织（Weave）”成一张经纬交错、逻辑互联的知识织锦。
+    </description>
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
@@ -11,8 +15,8 @@
         <relativePath/>
     </parent>
 
-    <groupId>com.knowflow</groupId>
-    <artifactId>KnowFlow</artifactId>
+    <groupId>io.lexiloom</groupId>
+    <artifactId>LexiLoom</artifactId>
     <version>0.0.1-SNAPSHOT</version>
 
     <properties>
@@ -369,7 +373,7 @@
                         </goals>
                         <configuration>
                             <includes>
-                                <include>com/huantz/trade/**</include>
+                                <include>io/lexiloom/**</include>
                             </includes>
                             <excludes>
                                 <exclude>*MockitoMock*</exclude>

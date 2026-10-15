@@ -1,6 +1,6 @@
 # 阶段四：AI 智能问答与 RAG 检索增强中心（任务实施全景清单）
 
-> **所属项目**：KnowFlow 知识库管理系统  
+> **所属项目**：LexiLoom 知识库管理系统  
 > **模块定位**：**AI 智能中枢与 RAG 检索增强中心（AI Intelligence & RAG Center）**  
 > **架构技术规范**：JDK 25 + Spring Boot 4.x + **Spring AI (spring-ai-core / spring-ai-bom)** + Spring Modulith + Spring Data JPA + Spring Data Elasticsearch (Dense Vector + IK) + CQRS + SSE (Server-Sent Events) + MapStruct + ACL 防腐层 + 充血模型  
 > **阶段时间范围（参考）**：第 14 ~ 20 天  
@@ -13,7 +13,7 @@
 
 ### 1.1 业务认知纠偏：纯导入型知识库的切块哲学
 
-KnowFlow 作为专业内容资产与智能知识库系统，文档资产来源**唯一收敛为外部文件导入（`sourceType = IMPORT`）**，全流程由 **DeepDoc 多格式版面解析引擎**深度驱动：
+LexiLoom 作为专业内容资产与智能知识库系统，文档资产来源**唯一收敛为外部文件导入（`sourceType = IMPORT`）**，全流程由 **DeepDoc 多格式版面解析引擎**深度驱动：
 
 1. **DeepDoc 的段落切分本身就是语义感知的**：
    - **视觉版面识别**：底层通过 YOLO 模型精确感知文档版面元素（标题 Title、正文 Text、表格 Table、幻灯片 Slide、图注 Figure、页眉页脚）；
@@ -49,12 +49,12 @@ KnowFlow 作为专业内容资产与智能知识库系统，文档资产来源**
 
 | 已完成模块 | 关键类 / 资产 | 阶段四直接复用点 |
 |:---|:---|:---|
-| **DeepDoc 结构化解析结果** | [`DocTextChunk`](file:///Users/yujian/Downloads/trade/src/main/java/com/knowflow/application/document/parser/DocTextChunk.java) / [`DeepDocParsedDocument`](file:///Users/yujian/Downloads/trade/src/main/java/com/knowflow/application/document/parser/DeepDocParsedDocument.java) | 提供 YOLO + KMeans 解析出的原子段落、页码 `page`、矩形框 `bbox` 及定位锚点 `anchor` |
-| **文档领域实体** | [`DocumentEntity`](file:///Users/yujian/Downloads/trade/src/main/java/com/knowflow/application/document/model/entity/DocumentEntity.java) / [`DocSourceFileEntity`](file:///Users/yujian/Downloads/trade/src/main/java/com/knowflow/application/document/model/entity/DocSourceFileEntity.java) | 均为 `sourceType = IMPORT`，持有文档标题 `title`、Markdown 文本及关联原件存储路径 |
-| **状态机流转事件** | [`DocumentStateTransitionEvent`](file:///Users/yujian/Downloads/trade/src/main/java/com/knowflow/application/document/statemachine/DocumentStateTransitionEvent.java) | 监听 `PUBLISHED` 触发异步上下文帽子组装与向量化，监听 `ARCHIVED`/`DRAFT` 触发切块物理下线 |
-| **ES 8.x 检索基础设施** | `ElasticsearchTemplate` / [`ElasticsearchProperties`](file:///Users/yujian/Downloads/trade/src/main/java/com/knowflow/application/document/search/ElasticsearchProperties.java) | 原生支持 `dense_vector`（dims=1536，cosine 相似度）与 kNN 向量混合检索 |
-| **安全用户上下文** | [`SecurityHolder`](file:///Users/yujian/Downloads/trade/src/main/java/com/knowflow/application/common/SecurityHolder.java) | 提取当前用户 `userId` 用于工作区隔离、对话会话归属与历史追踪 |
-| **统一异常体系** | [`ErrorCode`](file:///Users/yujian/Downloads/trade/src/main/java/com/knowflow/application/common/ErrorCode.java) / [`BusinessException`](file:///Users/yujian/Downloads/trade/src/main/java/com/knowflow/application/exception/BusinessException.java) | 扩展 AI 分组错误码（LLM 调用异常、向量化失败、切块解析异常等） |
+| **DeepDoc 结构化解析结果** | [`DocTextChunk`](file:///Users/yujian/Downloads/trade/src/main/java/io/lexiloom/application/document/parser/DocTextChunk.java) / [`DeepDocParsedDocument`](file:///Users/yujian/Downloads/trade/src/main/java/io/lexiloom/application/document/parser/DeepDocParsedDocument.java) | 提供 YOLO + KMeans 解析出的原子段落、页码 `page`、矩形框 `bbox` 及定位锚点 `anchor` |
+| **文档领域实体** | [`DocumentEntity`](file:///Users/yujian/Downloads/trade/src/main/java/io/lexiloom/application/document/model/entity/DocumentEntity.java) / [`DocSourceFileEntity`](file:///Users/yujian/Downloads/trade/src/main/java/io/lexiloom/application/document/model/entity/DocSourceFileEntity.java) | 均为 `sourceType = IMPORT`，持有文档标题 `title`、Markdown 文本及关联原件存储路径 |
+| **状态机流转事件** | [`DocumentStateTransitionEvent`](file:///Users/yujian/Downloads/trade/src/main/java/io/lexiloom/application/document/statemachine/DocumentStateTransitionEvent.java) | 监听 `PUBLISHED` 触发异步上下文帽子组装与向量化，监听 `ARCHIVED`/`DRAFT` 触发切块物理下线 |
+| **ES 8.x 检索基础设施** | `ElasticsearchTemplate` / [`ElasticsearchProperties`](file:///Users/yujian/Downloads/trade/src/main/java/io/lexiloom/application/document/search/ElasticsearchProperties.java) | 原生支持 `dense_vector`（dims=1536，cosine 相似度）与 kNN 向量混合检索 |
+| **安全用户上下文** | [`SecurityHolder`](file:///Users/yujian/Downloads/trade/src/main/java/io/lexiloom/application/common/SecurityHolder.java) | 提取当前用户 `userId` 用于工作区隔离、对话会话归属与历史追踪 |
+| **统一异常体系** | [`ErrorCode`](file:///Users/yujian/Downloads/trade/src/main/java/io/lexiloom/application/common/ErrorCode.java) / [`BusinessException`](file:///Users/yujian/Downloads/trade/src/main/java/io/lexiloom/application/exception/BusinessException.java) | 扩展 AI 分组错误码（LLM 调用异常、向量化失败、切块解析异常等） |
 
 ---
 
@@ -73,7 +73,7 @@ DocumentStateTransitionEvent(PUBLISHED)
        │   ├─ 递归解析 Markdown / 锚点层级面包屑 (headerPath)
        │   └─ 组装上下文帽子: "[文档: 《{title}》] > [章节: {headerPath}]\n\n{content}"
        ├─ [EmbeddingGateway 抽象层] 批量文本向量化 (基于带帽子的 EnrichedText -> float[1536])
-       └─ [DocChunkRepository] 保存切块至 ES knowflow_chunk_index (保留原 content, page, bbox, dense_vector)
+       └─ [DocChunkRepository] 保存切块至 ES lexiloom_chunk_index (保留原 content, page, bbox, dense_vector)
 
 【在线 RAG 检索增强对话链路】
 前端用户提问 (POST /api/ai/chat/stream)
@@ -194,7 +194,7 @@ DocumentStateTransitionEvent(PUBLISHED)
 ### 任务组 1：配置项与属性类设计
 
 - [x] **1.1 配置项与属性类设计 (`AiProperties`)**
-  - 新增配置类 `AiProperties`（`@ConfigurationProperties(prefix = "knowflow.ai")`）：
+  - 新增配置类 `AiProperties`（`@ConfigurationProperties(prefix = "lexiloom.ai")`）：
     - `enabled`: 布尔值开关
     - `model-provider`: 枚举 `DEEPSEEK`, `QWEN`, `OLLAMA`, `MOCK`（默认 MOCK）
     - `api-key`, `base-url`, `chat-model`, `reasoning-model`
@@ -218,7 +218,7 @@ DocumentStateTransitionEvent(PUBLISHED)
   - 更新 `application.yaml` 与 `application-local.yaml` 配置样例。
 
 - [x] **1.2 异常码扩充**
-  - 在 [`ErrorCode.java`](file:///Users/yujian/Downloads/trade/src/main/java/com/knowflow/application/common/ErrorCode.java) 中增加 `Ai` 错误码枚举：
+  - 在 [`ErrorCode.java`](file:///Users/yujian/Downloads/trade/src/main/java/io/lexiloom/application/common/ErrorCode.java) 中增加 `Ai` 错误码枚举：
     - `LLM_API_ERROR` (500, "大模型接口远程调用失败")
     - `EMBEDDING_FAILED` (500, "文本向量化计算失败")
     - `RERANK_FAILED` (500, "重排模型调用失败")
@@ -232,7 +232,7 @@ DocumentStateTransitionEvent(PUBLISHED)
 
 - [x] **2.1 ES 切块实体 `DocChunkDocument`**
   - 路径：`ai/model/search/DocChunkDocument.java`
-  - 索引名称：`#{@aiProperties.chunkIndexName}`（默认 `knowflow_chunk_index`）
+  - 索引名称：`#{@aiProperties.chunkIndexName}`（默认 `lexiloom_chunk_index`）
   - 字段定义：
     - `id` (`@Id`, Keyword) - `documentId_chunkIndex`
     - `workspaceId` (Keyword, 必须索引过滤)
@@ -259,7 +259,7 @@ DocumentStateTransitionEvent(PUBLISHED)
     - `findByWorkspaceIdAndDocumentId(String workspaceId, String documentId)`
 
 - [x] **2.3 自动初始化索引组件 `AiIndexInitializer`**
-  - 在应用启动时（`@PostConstruct`），通过 `IndexOperations` 校验并自动创建 `knowflow_chunk_index` 及其 Mapping 结构。
+  - 在应用启动时（`@PostConstruct`），通过 `IndexOperations` 校验并自动创建 `lexiloom_chunk_index` 及其 Mapping 结构。
 
 - [x] **2.4 传输对象与值对象设计（全不可变 Java `record`）**
   - `DocChunkVO(documentId, chunkIndex, headerPath, content, similarityScore, page, bbox, chunkType)`
@@ -347,7 +347,7 @@ DocumentStateTransitionEvent(PUBLISHED)
   - 支持多轮对话历史上下文窗口拼接（最多保留最近 3 轮）。
 
 - [x] **6.2 会话管理服务 `ConversationSessionService`**
-  - 基于 Redis（`kf:ai:session:{sessionId}`）维护多轮消息上下文，设置滑动过期时间。
+  - 基于 Redis（`ll:ai:session:{sessionId}`）维护多轮消息上下文，设置滑动过期时间。
 
 - [x] **6.3 核心编排服务 `RagChatService`**
   - 同步模式：`chat(...)` $ightarrow$ 向量化 $ightarrow$ 双路召回与重排 $ightarrow$ 组装 Prompt $ightarrow$ 调用 LLM $ightarrow$ 返回完整响应；

@@ -1,0 +1,38 @@
+package io.lexiloom.application.user.usecase.admin;
+
+import io.lexiloom.application.common.CustomerProperties;
+import io.lexiloom.application.common.UseCase;
+import io.lexiloom.application.common.security.RedisTokenManager;
+import io.lexiloom.application.exception.BusinessException;
+import io.lexiloom.application.user.api.AdminQueryService;
+import io.lexiloom.application.user.model.entity.AdminEntity;
+import io.lexiloom.application.user.model.request.AdminLoginRequest;
+import io.lexiloom.application.user.service.AdminRoleService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class AdminLoginUseCase implements UseCase<AdminLoginRequest, String> {
+  private final PasswordEncoder passwordEncoder;
+  private final CustomerProperties customerProperties;
+  private final AdminQueryService adminQueryService;
+  private final AdminRoleService adminRoleService;
+  private final RedisTokenManager redisTokenManager;
+
+  @Override
+  public String execute(AdminLoginRequest command) {
+
+    AdminEntity adminEntity =
+        adminQueryService
+            .findAdminByEmail(command.email())
+            .filter(it -> passwordEncoder.matches(command.password(), it.getPassword()))
+            .orElseThrow(() -> BusinessException.badRequest("用户名或密码错误"));
+    var roles = adminRoleService.findRolesByUserId(adminEntity.getId());
+
+    return redisTokenManager.generateToken(adminEntity.getId(), roles);
+  }
+}

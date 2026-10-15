@@ -1,6 +1,6 @@
 # 阶段三：Elasticsearch 全文检索接入（任务实施全景清单）
 
-> **所属项目**：KnowFlow 知识库管理系统
+> **所属项目**：LexiLoom 知识库管理系统
 > **模块定位**：**内容检索底座（Content Retrieval Foundation）**
 > **架构技术规范**：JDK 25 + Spring Boot 4.x + Spring Modulith + Spring Data JPA + CQRS
 > + Spring Data Elasticsearch + MapStruct
@@ -39,7 +39,7 @@
 │                    阶段三：内容检索底座                       │
 │                                                             │
 │  ┌───────────────────────────────────────────────────┐      │
-│  │  Elasticsearch 8.x   knowflow_doc_index            │      │
+│  │  Elasticsearch 8.x   lexiloom_doc_index            │      │
 │  │  IK 分词 + 高亮 + Suggester + dense_vector(预留)   │      │
 │  └──────────────────────────┬────────────────────────┘      │
 │                             │                               │
@@ -94,12 +94,12 @@ dense_vector 字段预留 → RAG 双路召回
         uris: ${ES_URIS:http://localhost:9200}
         socket-timeout: 30s
         connection-timeout: 5s
-    knowflow:
+    lexiloom:
       elasticsearch:
-        index-name: knowflow_doc_index
+        index-name: lexiloom_doc_index
         auto-create-index: true
     ```
-  - 新增 `ElasticsearchProperties`（`@ConfigurationProperties(prefix = "knowflow.elasticsearch")`）。
+  - 新增 `ElasticsearchProperties`（`@ConfigurationProperties(prefix = "lexiloom.elasticsearch")`）。
 
 - [x] **1.3 新增 ES 相关错误码**
   - 在 `ErrorCode.java` 的 `Document` 枚举中追加：
@@ -139,7 +139,7 @@ dense_vector 字段预留 → RAG 双路召回
 
 - [x] **2.3 ES 索引自动初始化**
   - 路径：`document/search/ElasticsearchIndexInitializer.java`
-  - `@PostConstruct` + `@ConditionalOnProperty(name = "knowflow.elasticsearch.auto-create-index", havingValue = "true")`
+  - `@PostConstruct` + `@ConditionalOnProperty(name = "lexiloom.elasticsearch.auto-create-index", havingValue = "true")`
   - 通过 `IndexOperations` 检查索引是否存在，不存在则创建并应用 Mapping（含 IK 分词器 settings）。
 
 ---
@@ -215,12 +215,12 @@ dense_vector 字段预留 → RAG 双路召回
 
 - [x] **4.4 实现 `SearchHistoryService`**
   - 路径：`document/service/SearchHistoryService.java`
-  - **写入**：Redis `ZSet`，Key = `kf:search:history:{userId}`，score = 当前时间戳，member = keyword
+  - **写入**：Redis `ZSet`，Key = `ll:search:history:{userId}`，score = 当前时间戳，member = keyword
     - 写入后立即 `ZREMRANGEBYRANK` 保留最新 20 条
   - **读取**：`ZREVRANGE` 倒序取最近 N 条（默认 10）
   - **删除单条**：`ZREM`
   - **清空**：`DEL`
-  - **DB 异步归档**：每次写入发布 `SearchHistoryRecordEvent`，由 `@EventListener @Async` 异步落库至 `kf_search_history`，防 Redis 丢失。
+  - **DB 异步归档**：每次写入发布 `SearchHistoryRecordEvent`，由 `@EventListener @Async` 异步落库至 `ll_search_history`，防 Redis 丢失。
 
 ---
 
@@ -228,16 +228,16 @@ dense_vector 字段预留 → RAG 双路召回
 
 - [ ] **5.1 Flyway 迁移脚本（按要求暂缓落地）**
   - 文件：`V3__add_search_history.sql`
-  - 建表：`kf_search_history`
+  - 建表：`ll_search_history`
     ```sql
-    CREATE TABLE kf_search_history (
+    CREATE TABLE ll_search_history (
         id            BIGSERIAL    PRIMARY KEY,
         user_id       BIGINT       NOT NULL,
         workspace_id  BIGINT       NOT NULL,
         keyword       VARCHAR(200) NOT NULL,
         search_at     TIMESTAMP    NOT NULL DEFAULT now()
     );
-    CREATE INDEX idx_search_history_user ON kf_search_history (user_id, search_at DESC);
+    CREATE INDEX idx_search_history_user ON ll_search_history (user_id, search_at DESC);
     ```
 
 - [x] **5.2 `SearchHistoryEntity` + `SearchHistoryRepository`**
@@ -296,7 +296,7 @@ dense_vector 字段预留 → RAG 双路召回
         ├─ DocumentRepository.findById(docId)
         ├─ DocSourceFileRepository.findByDocumentId(docId)  ← 可选，获取 rawText
         ├─ DocSearchMapper.toSearchDoc(doc, sourceFile)
-        └─ DocSearchRepository.save(searchDoc) ────────────► ES knowflow_doc_index
+        └─ DocSearchRepository.save(searchDoc) ────────────► ES lexiloom_doc_index
 
 ③ 用户搜索请求
    GET /api/search?keyword=知识管理&workspaceId=1

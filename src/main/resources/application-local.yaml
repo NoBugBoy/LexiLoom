@@ -4,7 +4,7 @@ spring:
       on-profile: local
   datasource:
     driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://localhost:5432/knowflow?currentSchema=public&reWriteBatchedInserts=true
+    url: jdbc:postgresql://localhost:5432/lexiloom?currentSchema=public&reWriteBatchedInserts=true
     username: postgres
     password: root
   flyway:
@@ -52,12 +52,12 @@ security:
     expire-seconds: 7200
 
 # ── 对象存储 (RustFS / S3 兼容) ───────────────────────────────────────────────
-knowflow:
+lexiloom:
   storage:
     rustfs:
       enabled: true
       endpoint: http://localhost:9000
-      bucket-name: knowflow
+      bucket-name: lexiloom
       access-key: rustfsadmin
       secret-key: rustfsadmin
       region: us-east-1
@@ -74,7 +74,7 @@ knowflow:
 
   # ── Elasticsearch 全文检索 ───────────────────────────────────────────────────
   elasticsearch:
-    index-name: knowflow_doc_index
+    index-name: lexiloom_doc_index
     auto-create-index: true
 
   # ── AI 智能问答与 RAG 检索增强中心 ──────────────────────────────────────────
@@ -86,7 +86,7 @@ knowflow:
     base-url: ${AI_BASE_URL:https://api.deepseek.com}
     chat-model: ${AI_CHAT_MODEL:deepseek-flash}
     reasoning-model: ${AI_REASONING_MODEL:deepseek-flash}
-    chunk-index-name: ${AI_CHUNK_INDEX:knowflow_chunk_index}
+    chunk-index-name: ${AI_CHUNK_INDEX:lexiloom_chunk_index}
     auto-create-index: true
     embedding:
       # 可选值: OPENAI_COMPATIBLE | DASHSCOPE | OLLAMA | MOCK

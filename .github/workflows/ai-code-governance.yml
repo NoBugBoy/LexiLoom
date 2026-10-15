@@ -4,7 +4,6 @@ on:
   workflow_dispatch: # 支持网页上手动点按钮触发
   push:
     branches:
-      - htz          # 当代码 push 到 htz 分支时立即自动触发
       - hook         # 当前测试分支
       - main         # 如果后续切回 main 也会触发
     paths:
@@ -59,71 +58,73 @@ jobs:
         run: |
           python3 .github/scripts/notify_feishu_semgrep.py
 
-  # ── Step 2：安全扫描通过后，才进入 SonarCloud 质量分析与 AI 自动治理 ──────
-  sonar-and-ai:
-    name: SonarCloud Analysis & AI Governance
-    needs: security-check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0 # Sonar 需要完整的 Git 历史来比对责任人和代码变更
-
-      - name: Set up Java
-        uses: actions/setup-java@v5
-        with:
-          java-version: '25'
-          distribution: 'temurin'
-          cache: maven
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      - name: Install Dependencies
-        run: "pip install --only-binary :all: requests==2.32.3 httpx==0.27.2 openai==1.55.0"
-
-      # 1. 执行单元测试并生成 JaCoCo 覆盖率报告（JaCoCo 0.8.12 不兼容 Java 25，单测用 Java 21 运行）
-      - name: Set up Java 21 for Tests
-        uses: actions/setup-java@v5
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-
-      - name: Run Unit Tests & Generate Coverage
-        run: mvn -B test -Dtest="!*ControllerTest" -DfailIfNoTests=false
-
-      # 恢复 Java 25 给后续 Sonar 分析使用
-      - name: Set up Java 25 for Sonar
-        uses: actions/setup-java@v5
-        with:
-          java-version: '25'
-          distribution: 'temurin'
-          cache: maven
-
-      # 2. 编译并推送分析到 SonarCloud（核心步骤）
-      - name: Build and analyze with SonarCloud
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          mvn -B verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -DskipTests=true \
-            -Dsonar.projectKey=NoBugBoy_htz \
-            -Dsonar.organization=nobugboy \
-            -Dsonar.host.url=https://sonarcloud.io
-
-      # 2. 调用 Python 脚本通过 SonarCloud REST API 拉取刚才扫出来的缺陷，喂给 AI 自动修代码！
-      - name: Fetch Sonar Issues and AI Triage
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_PROJECT_KEY: NoBugBoy_htz
-          SONAR_BRANCH: ${{ vars.SONAR_BRANCH || github.ref_name }}
-          AI_API_KEY: ${{ secrets.AI_API_KEY }}
-          AI_BASE_URL: ${{ secrets.AI_BASE_URL || 'https://api.deepseek.com/v1' }}
-          AI_MODEL: ${{ secrets.AI_MODEL || 'deepseek-v4-flash' }}
-          FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
-        run: |
-          python .github/scripts/triage_sonar_with_ai.py
+  # ── Step 2：[已暂停/由 CodeRabbit 接管] SonarCloud 质量分析与 AI 自动治理 ──────
+  # 说明：现已迁移至 CodeRabbit 进行 PR 自动审查与 AI 修复建议。
+  # 旧的 SonarCloud + 自研 triage_sonar_with_ai.py 脚本保留注释备用，如需重新启用直接取消注释即可。
+  # sonar-and-ai:
+  #   name: SonarCloud Analysis & AI Governance
+  #   needs: security-check
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout Code
+  #       uses: actions/checkout@v5
+  #       with:
+  #         fetch-depth: 0 # Sonar 需要完整的 Git 历史来比对责任人和代码变更
+  #
+  #     - name: Set up Java
+  #       uses: actions/setup-java@v5
+  #       with:
+  #         java-version: '25'
+  #         distribution: 'temurin'
+  #         cache: maven
+  #
+  #     - name: Set up Python
+  #       uses: actions/setup-python@v5
+  #       with:
+  #         python-version: '3.10'
+  #
+  #     - name: Install Dependencies
+  #       run: "pip install --only-binary :all: requests==2.32.3 httpx==0.27.2 openai==1.55.0"
+  #
+  #     # 1. 执行单元测试并生成 JaCoCo 覆盖率报告（JaCoCo 0.8.12 不兼容 Java 25，单测用 Java 21 运行）
+  #     - name: Set up Java 21 for Tests
+  #       uses: actions/setup-java@v5
+  #       with:
+  #         java-version: '21'
+  #         distribution: 'temurin'
+  #
+  #     - name: Run Unit Tests & Generate Coverage
+  #       run: mvn -B test -Dtest="!*ControllerTest" -DfailIfNoTests=false
+  #
+  #     # 恢复 Java 25 给后续 Sonar 分析使用
+  #     - name: Set up Java 25 for Sonar
+  #       uses: actions/setup-java@v5
+  #       with:
+  #         java-version: '25'
+  #         distribution: 'temurin'
+  #         cache: maven
+  #
+  #     # 2. 编译并推送分析到 SonarCloud（核心步骤）
+  #     - name: Build and analyze with SonarCloud
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+  #       run: |
+  #         mvn -B verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -DskipTests=true \
+  #           -Dsonar.projectKey=NoBugBoy_LexiLoom \
+  #           -Dsonar.organization=nobugboy \
+  #           -Dsonar.host.url=https://sonarcloud.io
+  #
+  #     # 3. 调用 Python 脚本通过 SonarCloud REST API 拉取刚才扫出来的缺陷，喂给 AI 自动修代码！
+  #     - name: Fetch Sonar Issues and AI Triage
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+  #         SONAR_PROJECT_KEY: NoBugBoy_LexiLoom
+  #         SONAR_BRANCH: ${{ vars.SONAR_BRANCH || github.ref_name }}
+  #         AI_API_KEY: ${{ secrets.AI_API_KEY }}
+  #         AI_BASE_URL: ${{ secrets.AI_BASE_URL || 'https://api.deepseek.com/v1' }}
+  #         AI_MODEL: ${{ secrets.AI_MODEL || 'deepseek-v4-flash' }}
+  #         FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
+  #       run: |
+  #         python .github/scripts/triage_sonar_with_ai.py
