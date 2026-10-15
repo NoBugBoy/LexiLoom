@@ -84,7 +84,8 @@ public class DocumentAsyncParseListener {
 
       if (parseResult.isAsyncProcessing()) {
         log.info(
-            "【DocumentAsyncParseListener】解析任务已提交至异步解析引擎，等待 HTTP 回调通知: docId={}, sourceFileId={}, engine={}",
+            "【DocumentAsyncParseListener】解析任务已提交至异步解析引擎，等待 HTTP 回调通知: docId={}, sourceFileId={},"
+                + " engine={}",
             event.documentId(),
             event.sourceFileId(),
             parseResult.engineUsed());

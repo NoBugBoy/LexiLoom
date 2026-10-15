@@ -29,17 +29,17 @@ lexiloom:
     deepdoc:
       endpoint: http://localhost:8001
   ai:
-    enabled: true
-    model-provider: MOCK
+    enabled: false
+    model-provider: DEEPSEEK
     chunk-index-name: lexiloom_chunk_index_test
     auto-create-index: false
     embedding:
-      provider: MOCK
-      dimension: 1536
+      provider: DASHSCOPE
+      dimension: 1024
     rerank:
       enabled: false
       strategy: NONE
-      provider: MOCK
+      provider: DASHSCOPE
     chunk:
       context-prefix-enabled: true
       max-token-limit: 2000

@@ -11,7 +11,7 @@ import org.springframework.stereotype.Service;
 /**
  * 统一向量化防腐层门面实现 (DefaultEmbeddingGateway)
  *
- * <p>基于 {@link AiProperties#getEmbedding()} 动态路由到指定向量化提供商， 若未配置或外部服务不可用，自动平滑降级至 Mock 向量适配器。
+ * <p>基于 {@link AiProperties#getEmbedding()} 动态路由到指定向量化提供商 (DashScope / OpenAI Compatible)。
  */
 @Slf4j
 @Service
@@ -56,10 +56,10 @@ public class DefaultEmbeddingGateway implements EmbeddingGateway {
     EmbeddingProviderEnum target =
         (aiProperties != null && aiProperties.getEmbedding() != null)
             ? aiProperties.getEmbedding().getProvider()
-            : EmbeddingProviderEnum.MOCK;
+            : null;
 
     if (target == null) {
-      target = EmbeddingProviderEnum.MOCK;
+      target = EmbeddingProviderEnum.DASHSCOPE;
     }
 
     final EmbeddingProviderEnum finalTarget = target;
@@ -101,11 +101,6 @@ public class DefaultEmbeddingGateway implements EmbeddingGateway {
       }
     }
 
-    log.warn("【EmbeddingGateway】向量模型提供商 [{}] 不可用或未配置，自动降级为 MOCK 适配器", target);
-    return adapters.stream()
-        .filter(a -> a != this)
-        .filter(a -> a.getProvider() == EmbeddingProviderEnum.MOCK)
-        .findFirst()
-        .orElseThrow(() -> new IllegalStateException("系统缺少基础 MockEmbeddingAdapter 适配器"));
+    throw new IllegalStateException("未配置可用的向量模型适配器或 API Key 无效，当前目标提供商: " + target);
   }
 }

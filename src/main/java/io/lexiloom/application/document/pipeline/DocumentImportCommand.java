@@ -19,7 +19,6 @@ public record DocumentImportCommand(
     byte[] fileBytes,
     String contentType,
     DocParserEngineEnum preferredEngine,
-    boolean extractPdfToDoc,
     WorkSpaceAclEnum visibility,
     Map<String, Object> extraOptions) {
 
@@ -46,7 +45,6 @@ public record DocumentImportCommand(
       byte[] fileBytes,
       String contentType,
       DocParserEngineEnum preferredEngine,
-      boolean extractPdfToDoc,
       WorkSpaceAclEnum visibility,
       Map<String, Object> extraOptions) {
     this(
@@ -57,7 +55,6 @@ public record DocumentImportCommand(
         fileBytes,
         contentType,
         preferredEngine,
-        extractPdfToDoc,
         visibility,
         extraOptions);
   }
@@ -76,7 +73,6 @@ public record DocumentImportCommand(
         fileBytes,
         contentType,
         DocParserEngineEnum.AUTO,
-        false,
         WorkSpaceAclEnum.INTERNAL,
         Collections.emptyMap());
   }

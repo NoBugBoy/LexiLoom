@@ -76,7 +76,6 @@ class DocVectorSyncListenerTest {
         null,
         1000,
         0,
-        0,
         1L,
         LocalDateTime.now(),
         LocalDateTime.now());

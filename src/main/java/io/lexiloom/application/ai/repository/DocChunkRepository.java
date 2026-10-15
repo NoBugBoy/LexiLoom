@@ -25,4 +25,7 @@ public interface DocChunkRepository extends ElasticsearchRepository<DocChunkDocu
 
   /** 统计文档当前已入库的切片总数 */
   long countByWorkspaceIdAndDocumentId(String workspaceId, String documentId);
+
+  /** 统计工作区下全部已入库的切片总数 */
+  long countByWorkspaceId(String workspaceId);
 }

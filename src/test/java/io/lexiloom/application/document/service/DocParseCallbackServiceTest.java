@@ -151,9 +151,14 @@ class DocParseCallbackServiceTest {
     when(documentRepository.findById(100L)).thenReturn(Optional.of(doc));
 
     String rawMarkdown =
-        "# 详细设计书\n\n正文内容\n\n<figure data-type=\"image_ocr\"><img src=\"/static/figures/fig1.png\" /></figure>";
+        "# 详细设计书\n\n"
+            + "正文内容\n\n"
+            + "<figure data-type=\"image_ocr\"><img src=\"/static/figures/fig1.png\" /></figure>";
     String transferredMarkdown =
-        "# 详细设计书\n\n正文内容\n\n<figure data-type=\"image_ocr\"><img src=\"http://rustfs/lexiloom/figures/fig1.png\" /></figure>";
+        "# 详细设计书\n\n"
+            + "正文内容\n\n"
+            + "<figure data-type=\"image_ocr\"><img src=\"http://rustfs/lexiloom/figures/fig1.png\""
+            + " /></figure>";
     when(deepDocParserEngine.transferFiguresToStorage(anyString())).thenReturn(transferredMarkdown);
 
     DeepDocParseCallbackRequest request =

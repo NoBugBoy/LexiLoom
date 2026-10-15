@@ -58,6 +58,12 @@ public class AiModelConfiguration {
     }
     String apiKey = aiProperties.getApiKey();
     if (StrUtil.isBlank(apiKey)) {
+      apiKey = System.getenv("DEEPSEEK_API_KEY");
+    }
+    if (StrUtil.isBlank(apiKey)) {
+      apiKey = System.getenv("AI_API_KEY");
+    }
+    if (StrUtil.isBlank(apiKey)) {
       return null;
     }
 
@@ -80,13 +86,19 @@ public class AiModelConfiguration {
     String apiKey =
         StrUtil.blankToDefault(aiProperties.getApiKey(), aiProperties.getEmbedding().getApiKey());
     if (StrUtil.isBlank(apiKey)) {
+      apiKey = System.getenv("DASHSCOPE_API_KEY");
+    }
+    if (StrUtil.isBlank(apiKey)) {
+      apiKey = System.getenv("AI_API_KEY");
+    }
+    if (StrUtil.isBlank(apiKey)) {
       return null;
     }
 
     String baseUrl =
         StrUtil.blankToDefault(
-            aiProperties.getBaseUrl(), "https://dashscope.aliyuncs.com/compatible-mode/v1");
-    String model = StrUtil.blankToDefault(aiProperties.getChatModel(), "qwen-plus");
+            aiProperties.getBaseUrl(), "https://maas.qianwenaiapi.com/compatible-mode/v1");
+    String model = StrUtil.blankToDefault(aiProperties.getChatModel(), "qwen3.8-flash");
 
     log.info(
         "【AiModelConfiguration】初始化 Spring AI Qwen ChatModel: baseUrl={}, model={}", baseUrl, model);

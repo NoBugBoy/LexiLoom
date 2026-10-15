@@ -85,7 +85,8 @@ public abstract class SpringAiChatModelAdapter implements LlmGateway {
               : null;
       if (usage != null) {
         log.info(
-            "【LlmGateway】同步对话完成: provider={}, 耗时={}ms, 回复字符数={}, Token消耗=[prompt={}, completion={}, total={}]",
+            "【LlmGateway】同步对话完成: provider={}, 耗时={}ms, 回复字符数={}, Token消耗=[prompt={}, completion={},"
+                + " total={}]",
             provider,
             latency,
             content.length(),
@@ -163,7 +164,8 @@ public abstract class SpringAiChatModelAdapter implements LlmGateway {
             Usage usage = streamUsageRef.get();
             if (usage != null) {
               log.info(
-                  "【LlmGateway】流式对话完成: provider={}, 耗时={}ms, Token消耗=[prompt={}, completion={}, total={}]",
+                  "【LlmGateway】流式对话完成: provider={}, 耗时={}ms, Token消耗=[prompt={}, completion={},"
+                      + " total={}]",
                   provider,
                   latency,
                   usage.getPromptTokens(),

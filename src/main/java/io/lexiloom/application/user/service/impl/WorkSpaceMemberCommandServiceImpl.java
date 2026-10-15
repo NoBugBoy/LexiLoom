@@ -1,25 +1,32 @@
 package io.lexiloom.application.user.service.impl;
 
+import cn.hutool.core.util.StrUtil;
 import io.lexiloom.application.common.SecurityHolder;
 import io.lexiloom.application.enums.WorkSpaceRoleEnum;
 import io.lexiloom.application.exception.BusinessException;
+import io.lexiloom.application.user.model.entity.UserEntity;
 import io.lexiloom.application.user.model.entity.WorkSpaceEntity;
 import io.lexiloom.application.user.model.entity.WorkSpaceMemberEntity;
 import io.lexiloom.application.user.model.request.WorkSpaceMemberAddRequest;
+import io.lexiloom.application.user.repository.UserRepository;
 import io.lexiloom.application.user.repository.WorkSpaceMemberRepository;
 import io.lexiloom.application.user.repository.WorkSpaceRepository;
 import io.lexiloom.application.user.service.WorkSpaceMemberCommandService;
+import java.util.Objects;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /** 团队成员写操作服务实现 */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class WorkSpaceMemberCommandServiceImpl implements WorkSpaceMemberCommandService {
 
   private final WorkSpaceRepository workSpaceRepository;
   private final WorkSpaceMemberRepository workSpaceMemberRepository;
+  private final UserRepository userRepository;
 
   @Override
   @Transactional(rollbackFor = Throwable.class)
@@ -36,18 +43,36 @@ public class WorkSpaceMemberCommandServiceImpl implements WorkSpaceMemberCommand
       throw BusinessException.badRequest("不可直接指定所有者角色，请使用所有权转让功能");
     }
 
-    // 3. 校验团队人数上限
+    // 3. 校验目标邮箱对应用户是否存在
+    String email = StrUtil.trim(request.email());
+    UserEntity targetUser =
+        userRepository
+            .findByEmail(email)
+            .orElseThrow(() -> BusinessException.badRequest("该邮箱未注册用户: " + email));
+
+    // 4. 如果是当前登录用户自身，则忽略本次添加操作
+    Long targetUserId = targetUser.getId();
+    if (Objects.equals(targetUserId, currentUserId)) {
+      log.info(
+          "【WorkSpaceMember】添加团队成员忽略操作人自身: workSpaceId={}, email={}, userId={}",
+          workSpaceId,
+          email,
+          currentUserId);
+      return null;
+    }
+
+    // 5. 校验团队人数上限
     long currentCount = workSpaceMemberRepository.countByWorkSpaceId(workSpaceId);
     workSpace.validateCanAddMember(currentCount);
 
-    // 4. 幂等/防重复校验
-    if (workSpaceMemberRepository.existsByWorkSpaceIdAndUserId(workSpaceId, request.userId())) {
-      throw BusinessException.badRequest("该用户已是团队成员: " + request.userId());
+    // 6. 幂等/防重复校验
+    if (workSpaceMemberRepository.existsByWorkSpaceIdAndUserId(workSpaceId, targetUserId)) {
+      throw BusinessException.badRequest("该用户已是团队成员: " + email);
     }
 
-    // 5. 充血模型创建成员
+    // 7. 充血模型创建成员
     WorkSpaceMemberEntity member =
-        WorkSpaceMemberEntity.create(workSpaceId, request.userId(), request.role());
+        WorkSpaceMemberEntity.create(workSpaceId, targetUserId, request.role());
     return workSpaceMemberRepository.save(member).getId();
   }
 

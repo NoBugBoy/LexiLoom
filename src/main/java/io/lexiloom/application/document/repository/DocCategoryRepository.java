@@ -20,4 +20,6 @@ public interface DocCategoryRepository extends BaseRepository<DocCategoryEntity>
   boolean existsByIdAndWorkSpaceId(Long id, Long workSpaceId);
 
   List<DocCategoryEntity> findByWorkSpaceIdAndPathStartingWith(Long workSpaceId, String pathPrefix);
+
+  long countByWorkSpaceId(Long workSpaceId);
 }

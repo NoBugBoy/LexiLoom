@@ -16,6 +16,9 @@ public interface WorkSpaceMemberRepository extends BaseRepository<WorkSpaceMembe
 
   long countByWorkSpaceId(Long workSpaceId);
 
+  long countByWorkSpaceIdAndRole(
+      Long workSpaceId, io.lexiloom.application.enums.WorkSpaceRoleEnum role);
+
   List<WorkSpaceMemberEntity> findByWorkSpaceId(Long workSpaceId);
 
   List<WorkSpaceMemberEntity> findByUserId(Long userId);

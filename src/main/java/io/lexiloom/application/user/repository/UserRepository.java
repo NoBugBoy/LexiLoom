@@ -11,4 +11,6 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface UserRepository extends BaseRepository<UserEntity> {
   Optional<UserEntity> findByOpenId(String openId);
+
+  Optional<UserEntity> findByEmail(String email);
 }

@@ -24,8 +24,8 @@ public class AiProperties {
   /** 是否启用 AI 智能问答与 RAG 服务 */
   private boolean enabled = true;
 
-  /** 大语言模型供应商 (默认 MOCK，支持 DEEPSEEK, QWEN, OLLAMA, MOCK) */
-  private LlmModelProviderEnum modelProvider = LlmModelProviderEnum.MOCK;
+  /** 大语言模型供应商 (默认 DEEPSEEK，支持 DEEPSEEK, QWEN) */
+  private LlmModelProviderEnum modelProvider = LlmModelProviderEnum.DEEPSEEK;
 
   /** LLM 鉴权 API 密钥 */
   private String apiKey = "";
@@ -61,8 +61,8 @@ public class AiProperties {
   @Getter
   @Setter
   public static class EmbeddingProperties {
-    /** 向量嵌入供应商 (默认 MOCK，支持 OPENAI_COMPATIBLE, DASHSCOPE, OLLAMA, MOCK) */
-    private EmbeddingProviderEnum provider = EmbeddingProviderEnum.MOCK;
+    /** 向量嵌入供应商 (默认 DASHSCOPE，支持 DASHSCOPE, OPENAI_COMPATIBLE) */
+    private EmbeddingProviderEnum provider = EmbeddingProviderEnum.DASHSCOPE;
 
     /** 向量服务鉴权密钥 (留空则沿用顶层 apiKey) */
     private String apiKey = "";
@@ -70,11 +70,11 @@ public class AiProperties {
     /** 向量服务 Base URL */
     private String baseUrl = "";
 
-    /** 向量模型名称 (如 text-embedding-v3, bge-m3) */
-    private String model = "text-embedding-v3";
+    /** 向量模型名称 (如 qwen3.7-text-embedding-flash, text-embedding-v3) */
+    private String model = "qwen3.7-text-embedding-flash";
 
-    /** 向量维度 (Elasticsearch dense_vector 字段维度，默认 1536) */
-    private int dimension = 1536;
+    /** 向量维度 (Elasticsearch dense_vector 字段维度，默认 1024) */
+    private int dimension = 1024;
   }
 
   /** 重排策略属性配置 (完全可选) */
@@ -84,20 +84,21 @@ public class AiProperties {
     /** 是否启用重排阶段 (默认 false，完全可选设计) */
     private boolean enabled = false;
 
-    /** 重排算法策略 (NONE, RRF, CROSS_ENCODER, MOCK) */
+    /** 重排算法策略 (NONE, RRF, CROSS_ENCODER) */
     private RerankStrategyEnum strategy = RerankStrategyEnum.NONE;
 
-    /** 外部重排服务供应商 (DASHSCOPE, JINA, COHERE, SILICONFLOW, OLLAMA) */
+    /** 外部重排服务供应商 (DASHSCOPE) */
     private RerankProviderEnum provider = RerankProviderEnum.DASHSCOPE;
 
     /** 重排服务鉴权密钥 */
     private String apiKey = "";
 
     /** 重排服务 Base URL */
-    private String baseUrl = "";
+    private String baseUrl =
+        "https://maas.qianwenaiapi.com/api/v1/services/rerank/text-rerank/text-rerank";
 
-    /** 重排模型名称 (如 gte-rerank, bge-reranker-v2-m3) */
-    private String model = "gte-rerank";
+    /** 重排模型名称 (如 qwen3.7-text-rerank, gte-rerank) */
+    private String model = "qwen3.7-text-rerank";
 
     /** 重排截取 Top-K 数量 (默认 12) */
     private int topK = 12;
@@ -127,8 +128,14 @@ public class AiProperties {
   @Getter
   @Setter
   public static class RagProperties {
-    /** 初始检索召回切片数 (默认 12) */
-    private int topK = 12;
+    /** 最终交付 LLM 的检索切片总数 (默认 20: 15 条向量重排 + 5 条词法保底) */
+    private int topK = 20;
+
+    /** 向量检索交付重排阶段的配额数量 (默认 15) */
+    private int vectorTopK = 15;
+
+    /** 词法全文检索 (BM25) 独立保底配额数量 (默认 5) */
+    private int lexicalTopK = 5;
 
     /**
      * 候选切片最小语义相似度过滤阈值 (真实 Cosine 相似度，非重排模拟分)

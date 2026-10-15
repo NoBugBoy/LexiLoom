@@ -27,12 +27,11 @@ public record DocumentDTO(
     String coverUrl,
     Integer wordCount,
     Integer readCount,
-    Integer likeCount,
     Long createBy,
     LocalDateTime createTime,
     LocalDateTime updateTime) {
 
-  /** 兼容旧版 20 个参数构造器（无 fileName, versionCount, publishedVersion） */
+  /** 兼容旧版参数构造器（无 fileName, versionCount, publishedVersion） */
   public DocumentDTO(
       Long id,
       Long workSpaceId,
@@ -50,7 +49,6 @@ public record DocumentDTO(
       String coverUrl,
       Integer wordCount,
       Integer readCount,
-      Integer likeCount,
       Long createBy,
       LocalDateTime createTime,
       LocalDateTime updateTime) {
@@ -74,13 +72,12 @@ public record DocumentDTO(
         coverUrl,
         wordCount,
         readCount,
-        likeCount,
         createBy,
         createTime,
         updateTime);
   }
 
-  /** 兼容旧版 19 个参数构造器，默认 parseStatus 为 SUCCESS */
+  /** 兼容旧版参数构造器，默认 parseStatus 为 SUCCESS */
   public DocumentDTO(
       Long id,
       Long workSpaceId,
@@ -97,7 +94,6 @@ public record DocumentDTO(
       String coverUrl,
       Integer wordCount,
       Integer readCount,
-      Integer likeCount,
       Long createBy,
       LocalDateTime createTime,
       LocalDateTime updateTime) {
@@ -118,7 +114,6 @@ public record DocumentDTO(
         coverUrl,
         wordCount,
         readCount,
-        likeCount,
         createBy,
         createTime,
         updateTime);

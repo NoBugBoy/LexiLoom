@@ -29,4 +29,12 @@ public interface DocCommentRepository extends BaseRepository<DocCommentEntity> {
   @org.springframework.data.jpa.repository.Query(
       "UPDATE DocCommentEntity c SET c.likeCount = c.likeCount + 1 WHERE c.id = :id")
   void incrementLikeCount(@org.springframework.data.repository.query.Param("id") Long id);
+
+  long countByWorkSpaceId(Long workSpaceId);
+
+  @org.springframework.data.jpa.repository.Query(
+      "SELECT COALESCE(SUM(c.likeCount), 0) FROM DocCommentEntity c WHERE c.workSpaceId ="
+          + " :workSpaceId")
+  Long sumLikeCountByWorkSpaceId(
+      @org.springframework.data.repository.query.Param("workSpaceId") Long workSpaceId);
 }

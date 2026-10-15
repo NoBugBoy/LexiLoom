@@ -202,52 +202,6 @@ public class DocumentImportPipeline {
     return result;
   }
 
-  /** PDF 一键提炼为可编辑在线文档用例 */
-  public DocumentEntity extractPdfToDocument(
-      Long sourceFileId, Long targetCategoryId, Long operatorId) {
-    DocSourceFileEntity sourceFile =
-        docSourceFileRepository
-            .findById(sourceFileId)
-            .orElseThrow(() -> new BusinessException(ErrorCode.Document.DOC_NOT_FOUND, "来源文件不存在"));
-
-    // 越权防护：仅来源文件所属工作空间的成员可读取原件并提炼
-    docAccessControlService.assertCanReadWorkSpace(sourceFile.getWorkSpaceId(), operatorId);
-
-    if (!"pdf".equalsIgnoreCase(sourceFile.getFileExt())) {
-      throw new BusinessException(ErrorCode.Document.UNSUPPORTED_DOC_TYPE, "仅支持对 PDF 文件进行提炼转换");
-    }
-
-    log.info(
-        "【DocumentImportPipeline】触发 PDF 一键 AI 提炼: sourceFileId={}, operatorId={}",
-        sourceFileId,
-        operatorId);
-
-    // 统一异步解析初始化
-    DocParseResult asyncInitResult =
-        DocParseResult.asyncProcessing(DocParserEngineEnum.AUTO, null, null, Map.of("ocr", true));
-
-    DocumentEntity savedDoc =
-        transactionalService.saveExtractedPdfDocument(
-            sourceFile, targetCategoryId, asyncInitResult);
-
-    eventPublisher.publishEvent(
-        new DocumentAsyncParseEvent(
-            savedDoc.getId(),
-            sourceFile.getId(),
-            null,
-            null,
-            DocParserEngineEnum.AUTO,
-            sourceFile.getOriginalFileName(),
-            sourceFile.getWorkSpaceId(),
-            operatorId));
-    log.info(
-        "【DocumentImportPipeline】PDF 提炼已发布异步解析领域事件: docId={}, sourceFileId={}",
-        savedDoc.getId(),
-        sourceFile.getId());
-
-    return savedDoc;
-  }
-
   /** 针对解析失败或超时的文档，基于已有对象存储文件重新发起解析 */
   public void retryParse(DocumentEntity doc, DocSourceFileEntity sourceFile, Long operatorId) {
     log.info(

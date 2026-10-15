@@ -26,28 +26,21 @@ import io.lexiloom.application.document.statemachine.DocumentStateMachineEngine;
 import io.lexiloom.application.enums.WorkSpaceAclEnum;
 import io.lexiloom.application.exception.BusinessException;
 import java.io.InputStream;
-import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-/** 文档核心命令服务 (CQRS - Command Side) 聚合文档创建、修改、删除、导入、状态机驱动流转与文档点赞 */
+/** 文档核心命令服务 (CQRS - Command Side) 聚合文档创建、修改、删除、导入与状态机驱动流转 */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class DocumentCommandService {
 
-  /** Redis Key 模板：文档点赞去重，24h 内每用户只能点赞一次。ll:doc:like:{docId}:{userId} */
-  private static final String DOC_LIKE_KEY = "ll:doc:like:%d:%d";
-
-  private static final long DOC_LIKE_TTL_HOURS = 24L;
-
   /** 单文件导入大小上限：10MB（超限直接拒绝，避免整文件读入内存导致 OOM） */
-  private static final long MAX_IMPORT_FILE_SIZE_BYTES = 5L * 1024 * 1024;
+  private static final long MAX_IMPORT_FILE_SIZE_BYTES = 10L * 1024 * 1024;
 
   private final DocumentRepository documentRepository;
   private final DocAccessControlService docAccessControlService;
@@ -58,7 +51,6 @@ public class DocumentCommandService {
   private final DocCommentRepository docCommentRepository;
   private final DocCategoryRepository docCategoryRepository;
   private final DocSourceFileRepository docSourceFileRepository;
-  private final StringRedisTemplate stringRedisTemplate;
 
   /** 修改编辑文档内容 */
   @Transactional
@@ -123,35 +115,6 @@ public class DocumentCommandService {
     log.info("【DocumentCommandService】文档已删除并级联清理关联数据: id={}, userId={}", docId, userId);
   }
 
-  /** 文档点赞（每用户每文档 24h 内最多点赞一次） */
-  @Transactional
-  public void likeDocument(Long docId, Long userId) {
-    DocumentEntity doc =
-        documentRepository
-            .findById(docId)
-            .orElseThrow(() -> new BusinessException(ErrorCode.Document.DOC_NOT_FOUND, "文档不存在"));
-
-    docAccessControlService.assertCanRead(doc, userId);
-
-    String redisKey = String.format(DOC_LIKE_KEY, docId, userId);
-    Boolean isNew =
-        stringRedisTemplate
-            .opsForValue()
-            .setIfAbsent(redisKey, "1", DOC_LIKE_TTL_HOURS, TimeUnit.HOURS);
-    if (!Boolean.TRUE.equals(isNew)) {
-      throw new BusinessException(ErrorCode.Common.CONFLICT, "您已在 24 小时内点赞过该文档，请稍后再试");
-    }
-
-    try {
-      documentRepository.incrementLikeCount(docId);
-    } catch (RuntimeException e) {
-      // 计数失败时回滚去重标记，避免用户 24 小时内被误锁而无法重试
-      stringRedisTemplate.delete(redisKey);
-      throw e;
-    }
-    log.info("【DocumentCommandService】文档点赞成功: docId={}, userId={}", docId, userId);
-  }
-
   /** 文档生命周期流转 (基于 COLA StateMachine 驱动 Condition 规则校验与 Action 副作用执行) */
   @Transactional
   public DocumentDTO transitionState(Long docId, DocumentTransitionRequest request, Long userId) {
@@ -196,7 +159,6 @@ public class DocumentCommandService {
       Long categoryId,
       MultipartFile file,
       DocParserEngineEnum preferredEngine,
-      boolean extractPdfToDoc,
       WorkSpaceAclEnum visibility,
       Long userId) {
 
@@ -223,7 +185,6 @@ public class DocumentCommandService {
             bytes,
             file.getContentType(),
             preferredEngine,
-            extractPdfToDoc,
             visibility,
             null);
 
@@ -236,18 +197,9 @@ public class DocumentCommandService {
       Long categoryId,
       MultipartFile file,
       DocParserEngineEnum preferredEngine,
-      boolean extractPdfToDoc,
       WorkSpaceAclEnum visibility,
       Long userId) {
-    return importFile(
-        workSpaceId, null, categoryId, file, preferredEngine, extractPdfToDoc, visibility, userId);
-  }
-
-  /** PDF 一键提炼在线文档 */
-  public DocumentDTO extractPdfToDocument(Long sourceFileId, Long targetCategoryId, Long userId) {
-    DocumentEntity extractedDoc =
-        importPipeline.extractPdfToDocument(sourceFileId, targetCategoryId, userId);
-    return documentMapper.toDTO(extractedDoc);
+    return importFile(workSpaceId, null, categoryId, file, preferredEngine, visibility, userId);
   }
 
   /** 针对解析失败或超时的导入文档重新发起解析 */

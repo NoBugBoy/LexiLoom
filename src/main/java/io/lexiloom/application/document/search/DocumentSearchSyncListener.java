@@ -73,8 +73,7 @@ public class DocumentSearchSyncListener {
    */
   @Async
   @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
-  public void onDocumentDeleted(
-      DocumentDeletedEvent event) {
+  public void onDocumentDeleted(DocumentDeletedEvent event) {
     if (event == null || event.documentId() == null) {
       return;
     }
@@ -89,8 +88,7 @@ public class DocumentSearchSyncListener {
    */
   @Async
   @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
-  public void onDocumentUpdated(
-      DocumentUpdatedEvent event) {
+  public void onDocumentUpdated(DocumentUpdatedEvent event) {
     if (event == null || event.documentId() == null) {
       return;
     }

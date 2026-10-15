@@ -29,13 +29,27 @@ public interface DocumentRepository
   List<Object[]> countGroupByCategoryId(
       @org.springframework.data.repository.query.Param("workSpaceId") Long workSpaceId);
 
+  long countByWorkSpaceIdAndStatus(Long workSpaceId, DocumentStateEnum status);
+
+  @org.springframework.data.jpa.repository.Query(
+      "SELECT COALESCE(SUM(d.wordCount), 0), COALESCE(SUM(d.readCount), 0) FROM DocumentEntity d"
+          + " WHERE d.workSpaceId = :workSpaceId")
+  List<Object[]> sumWordCountAndReadCount(
+      @org.springframework.data.repository.query.Param("workSpaceId") Long workSpaceId);
+
+  List<DocumentEntity> findTop10ByWorkSpaceIdOrderByReadCountDesc(Long workSpaceId);
+
+  List<DocumentEntity> findTop5ByWorkSpaceIdOrderByUpdateTimeDesc(Long workSpaceId);
+
+  @org.springframework.data.jpa.repository.Query(
+      "SELECT d.createBy, COUNT(d.id), COALESCE(SUM(d.wordCount), 0) FROM DocumentEntity d WHERE"
+          + " d.workSpaceId = :workSpaceId GROUP BY d.createBy ORDER BY COUNT(d.id) DESC")
+  List<Object[]> findTopAuthors(
+      @org.springframework.data.repository.query.Param("workSpaceId") Long workSpaceId,
+      org.springframework.data.domain.Pageable pageable);
+
   @org.springframework.data.jpa.repository.Modifying
   @org.springframework.data.jpa.repository.Query(
       "UPDATE DocumentEntity d SET d.readCount = d.readCount + 1 WHERE d.id = :id")
   void incrementReadCount(@org.springframework.data.repository.query.Param("id") Long id);
-
-  @org.springframework.data.jpa.repository.Modifying
-  @org.springframework.data.jpa.repository.Query(
-      "UPDATE DocumentEntity d SET d.likeCount = d.likeCount + 1 WHERE d.id = :id")
-  void incrementLikeCount(@org.springframework.data.repository.query.Param("id") Long id);
 }

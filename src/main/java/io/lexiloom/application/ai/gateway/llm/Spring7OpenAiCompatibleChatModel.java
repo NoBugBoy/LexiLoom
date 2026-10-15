@@ -142,7 +142,8 @@ public class Spring7OpenAiCompatibleChatModel implements ChatModel {
             usageNode.hasNonNull("total_tokens") ? usageNode.get("total_tokens").asLong() : null;
         usage = new DefaultUsage(promptTokens, completionTokens, totalTokens);
         log.info(
-            "【Spring7OpenAiChatModel】大模型调用完成: model={}, 耗时={}ms, Token消耗=[prompt={}, completion={}, total={}]",
+            "【Spring7OpenAiChatModel】大模型调用完成: model={}, 耗时={}ms, Token消耗=[prompt={}, completion={},"
+                + " total={}]",
             model,
             latency,
             promptTokens,
@@ -305,7 +306,8 @@ public class Spring7OpenAiCompatibleChatModel implements ChatModel {
                                     new DefaultUsage(promptTokens, completionTokens, totalTokens);
                                 streamUsageRef.set(u);
                                 log.info(
-                                    "【Spring7OpenAiChatModel】流式传输帧返回 Token 统计: model={}, Token消耗=[prompt={}, completion={}, total={}]",
+                                    "【Spring7OpenAiChatModel】流式传输帧返回 Token 统计: model={},"
+                                        + " Token消耗=[prompt={}, completion={}, total={}]",
                                     model,
                                     promptTokens,
                                     completionTokens,
@@ -385,7 +387,8 @@ public class Spring7OpenAiCompatibleChatModel implements ChatModel {
                     Usage finalUsage = streamUsageRef.get();
                     if (finalUsage != null) {
                       log.info(
-                          "【Spring7OpenAiChatModel】流式传输完成: model={}, 总耗时={}ms, 最终Token消耗=[prompt={}, completion={}, total={}]",
+                          "【Spring7OpenAiChatModel】流式传输完成: model={}, 总耗时={}ms,"
+                              + " 最终Token消耗=[prompt={}, completion={}, total={}]",
                           model,
                           streamDuration,
                           finalUsage.getPromptTokens(),

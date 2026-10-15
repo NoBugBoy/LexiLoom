@@ -68,13 +68,6 @@ public class DocumentController {
     documentCommandService.delete(id, userId);
   }
 
-  /** 点赞文档（每用户 24 小时内限点赞一次） */
-  @PostMapping("/{id}/like")
-  public void likeDocument(@PathVariable("id") Long id) {
-    Long userId = SecurityHolder.getUserId();
-    documentCommandService.likeDocument(id, userId);
-  }
-
   /** 动态多条件分页检索文档 */
   @PostMapping("/page")
   public Page<DocumentDTO> page(@Validated @RequestBody DocumentPageRequest request) {
@@ -99,27 +92,10 @@ public class DocumentController {
       @RequestParam("file") MultipartFile file,
       @RequestParam(value = "preferredEngine", required = false)
           DocParserEngineEnum preferredEngine,
-      @RequestParam(value = "extractPdfToDoc", defaultValue = "false") boolean extractPdfToDoc,
       @RequestParam(value = "visibility", required = false) WorkSpaceAclEnum visibility) {
     Long userId = SecurityHolder.getUserId();
     return documentCommandService.importFile(
-        workSpaceId,
-        documentId,
-        categoryId,
-        file,
-        preferredEngine,
-        extractPdfToDoc,
-        visibility,
-        userId);
-  }
-
-  /** PDF 一键提炼为在线 Markdown 文档 */
-  @PostMapping("/extract-pdf/{sourceFileId}")
-  public DocumentDTO extractPdfToDocument(
-      @PathVariable("sourceFileId") Long sourceFileId,
-      @RequestParam(value = "targetCategoryId", required = false) Long targetCategoryId) {
-    Long userId = SecurityHolder.getUserId();
-    return documentCommandService.extractPdfToDocument(sourceFileId, targetCategoryId, userId);
+        workSpaceId, documentId, categoryId, file, preferredEngine, visibility, userId);
   }
 
   /** 针对解析失败或超时的导入文档重新发起解析 */

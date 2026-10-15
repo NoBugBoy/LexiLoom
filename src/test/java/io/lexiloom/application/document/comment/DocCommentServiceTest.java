@@ -42,8 +42,7 @@ class DocCommentServiceTest {
   @Mock private StringRedisTemplate stringRedisTemplate;
   @Mock private ValueOperations<String, String> valueOps;
 
-  @Mock
-  private DocAccessControlService docAccessControlService;
+  @Mock private DocAccessControlService docAccessControlService;
 
   private DocCommentService commentService;
 

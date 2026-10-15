@@ -23,4 +23,12 @@ public interface UserQueryService {
    * @return 匹配的用户；不存在时返回 empty
    */
   Optional<UserEntity> getUserByUserId(Long userId);
+
+  /**
+   * 按用户邮箱查询用户。
+   *
+   * @param email 用户邮箱
+   * @return 匹配的用户；不存在时返回 empty
+   */
+  Optional<UserEntity> getUserByEmail(String email);
 }

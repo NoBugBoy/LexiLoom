@@ -66,7 +66,8 @@ public class CitationBuilder {
               page,
               bbox,
               chunkType,
-              anchor));
+              anchor,
+              item.recallSource()));
     }
 
     log.info("【CitationBuilder】成功构建 {} 个视觉溯源引用对象", citations.size());
@@ -86,10 +87,12 @@ public class CitationBuilder {
 
     StringBuilder sb = new StringBuilder();
     for (CitationVO cite : citations) {
+      String sourceLabel =
+          "BM25".equalsIgnoreCase(cite.recallSource()) ? "BM25 词法精确匹配" : "RERANK 语义重排";
       sb.append(
               String.format(
-                  "参考片段 [%d] (来源：《%s》 > 章节: %s):\n",
-                  cite.citationIndex(), cite.docTitle(), cite.headerPath()))
+                  "参考片段 [%d] 【召回类型: %s】 (来源：《%s》 > 章节: %s):\n",
+                  cite.citationIndex(), sourceLabel, cite.docTitle(), cite.headerPath()))
           .append(cite.snippet())
           .append("\n\n");
     }

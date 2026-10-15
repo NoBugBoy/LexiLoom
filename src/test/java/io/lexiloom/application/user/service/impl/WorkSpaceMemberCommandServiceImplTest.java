@@ -8,9 +8,11 @@ import static org.mockito.Mockito.*;
 import io.lexiloom.application.common.LoginUserAuthentication;
 import io.lexiloom.application.enums.WorkSpaceRoleEnum;
 import io.lexiloom.application.exception.BusinessException;
+import io.lexiloom.application.user.model.entity.UserEntity;
 import io.lexiloom.application.user.model.entity.WorkSpaceEntity;
 import io.lexiloom.application.user.model.entity.WorkSpaceMemberEntity;
 import io.lexiloom.application.user.model.request.WorkSpaceMemberAddRequest;
+import io.lexiloom.application.user.repository.UserRepository;
 import io.lexiloom.application.user.repository.WorkSpaceMemberRepository;
 import io.lexiloom.application.user.repository.WorkSpaceRepository;
 import java.util.Collections;
@@ -31,6 +33,7 @@ class WorkSpaceMemberCommandServiceImplTest {
 
   @Mock private WorkSpaceRepository workSpaceRepository;
   @Mock private WorkSpaceMemberRepository workSpaceMemberRepository;
+  @Mock private UserRepository userRepository;
 
   @InjectMocks private WorkSpaceMemberCommandServiceImpl service;
 
@@ -52,6 +55,11 @@ class WorkSpaceMemberCommandServiceImplTest {
   @DisplayName("添加成员成功")
   void addMemberSuccess() {
     Long targetUserId = 200L;
+    String targetEmail = "member@example.com";
+    UserEntity targetUser = new UserEntity();
+    ReflectionTestUtils.setField(targetUser, "id", targetUserId);
+    targetUser.setEmail(targetEmail);
+
     WorkSpaceEntity workSpace =
         WorkSpaceEntity.create("团队", "team", null, null, currentUserId, 10, null);
 
@@ -61,6 +69,7 @@ class WorkSpaceMemberCommandServiceImplTest {
     when(workSpaceRepository.findById(workSpaceId)).thenReturn(Optional.of(workSpace));
     when(workSpaceMemberRepository.findByWorkSpaceIdAndUserId(workSpaceId, currentUserId))
         .thenReturn(Optional.of(currentMember));
+    when(userRepository.findByEmail(targetEmail)).thenReturn(Optional.of(targetUser));
     when(workSpaceMemberRepository.countByWorkSpaceId(workSpaceId)).thenReturn(5L);
     when(workSpaceMemberRepository.existsByWorkSpaceIdAndUserId(workSpaceId, targetUserId))
         .thenReturn(false);
@@ -71,7 +80,7 @@ class WorkSpaceMemberCommandServiceImplTest {
     when(workSpaceMemberRepository.save(any(WorkSpaceMemberEntity.class))).thenReturn(savedMember);
 
     WorkSpaceMemberAddRequest request =
-        new WorkSpaceMemberAddRequest(targetUserId, WorkSpaceRoleEnum.MEMBER);
+        new WorkSpaceMemberAddRequest(targetEmail, WorkSpaceRoleEnum.MEMBER);
 
     Long memberId = service.addMember(workSpaceId, request);
 
@@ -80,9 +89,124 @@ class WorkSpaceMemberCommandServiceImplTest {
   }
 
   @Test
+  @DisplayName("添加成员 - 目标邮箱不存在抛出异常")
+  void addMemberEmailNotFoundThrows() {
+    String nonExistentEmail = "notfound@example.com";
+    WorkSpaceEntity workSpace =
+        WorkSpaceEntity.create("团队", "team", null, null, currentUserId, 10, null);
+
+    WorkSpaceMemberEntity currentMember =
+        WorkSpaceMemberEntity.create(workSpaceId, currentUserId, WorkSpaceRoleEnum.OWNER);
+
+    when(workSpaceRepository.findById(workSpaceId)).thenReturn(Optional.of(workSpace));
+    when(workSpaceMemberRepository.findByWorkSpaceIdAndUserId(workSpaceId, currentUserId))
+        .thenReturn(Optional.of(currentMember));
+    when(userRepository.findByEmail(nonExistentEmail)).thenReturn(Optional.empty());
+
+    WorkSpaceMemberAddRequest request =
+        new WorkSpaceMemberAddRequest(nonExistentEmail, WorkSpaceRoleEnum.MEMBER);
+
+    assertThatThrownBy(() -> service.addMember(workSpaceId, request))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("该邮箱未注册用户");
+
+    verify(workSpaceMemberRepository, never()).save(any());
+  }
+
+  @Test
+  @DisplayName("添加成员 - 目标用户是自身时忽略操作并返回null")
+  void addMemberSelfIgnoredReturnsNull() {
+    String selfEmail = "self@example.com";
+    UserEntity selfUser = new UserEntity();
+    ReflectionTestUtils.setField(selfUser, "id", currentUserId);
+    selfUser.setEmail(selfEmail);
+
+    WorkSpaceEntity workSpace =
+        WorkSpaceEntity.create("团队", "team", null, null, currentUserId, 10, null);
+
+    WorkSpaceMemberEntity currentMember =
+        WorkSpaceMemberEntity.create(workSpaceId, currentUserId, WorkSpaceRoleEnum.OWNER);
+
+    when(workSpaceRepository.findById(workSpaceId)).thenReturn(Optional.of(workSpace));
+    when(workSpaceMemberRepository.findByWorkSpaceIdAndUserId(workSpaceId, currentUserId))
+        .thenReturn(Optional.of(currentMember));
+    when(userRepository.findByEmail(selfEmail)).thenReturn(Optional.of(selfUser));
+
+    WorkSpaceMemberAddRequest request =
+        new WorkSpaceMemberAddRequest(selfEmail, WorkSpaceRoleEnum.MEMBER);
+
+    Long result = service.addMember(workSpaceId, request);
+
+    assertThat(result).isNull();
+    verify(workSpaceMemberRepository, never()).save(any());
+    verify(workSpaceMemberRepository, never()).countByWorkSpaceId(any());
+  }
+
+  @Test
+  @DisplayName("添加成员 - 用户已是团队成员抛出异常")
+  void addMemberAlreadyMemberThrows() {
+    Long targetUserId = 200L;
+    String targetEmail = "member@example.com";
+    UserEntity targetUser = new UserEntity();
+    ReflectionTestUtils.setField(targetUser, "id", targetUserId);
+    targetUser.setEmail(targetEmail);
+
+    WorkSpaceEntity workSpace =
+        WorkSpaceEntity.create("团队", "team", null, null, currentUserId, 10, null);
+
+    WorkSpaceMemberEntity currentMember =
+        WorkSpaceMemberEntity.create(workSpaceId, currentUserId, WorkSpaceRoleEnum.OWNER);
+
+    when(workSpaceRepository.findById(workSpaceId)).thenReturn(Optional.of(workSpace));
+    when(workSpaceMemberRepository.findByWorkSpaceIdAndUserId(workSpaceId, currentUserId))
+        .thenReturn(Optional.of(currentMember));
+    when(userRepository.findByEmail(targetEmail)).thenReturn(Optional.of(targetUser));
+    when(workSpaceMemberRepository.countByWorkSpaceId(workSpaceId)).thenReturn(5L);
+    when(workSpaceMemberRepository.existsByWorkSpaceIdAndUserId(workSpaceId, targetUserId))
+        .thenReturn(true);
+
+    WorkSpaceMemberAddRequest request =
+        new WorkSpaceMemberAddRequest(targetEmail, WorkSpaceRoleEnum.MEMBER);
+
+    assertThatThrownBy(() -> service.addMember(workSpaceId, request))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("该用户已是团队成员");
+
+    verify(workSpaceMemberRepository, never()).save(any());
+  }
+
+  @Test
+  @DisplayName("添加成员 - 不能直接指定OWNER角色")
+  void addMemberCannotAddOwnerThrows() {
+    WorkSpaceEntity workSpace =
+        WorkSpaceEntity.create("团队", "team", null, null, currentUserId, 10, null);
+
+    WorkSpaceMemberEntity currentMember =
+        WorkSpaceMemberEntity.create(workSpaceId, currentUserId, WorkSpaceRoleEnum.OWNER);
+
+    when(workSpaceRepository.findById(workSpaceId)).thenReturn(Optional.of(workSpace));
+    when(workSpaceMemberRepository.findByWorkSpaceIdAndUserId(workSpaceId, currentUserId))
+        .thenReturn(Optional.of(currentMember));
+
+    WorkSpaceMemberAddRequest request =
+        new WorkSpaceMemberAddRequest("someone@example.com", WorkSpaceRoleEnum.OWNER);
+
+    assertThatThrownBy(() -> service.addMember(workSpaceId, request))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("不可直接指定所有者角色");
+
+    verify(userRepository, never()).findByEmail(any());
+  }
+
+  @Test
   @DisplayName("添加成员 - 超出人数上限抛出异常")
   void addMemberExceedsLimitThrows() {
     Long targetUserId = 200L;
+    String targetEmail = "member@example.com";
+    UserEntity targetUser = new UserEntity();
+    ReflectionTestUtils.setField(targetUser, "id", targetUserId);
+    targetUser.setEmail(targetEmail);
+
     WorkSpaceEntity workSpace =
         WorkSpaceEntity.create("团队", "team", null, null, currentUserId, 5, null);
 
@@ -92,10 +216,11 @@ class WorkSpaceMemberCommandServiceImplTest {
     when(workSpaceRepository.findById(workSpaceId)).thenReturn(Optional.of(workSpace));
     when(workSpaceMemberRepository.findByWorkSpaceIdAndUserId(workSpaceId, currentUserId))
         .thenReturn(Optional.of(currentMember));
+    when(userRepository.findByEmail(targetEmail)).thenReturn(Optional.of(targetUser));
     when(workSpaceMemberRepository.countByWorkSpaceId(workSpaceId)).thenReturn(5L);
 
     WorkSpaceMemberAddRequest request =
-        new WorkSpaceMemberAddRequest(targetUserId, WorkSpaceRoleEnum.MEMBER);
+        new WorkSpaceMemberAddRequest(targetEmail, WorkSpaceRoleEnum.MEMBER);
 
     assertThatThrownBy(() -> service.addMember(workSpaceId, request))
         .isInstanceOf(BusinessException.class)

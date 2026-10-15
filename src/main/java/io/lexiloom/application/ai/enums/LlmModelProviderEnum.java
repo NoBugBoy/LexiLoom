@@ -9,13 +9,7 @@ public enum LlmModelProviderEnum {
   DEEPSEEK("DeepSeek 官方 API"),
 
   /** 阿里通义千问 (DashScope) */
-  QWEN("通义千问 API"),
-
-  /** 本地私有化 Ollama */
-  OLLAMA("本地私有化 Ollama"),
-
-  /** 测试与断网降级桩 */
-  MOCK("Mock 模拟引擎");
+  QWEN("通义千问 API");
 
   private final String description;
 

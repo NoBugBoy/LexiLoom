@@ -2,13 +2,14 @@ package io.lexiloom.application.document.api;
 
 import io.lexiloom.application.document.api.dto.DocSourceFileDTO;
 import io.lexiloom.application.document.api.dto.DocumentDTO;
+import io.lexiloom.application.document.api.dto.WorkspaceDocStatsDTO;
 import java.util.List;
 import java.util.Optional;
 
 /**
  * 文档模块跨模块只读查询标准契约 (Spring Modulith 暴露)
  *
- * <p>为 AI / RAG 智能中枢等跨模块消费端提供标准只读查询能力，隔离文档内部底层仓储实现。
+ * <p>为 AI / RAG 智能中枢及空间总览等跨模块消费端提供标准只读查询能力，隔离文档内部底层仓储实现。
  */
 public interface DocumentQueryApi {
 
@@ -43,4 +44,12 @@ public interface DocumentQueryApi {
    * @return 标签名称不可变列表
    */
   List<String> findTagNamesByDocumentId(Long documentId);
+
+  /**
+   * 聚合查询指定团队工作空间的全部文档与知识资产统计指标（供总览大屏使用）
+   *
+   * @param workSpaceId 工作空间 ID
+   * @return 资产与统计 DTO
+   */
+  WorkspaceDocStatsDTO getWorkspaceDocStats(Long workSpaceId);
 }

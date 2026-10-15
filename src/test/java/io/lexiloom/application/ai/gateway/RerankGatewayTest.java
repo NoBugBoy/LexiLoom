@@ -1,12 +1,12 @@
 package io.lexiloom.application.ai.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.lexiloom.application.ai.config.AiProperties;
 import io.lexiloom.application.ai.enums.RerankStrategyEnum;
 import io.lexiloom.application.ai.gateway.rerank.CrossEncoderRerankAdapter;
 import io.lexiloom.application.ai.gateway.rerank.DefaultRerankGateway;
-import io.lexiloom.application.ai.gateway.rerank.MockRerankAdapter;
 import io.lexiloom.application.ai.gateway.rerank.NoOpRerankAdapter;
 import io.lexiloom.application.ai.gateway.rerank.RerankCommand;
 import io.lexiloom.application.ai.gateway.rerank.RrfRerankAdapter;
@@ -23,7 +23,6 @@ class RerankGatewayTest {
   private NoOpRerankAdapter noOpAdapter;
   private RrfRerankAdapter rrfAdapter;
   private CrossEncoderRerankAdapter crossEncoderAdapter;
-  private MockRerankAdapter mockAdapter;
   private DefaultRerankGateway gateway;
 
   @BeforeEach
@@ -32,11 +31,9 @@ class RerankGatewayTest {
     noOpAdapter = new NoOpRerankAdapter();
     rrfAdapter = new RrfRerankAdapter();
     crossEncoderAdapter = new CrossEncoderRerankAdapter(properties);
-    mockAdapter = new MockRerankAdapter();
 
     gateway =
-        new DefaultRerankGateway(
-            List.of(noOpAdapter, rrfAdapter, crossEncoderAdapter, mockAdapter), properties);
+        new DefaultRerankGateway(List.of(noOpAdapter, rrfAdapter, crossEncoderAdapter), properties);
   }
 
   private DocChunkDocument createChunk(String id, String title, String content) {
@@ -63,50 +60,57 @@ class RerankGatewayTest {
 
     assertThat(noOpAdapter.isEnabled()).isFalse();
     assertThat(noOpAdapter.getStrategy()).isEqualTo(RerankStrategyEnum.NONE);
-
-    // 空输入测试
-    assertThat(noOpAdapter.rerank(null)).isEmpty();
-    assertThat(noOpAdapter.rerank(RerankCommand.of("空", List.of(), 5))).isEmpty();
   }
 
   @Test
-  @DisplayName("RrfRerankAdapter：基于倒数排名融合算法计算公式准确打分与排序")
-  void testRrfRerankAdapterCalculation() {
-    DocChunkDocument c1 = createChunk("doc-1", "标题1", "内容1");
-    DocChunkDocument c2 = createChunk("doc-2", "标题2", "内容2");
+  @DisplayName("NoOpRerankAdapter：空候选集或空命令时安全返回空列表")
+  void testNoOpRerankAdapterEmpty() {
+    assertThat(noOpAdapter.rerank(null)).isEmpty();
+    assertThat(noOpAdapter.rerank(RerankCommand.of("q", List.of(), 5))).isEmpty();
+  }
 
-    RerankCommand command = RerankCommand.of("query", List.of(c1, c2), 5);
-    List<ScoredDocChunkVO> results = rrfAdapter.rerank(command);
-
-    assertThat(results).hasSize(2);
-    // 第一名: 1.0 / (60 + 1) = 1/61
-    // 第二名: 1.0 / (60 + 2) = 1/62
-    double expectedScore1 = 1.0 / 61.0;
-    double expectedScore2 = 1.0 / 62.0;
-
-    assertThat(results.get(0).chunk().getId()).isEqualTo("doc-1");
-    assertThat(results.get(0).score())
-        .isCloseTo(expectedScore1, org.assertj.core.data.Offset.offset(0.00001));
-    assertThat(results.get(0).originalRank()).isEqualTo(1);
-
-    assertThat(results.get(1).chunk().getId()).isEqualTo("doc-2");
-    assertThat(results.get(1).score())
-        .isCloseTo(expectedScore2, org.assertj.core.data.Offset.offset(0.00001));
-    assertThat(results.get(1).originalRank()).isEqualTo(2);
-
+  @Test
+  @DisplayName("RrfRerankAdapter：空候选集时安全返回空列表")
+  void testRrfRerankAdapterEmpty() {
+    assertThat(rrfAdapter.rerank(null)).isEmpty();
+    assertThat(rrfAdapter.rerank(RerankCommand.of("q", List.of(), 5))).isEmpty();
     assertThat(rrfAdapter.isEnabled()).isTrue();
     assertThat(rrfAdapter.getStrategy()).isEqualTo(RerankStrategyEnum.RRF);
   }
 
   @Test
-  @DisplayName("RrfRerankAdapter：多路重复候选切块得分累加合并")
-  void testRrfRerankAdapterDuplicateAggregation() {
-    DocChunkDocument c1 = createChunk("doc-1", "标题1", "内容1");
-    DocChunkDocument c2 = createChunk("doc-2", "标题2", "内容2");
-    // 模拟多路召回：doc-2 同时出现在第 2 位与第 3 位
-    DocChunkDocument c2Dup = createChunk("doc-2", "标题2", "内容2");
+  @DisplayName("RrfRerankAdapter：单路单项输入按倒数排名 1/(60+rank) 严格计算得分")
+  void testRrfRerankSingleList() {
+    DocChunkDocument c1 = createChunk("1", "A", "Content A");
+    DocChunkDocument c2 = createChunk("2", "B", "Content B");
 
-    RerankCommand command = RerankCommand.of("query", List.of(c1, c2, c2Dup), 5);
+    RerankCommand command = RerankCommand.of("query", List.of(c1, c2), 2);
+    List<ScoredDocChunkVO> results = rrfAdapter.rerank(command);
+
+    assertThat(results).hasSize(2);
+    // 第一名得分 1 / (60 + 1) ≈ 0.016393
+    assertThat(results.get(0).chunk().getId()).isEqualTo("1");
+    assertThat(results.get(0).score())
+        .isCloseTo(1.0 / 61.0, org.assertj.core.data.Offset.offset(1e-6));
+    assertThat(results.get(0).originalRank()).isEqualTo(1);
+
+    // 第二名得分 1 / (60 + 2) ≈ 0.016129
+    assertThat(results.get(1).chunk().getId()).isEqualTo("2");
+    assertThat(results.get(1).score())
+        .isCloseTo(1.0 / 62.0, org.assertj.core.data.Offset.offset(1e-6));
+    assertThat(results.get(1).originalRank()).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName("RrfRerankAdapter：双路多重命中切片累加倒数排名反超单路第 1 名")
+  void testRrfRerankDualHitsAccumulation() {
+    DocChunkDocument c1 = createChunk("doc-1", "A", "Content A");
+    DocChunkDocument c2 = createChunk("doc-2", "B", "Content B");
+
+    // 模拟初筛双路交织序列：doc-1 仅出现 1 次 (Rank 1)，doc-2 出现 2 次 (Rank 2 与 Rank 3)
+    List<DocChunkDocument> dualPathSequence = List.of(c1, c2, c2);
+
+    RerankCommand command = RerankCommand.of("query", dualPathSequence, 2);
     List<ScoredDocChunkVO> results = rrfAdapter.rerank(command);
 
     // doc-2 得分为 1/(60+2) + 1/(60+3) = 1/62 + 1/63 ≈ 0.016129 + 0.015873 = 0.032002
@@ -118,34 +122,141 @@ class RerankGatewayTest {
   }
 
   @Test
-  @DisplayName("CrossEncoderRerankAdapter：根据标题与正文关键词匹配进行启发式深度精排")
-  void testCrossEncoderRerankAdapter() {
+  @DisplayName("CrossEncoderRerankAdapter：未配置 API Key 时明确抛出配置异常")
+  void testCrossEncoderRerankAdapterWithoutApiKeyThrows() {
+    properties.getRerank().setApiKey("");
+
     DocChunkDocument c1 = createChunk("doc-1", "无关标题", "无关正文");
-    DocChunkDocument c2 = createChunk("doc-2", "知识库系统架构设计", "Spring AI 集成");
+    RerankCommand command = RerankCommand.of("知识库", List.of(c1), 1);
 
-    RerankCommand command = RerankCommand.of("知识库", List.of(c1, c2), 2);
-    List<ScoredDocChunkVO> results = crossEncoderAdapter.rerank(command);
-
-    assertThat(results).hasSize(2);
-    // c2 命中标题中的“知识库”，精排得分必然高于 c1
-    assertThat(results.get(0).chunk().getId()).isEqualTo("doc-2");
-    assertThat(results.get(0).score()).isGreaterThan(results.get(1).score());
-
-    assertThat(crossEncoderAdapter.getStrategy()).isEqualTo(RerankStrategyEnum.CROSS_ENCODER);
+    assertThatThrownBy(() -> crossEncoderAdapter.rerank(command))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("启用 CROSS_ENCODER 重排必须配置有效 API Key");
   }
 
   @Test
-  @DisplayName("MockRerankAdapter：Mock 模式按给定 topK 生成稳定测试打分")
-  void testMockRerankAdapter() {
-    DocChunkDocument c1 = createChunk("1", "A", "Content A");
-    DocChunkDocument c2 = createChunk("2", "B", "Content B");
+  @DisplayName("CrossEncoderRerankAdapter：配置 API Key 时成功调用 DashScope 远程接口并按评分重排")
+  void testCrossEncoderRerankAdapter_RemoteDashScopeSuccess() {
+    properties.getRerank().setApiKey("sk-mock-dashscope-key");
+    org.springframework.web.client.RestClient restClient =
+        org.mockito.Mockito.mock(org.springframework.web.client.RestClient.class);
+    org.springframework.web.client.RestClient.RequestBodyUriSpec uriSpec =
+        org.mockito.Mockito.mock(
+            org.springframework.web.client.RestClient.RequestBodyUriSpec.class);
+    org.springframework.web.client.RestClient.RequestBodySpec bodySpec =
+        org.mockito.Mockito.mock(org.springframework.web.client.RestClient.RequestBodySpec.class);
+    org.springframework.web.client.RestClient.ResponseSpec responseSpec =
+        org.mockito.Mockito.mock(org.springframework.web.client.RestClient.ResponseSpec.class);
 
-    RerankCommand command = RerankCommand.of("query", List.of(c1, c2), 1);
-    List<ScoredDocChunkVO> results = mockAdapter.rerank(command);
+    org.mockito.Mockito.when(restClient.post()).thenReturn(uriSpec);
+    org.mockito.Mockito.when(uriSpec.uri(org.mockito.ArgumentMatchers.anyString()))
+        .thenReturn(bodySpec);
+    org.mockito.Mockito.when(
+            bodySpec.header(
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+        .thenReturn(bodySpec);
+    org.mockito.Mockito.when(bodySpec.body(org.mockito.ArgumentMatchers.anyString()))
+        .thenReturn(bodySpec);
+    org.mockito.Mockito.when(bodySpec.retrieve()).thenReturn(responseSpec);
+
+    String mockResponseBody =
+        """
+        {
+          "output": {
+            "results": [
+              { "index": 1, "relevance_score": 0.96 },
+              { "index": 0, "relevance_score": 0.42 }
+            ]
+          },
+          "usage": { "total_tokens": 40 }
+        }
+        """;
+    org.mockito.Mockito.when(responseSpec.body(String.class)).thenReturn(mockResponseBody);
+
+    CrossEncoderRerankAdapter adapter = new CrossEncoderRerankAdapter(properties, restClient, null);
+
+    DocChunkDocument c1 = createChunk("doc-1", "标题1", "文本排序模型简介");
+    DocChunkDocument c2 = createChunk("doc-2", "标题2", "量子力学入门");
+
+    RerankCommand command = RerankCommand.of("排序模型", List.of(c1, c2), 2);
+    List<ScoredDocChunkVO> results = adapter.rerank(command);
+
+    assertThat(results).hasSize(2);
+    // 远程 DashScope 明确打分 index=1 (c2) 得分为 0.96，因此排在第一
+    assertThat(results.get(0).chunk().getId()).isEqualTo("doc-2");
+    assertThat(results.get(0).score()).isEqualTo(0.96);
+    assertThat(results.get(1).chunk().getId()).isEqualTo("doc-1");
+    assertThat(results.get(1).score()).isEqualTo(0.42);
+  }
+
+  @Test
+  @DisplayName("CrossEncoderRerankAdapter：配置 OpenAI 兼容端点时成功按兼容格式发起请求并解析")
+  void testCrossEncoderRerankAdapter_OpenAiCompatibleSuccess() {
+    properties.getRerank().setApiKey("sk-mock-key");
+    properties.getRerank().setBaseUrl("https://maas.qianwenaiapi.com/compatible-api/v1/reranks");
+    properties.getRerank().setModel("qwen3-rerank");
+
+    org.springframework.web.client.RestClient restClient =
+        org.mockito.Mockito.mock(org.springframework.web.client.RestClient.class);
+    org.springframework.web.client.RestClient.RequestBodyUriSpec uriSpec =
+        org.mockito.Mockito.mock(
+            org.springframework.web.client.RestClient.RequestBodyUriSpec.class);
+    org.springframework.web.client.RestClient.RequestBodySpec bodySpec =
+        org.mockito.Mockito.mock(org.springframework.web.client.RestClient.RequestBodySpec.class);
+    org.springframework.web.client.RestClient.ResponseSpec responseSpec =
+        org.mockito.Mockito.mock(org.springframework.web.client.RestClient.ResponseSpec.class);
+
+    org.mockito.Mockito.when(restClient.post()).thenReturn(uriSpec);
+    org.mockito.Mockito.when(uriSpec.uri("https://maas.qianwenaiapi.com/compatible-api/v1/reranks"))
+        .thenReturn(bodySpec);
+    org.mockito.Mockito.when(
+            bodySpec.header(
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+        .thenReturn(bodySpec);
+    org.mockito.Mockito.when(bodySpec.body(org.mockito.ArgumentMatchers.anyString()))
+        .thenReturn(bodySpec);
+    org.mockito.Mockito.when(bodySpec.retrieve()).thenReturn(responseSpec);
+
+    String mockResponseBody =
+        """
+        {
+          "id": "rerank-123",
+          "object": "list",
+          "results": [
+            { "index": 0, "relevance_score": 0.88 }
+          ]
+        }
+        """;
+    org.mockito.Mockito.when(responseSpec.body(String.class)).thenReturn(mockResponseBody);
+
+    CrossEncoderRerankAdapter adapter = new CrossEncoderRerankAdapter(properties, restClient, null);
+
+    DocChunkDocument c1 = createChunk("doc-1", "标题1", "OpenAI兼容重排测试");
+    RerankCommand command = RerankCommand.of("测试", List.of(c1), 1);
+    List<ScoredDocChunkVO> results = adapter.rerank(command);
 
     assertThat(results).hasSize(1);
-    assertThat(results.get(0).score()).isEqualTo(0.95);
-    assertThat(mockAdapter.getStrategy()).isEqualTo(RerankStrategyEnum.MOCK);
+    assertThat(results.get(0).chunk().getId()).isEqualTo("doc-1");
+    assertThat(results.get(0).score()).isEqualTo(0.88);
+  }
+
+  @Test
+  @DisplayName("CrossEncoderRerankAdapter：远程接口异常时抛出包装异常")
+  void testCrossEncoderRerankAdapter_RemoteDashScopeError_Throws() {
+    properties.getRerank().setApiKey("sk-mock-dashscope-key");
+    org.springframework.web.client.RestClient restClient =
+        org.mockito.Mockito.mock(org.springframework.web.client.RestClient.class);
+    org.mockito.Mockito.when(restClient.post())
+        .thenThrow(new RuntimeException("Connect timeout to DashScope"));
+
+    CrossEncoderRerankAdapter adapter = new CrossEncoderRerankAdapter(properties, restClient, null);
+
+    DocChunkDocument c1 = createChunk("doc-1", "无关标题", "无关正文");
+    RerankCommand command = RerankCommand.of("知识库", List.of(c1), 1);
+
+    assertThatThrownBy(() -> adapter.rerank(command))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("调用 DashScope Rerank 服务失败");
   }
 
   @Test
@@ -194,5 +305,64 @@ class RerankGatewayTest {
     properties.getRerank().setStrategy(null); // 空策略
 
     assertThat(gateway.getStrategy()).isEqualTo(RerankStrategyEnum.NONE);
+  }
+
+  @Test
+  @DisplayName("CrossEncoderRerankAdapter：发送至 Rerank 的文档必须包含 contextPrefix 上下文帽子，防止纯正文丢失实体与系统上下文")
+  void testCrossEncoderRerankAdapter_IncludesContextPrefixInPayload() {
+    properties.getRerank().setApiKey("sk-mock-key");
+    properties.getRerank().setBaseUrl("https://maas.qianwenaiapi.com/compatible-api/v1/reranks");
+
+    org.springframework.web.client.RestClient restClient =
+        org.mockito.Mockito.mock(org.springframework.web.client.RestClient.class);
+    org.springframework.web.client.RestClient.RequestBodyUriSpec uriSpec =
+        org.mockito.Mockito.mock(
+            org.springframework.web.client.RestClient.RequestBodyUriSpec.class);
+    org.springframework.web.client.RestClient.RequestBodySpec bodySpec =
+        org.mockito.Mockito.mock(org.springframework.web.client.RestClient.RequestBodySpec.class);
+    org.springframework.web.client.RestClient.ResponseSpec responseSpec =
+        org.mockito.Mockito.mock(org.springframework.web.client.RestClient.ResponseSpec.class);
+
+    org.mockito.Mockito.when(restClient.post()).thenReturn(uriSpec);
+    org.mockito.Mockito.when(uriSpec.uri(org.mockito.ArgumentMatchers.anyString()))
+        .thenReturn(bodySpec);
+    org.mockito.Mockito.when(
+            bodySpec.header(
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+        .thenReturn(bodySpec);
+
+    org.mockito.ArgumentCaptor<String> bodyCaptor =
+        org.mockito.ArgumentCaptor.forClass(String.class);
+    org.mockito.Mockito.when(bodySpec.body(bodyCaptor.capture())).thenReturn(bodySpec);
+    org.mockito.Mockito.when(bodySpec.retrieve()).thenReturn(responseSpec);
+
+    String mockResponseBody =
+        """
+        {
+          "output": {
+            "results": [
+              { "index": 0, "relevance_score": 0.95 }
+            ]
+          }
+        }
+        """;
+    org.mockito.Mockito.when(responseSpec.body(String.class)).thenReturn(mockResponseBody);
+
+    CrossEncoderRerankAdapter adapter = new CrossEncoderRerankAdapter(properties, restClient, null);
+
+    DocChunkDocument chunk =
+        DocChunkDocument.builder()
+            .id("doc-1")
+            .title("S16 数据库设计说明书")
+            .contextPrefix("[文档: 《S16 数据库设计说明书》] > [章节: 用户表] > [类型: table]")
+            .content("| 字段名 | 类型 |\n| user_id | bigint |")
+            .build();
+
+    RerankCommand command = RerankCommand.of("S16 数据库表", List.of(chunk), 1);
+    adapter.rerank(command);
+
+    String sentBody = bodyCaptor.getValue();
+    assertThat(sentBody).contains("[文档: 《S16 数据库设计说明书》] > [章节: 用户表] > [类型: table]");
+    assertThat(sentBody).contains("| 字段名 | 类型 |\\n| user_id | bigint |");
   }
 }

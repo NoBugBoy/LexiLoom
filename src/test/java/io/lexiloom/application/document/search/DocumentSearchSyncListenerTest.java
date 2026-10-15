@@ -218,8 +218,7 @@ class DocumentSearchSyncListenerTest {
   @DisplayName("DocumentDeletedEvent 事件：文档被删除时应从 ES 索引中彻底移除")
   void shouldRemoveFromIndexOnDocumentDeletedEvent() {
     Long docId = 107L;
-    DocumentDeletedEvent event =
-        new DocumentDeletedEvent(docId, 1L, 10L);
+    DocumentDeletedEvent event = new DocumentDeletedEvent(docId, 1L, 10L);
 
     listener.onDocumentDeleted(event);
 
@@ -242,8 +241,7 @@ class DocumentSearchSyncListenerTest {
     when(docSearchMapper.toSearchDoc(eq(doc), any(), any()))
         .thenReturn(DocSearchDocument.builder().id("108").build());
 
-    DocumentUpdatedEvent event =
-        new DocumentUpdatedEvent(docId, 1L, 10L);
+    DocumentUpdatedEvent event = new DocumentUpdatedEvent(docId, 1L, 10L);
 
     listener.onDocumentUpdated(event);
 

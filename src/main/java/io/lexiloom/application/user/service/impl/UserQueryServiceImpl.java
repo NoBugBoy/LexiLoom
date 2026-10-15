@@ -24,4 +24,12 @@ public class UserQueryServiceImpl implements UserQueryService {
   public Optional<UserEntity> getUserByUserId(Long userId) {
     return userRepository.findById(userId);
   }
+
+  @Override
+  public Optional<UserEntity> getUserByEmail(String email) {
+    if (cn.hutool.core.util.StrUtil.isBlank(email)) {
+      return Optional.empty();
+    }
+    return userRepository.findByEmail(email.trim());
+  }
 }

@@ -117,8 +117,8 @@ class HybridSearchQueryServiceTest {
     List<ScoredDocChunkVO> results = service.hybridSearch(command);
 
     assertThat(results).hasSize(2);
-    assertThat(results.get(0).chunk().getId()).isEqualTo("1_0");
-    assertThat(results.get(1).chunk().getId()).isEqualTo("2_0");
+    assertThat(results.get(0).chunk().getId()).isEqualTo("2_0");
+    assertThat(results.get(1).chunk().getId()).isEqualTo("1_0");
 
     verify(embeddingGateway).embed(query);
 
@@ -135,6 +135,7 @@ class HybridSearchQueryServiceTest {
     var multiMatch = queries.get(0).getQuery().bool().must().getFirst().multiMatch();
     assertThat(multiMatch).isNotNull();
     assertThat(multiMatch.tieBreaker()).isEqualTo(0.5);
+    assertThat(multiMatch.minimumShouldMatch()).isNull();
     assertThat(multiMatch.fields())
         .containsExactly("content^3", "contextPrefix^2.5", "title^1", "headerPath^1.5");
 
@@ -424,5 +425,152 @@ class HybridSearchQueryServiceTest {
     assertThat(results).hasSize(1);
     assertThat(results.getFirst().chunk().getId()).isEqualTo("7_0");
     assertThat(results.getFirst().score()).isEqualTo(1.0);
+  }
+
+  @Test
+  @DisplayName("配额隔离混合检索：仅将向量检索结果交由 Rerank 取前 15 条，额外保留 5 条 BM25 词法结果，共 20 条输出")
+  void testQuotaBasedHybridSearch_15VectorRerankPlus5LexicalPreserved() {
+    Long wsId = 100L;
+    aiProperties.getRag().setTopK(20);
+    aiProperties.getRag().setVectorTopK(15);
+    aiProperties.getRag().setLexicalTopK(5);
+    aiProperties.getRag().setMaxChunksPerDocument(0); // 关闭单文档限制，专注于验证配额数量
+
+    // 构造 20 个向量命中切片 (vec_1 .. vec_20)
+    List<DocChunkDocument> knnDocs = new ArrayList<>();
+    for (int i = 1; i <= 20; i++) {
+      knnDocs.add(
+          DocChunkDocument.builder()
+              .id("vec_" + i)
+              .workspaceId("100")
+              .documentId("doc_v_" + i)
+              .title("向量命中 " + i)
+              .build());
+    }
+
+    // 构造 10 个 BM25 命中切片：前两个与向量切片重复 (vec_1, vec_2)，后 8 个为独立词法命中 (bm_3 .. bm_10)
+    List<DocChunkDocument> bm25Docs = new ArrayList<>();
+    bm25Docs.add(DocChunkDocument.builder().id("vec_1").workspaceId("100").title("重叠切片1").build());
+    bm25Docs.add(DocChunkDocument.builder().id("vec_2").workspaceId("100").title("重叠切片2").build());
+    for (int i = 3; i <= 10; i++) {
+      bm25Docs.add(
+          DocChunkDocument.builder()
+              .id("bm_" + i)
+              .workspaceId("100")
+              .documentId("doc_bm_" + i)
+              .title("词法命中 " + i)
+              .build());
+    }
+
+    SearchHits<DocChunkDocument> bm25Hits = createSearchHits(bm25Docs);
+    SearchHits<DocChunkDocument> knnHits = createSearchHits(knnDocs);
+    when(elasticsearchOperations.search(any(NativeQuery.class), eq(DocChunkDocument.class)))
+        .thenReturn(bm25Hits, knnHits);
+
+    when(rerankGateway.getStrategy()).thenReturn(RerankStrategyEnum.CROSS_ENCODER);
+
+    ArgumentCaptor<RerankCommand> rerankCaptor = ArgumentCaptor.forClass(RerankCommand.class);
+    when(rerankGateway.rerank(rerankCaptor.capture()))
+        .thenAnswer(
+            invocation -> {
+              RerankCommand cmd = invocation.getArgument(0);
+              List<ScoredDocChunkVO> scored = new ArrayList<>();
+              for (int i = 0; i < cmd.candidates().size(); i++) {
+                scored.add(ScoredDocChunkVO.of(cmd.candidates().get(i), 0.99 - i * 0.01, i + 1));
+              }
+              return scored;
+            });
+
+    HybridSearchCommand command =
+        HybridSearchCommand.of(wsId, "深度排序与精确词法结合", new float[] {0.1f}, 20);
+    List<ScoredDocChunkVO> results = service.hybridSearch(command);
+
+    // 1. 验证总输出精确为 20 条
+    assertThat(results).hasSize(20);
+
+    // 2. 验证交付给 Rerank 模型的候选集【只包含向量召回的切片】，完全不掺杂 BM25 的多余干扰
+    RerankCommand sentToRerank = rerankCaptor.getValue();
+    assertThat(sentToRerank.candidates()).hasSize(20);
+    assertThat(sentToRerank.candidates().stream().map(DocChunkDocument::getId))
+        .allMatch(id -> id.startsWith("vec_"));
+
+    // 3. 验证前 15 条全部来自向量精排 (vec_1 .. vec_15)
+    List<String> top15Ids = results.subList(0, 15).stream().map(r -> r.chunk().getId()).toList();
+    for (int i = 1; i <= 15; i++) {
+      assertThat(top15Ids).contains("vec_" + i);
+    }
+
+    // 4. 验证后 5 条全部来自 BM25 精确词法保底，且排除了已在前 15 条出现的 vec_1, vec_2，按序顺延获取 bm_3 .. bm_7
+    List<String> last5Ids = results.subList(15, 20).stream().map(r -> r.chunk().getId()).toList();
+    assertThat(last5Ids).containsExactly("bm_3", "bm_4", "bm_5", "bm_6", "bm_7");
+
+    // 5. 验证标记哪些是 RERANK，哪些是 BM25 召回的数据
+    assertThat(results.subList(0, 15))
+        .allSatisfy(r -> assertThat(r.recallSource()).isEqualTo("RERANK"));
+    assertThat(results.subList(15, 20))
+        .allSatisfy(r -> assertThat(r.recallSource()).isEqualTo("BM25"));
+  }
+
+  @Test
+  @DisplayName("自然语言提问检索：对于包含意图词与停用词的长提问（如'S16 有哪些数据库表 要返回表名和表注释'），BM25 不设硬编码 minimumShouldMatch")
+  void testConversationalQueryNaturalLanguageLexicalRetrieval() {
+    Long wsId = 100L;
+    String conversationalQuery = "S16 有哪些数据库表 要返回表名和表注释";
+
+    DocChunkDocument tableChunk1 =
+        DocChunkDocument.builder()
+            .id("doc_s16_1")
+            .workspaceId("100")
+            .documentId("doc_1")
+            .title("S16 数据库设计说明书")
+            .contextPrefix("[文档: 《S16 数据库设计说明书》] > [章节: 用户表] > [类型: table]")
+            .content("表名: tb_user (用户表) | 字段: id, username | 注释: 系统用户主表")
+            .build();
+
+    DocChunkDocument tableChunk2 =
+        DocChunkDocument.builder()
+            .id("doc_s16_2")
+            .workspaceId("100")
+            .documentId("doc_1")
+            .title("S16 数据库设计说明书")
+            .contextPrefix("[文档: 《S16 数据库设计说明书》] > [章节: 订单表] > [类型: table]")
+            .content("表名: tb_order (订单表) | 字段: id, order_no | 注释: 交易订单表")
+            .build();
+
+    SearchHits<DocChunkDocument> bm25Hits = createSearchHits(List.of(tableChunk1, tableChunk2));
+    SearchHits<DocChunkDocument> knnHits = createSearchHits(List.of());
+
+    when(elasticsearchOperations.search(any(NativeQuery.class), eq(DocChunkDocument.class)))
+        .thenReturn(bm25Hits, knnHits);
+
+    when(rerankGateway.getStrategy()).thenReturn(RerankStrategyEnum.NONE);
+    when(rerankGateway.rerank(any(RerankCommand.class)))
+        .thenAnswer(
+            invocation -> {
+              RerankCommand cmd = invocation.getArgument(0);
+              return cmd.candidates().stream().map(c -> ScoredDocChunkVO.of(c, 0.9, 1)).toList();
+            });
+
+    when(embeddingGateway.embed(conversationalQuery)).thenReturn(new float[] {0.1f});
+
+    HybridSearchCommand command = HybridSearchCommand.of(wsId, conversationalQuery, 5);
+    List<ScoredDocChunkVO> results = service.hybridSearch(command);
+
+    // 校验 BM25 查询构建：确保未设置 minimumShouldMatch("70%")，避免将自然语言问答中的停用词/指令词导致 0 条命中
+    ArgumentCaptor<NativeQuery> queryCaptor = ArgumentCaptor.forClass(NativeQuery.class);
+    verify(elasticsearchOperations, org.mockito.Mockito.times(2))
+        .search(queryCaptor.capture(), eq(DocChunkDocument.class));
+
+    NativeQuery lexicalQuery = queryCaptor.getAllValues().get(0);
+    var multiMatch = lexicalQuery.getQuery().bool().must().getFirst().multiMatch();
+    assertThat(multiMatch.query()).isEqualTo("S16 数据库表 表名 表注释");
+    assertThat(multiMatch.minimumShouldMatch()).isNull();
+    assertThat(multiMatch.fields())
+        .containsExactly("content^3", "contextPrefix^2.5", "title^1", "headerPath^1.5");
+
+    // 校验召回结果正常返回，未被误杀
+    assertThat(results).hasSize(2);
+    assertThat(results.stream().map(r -> r.chunk().getId()))
+        .containsExactly("doc_s16_1", "doc_s16_2");
   }
 }

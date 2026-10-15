@@ -115,7 +115,6 @@ public class DocumentQueryService {
                 dto.coverUrl(),
                 dto.wordCount(),
                 dto.readCount(),
-                dto.likeCount(),
                 dto.createBy(),
                 dto.createTime(),
                 dto.updateTime());

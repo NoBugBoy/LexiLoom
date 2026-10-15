@@ -12,8 +12,8 @@ import org.springframework.stereotype.Service;
 /**
  * 统一大模型防腐层门面实现 (DefaultLlmGateway)
  *
- * <p>基于 CQRS 架构防腐层原则，统一解耦上层 RAG 编排逻辑与底层大模型实现。 依据 {@link AiProperties#getModelProvider()}
- * 动态路由到对应的适配器， 若未配置或外部模型暂不可用，自动平滑降级至 Mock 适配器。
+ * <p>基于 CQRS 架构防腐层原则，统一解耦上层 RAG 编排逻辑与底层大模型实现。依据 {@link AiProperties#getModelProvider()} 动态路由到对应的适配器
+ * (DeepSeek / Qwen)。
  */
 @Slf4j
 @Service
@@ -50,9 +50,10 @@ public class DefaultLlmGateway implements LlmGateway {
   }
 
   private LlmGateway selectAdapter() {
-    LlmModelProviderEnum targetProvider = aiProperties.getModelProvider();
+    LlmModelProviderEnum targetProvider =
+        aiProperties != null ? aiProperties.getModelProvider() : null;
     if (targetProvider == null) {
-      targetProvider = LlmModelProviderEnum.MOCK;
+      targetProvider = LlmModelProviderEnum.DEEPSEEK;
     }
 
     final LlmModelProviderEnum finalTarget = targetProvider;
@@ -67,11 +68,17 @@ public class DefaultLlmGateway implements LlmGateway {
       return matched;
     }
 
-    log.warn("【LlmGateway】配置的模型提供商 [{}] 不可用或未配置，自动降级为 MOCK 适配器", targetProvider);
-    return adapters.stream()
-        .filter(a -> a != this)
-        .filter(a -> a.getProvider() == LlmModelProviderEnum.MOCK)
-        .findFirst()
-        .orElseThrow(() -> new IllegalStateException("系统缺少基础 MockLlmAdapter 适配器"));
+    // 若配置的提供商不可用，尝试在已注册的可用适配器中查找可用实例（如 QWEN 备选 DEEPSEEK）
+    LlmGateway anyAvailable =
+        adapters.stream().filter(a -> a != this && a.isAvailable()).findFirst().orElse(null);
+    if (anyAvailable != null) {
+      log.warn(
+          "【LlmGateway】配置的模型提供商 [{}] 不可用，自动切换至可用提供商 [{}]",
+          targetProvider,
+          anyAvailable.getProvider());
+      return anyAvailable;
+    }
+
+    throw new IllegalStateException("未配置可用的大语言模型适配器或 API Key 无效，当前目标提供商: " + targetProvider);
   }
 }

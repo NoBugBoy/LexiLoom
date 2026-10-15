@@ -15,7 +15,6 @@ import io.lexiloom.application.document.repository.DocumentRepository;
 import io.lexiloom.application.document.statemachine.DocumentEventEnum;
 import io.lexiloom.application.document.statemachine.DocumentStateEnum;
 import io.lexiloom.application.document.statemachine.DocumentStateTransitionEvent;
-import io.lexiloom.application.enums.WorkSpaceAclEnum;
 import io.lexiloom.application.exception.BusinessException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -478,58 +477,6 @@ public class DocumentImportTransactionalService {
         instantUpload,
         content,
         parseResult.metadata());
-  }
-
-  /** 独立小事务：PDF 提炼结果保存为新文档 */
-  @Transactional
-  public DocumentEntity saveExtractedPdfDocument(
-      DocSourceFileEntity sourceFile, Long targetCategoryId, DocParseResult extractResult) {
-    String baseTitle = StrUtil.subBefore(sourceFile.getOriginalFileName(), ".", true);
-    String docTitle =
-        StrUtil.blankToDefault(extractResult.suggestedTitle(), baseTitle + " (提炼在线版)");
-
-    DocParseStatusEnum parseStatus =
-        extractResult.isAsyncProcessing()
-            ? DocParseStatusEnum.ASYNC_PROCESSING
-            : DocParseStatusEnum.SUCCESS;
-
-    String content =
-        extractResult.isAsyncProcessing()
-            ? "> ⏳ **[PDF AI 一键提炼中]**\n> 正在对原件进行深度 OCR 与版面排版提炼，请稍候刷新查看最新正文。"
-            : extractResult.markdownContent();
-
-    // 继承原件所属文档的可见性，避免 PRIVATE 原件提炼后被降级为团队内部可见
-    WorkSpaceAclEnum inheritedVisibility = resolveSourceVisibility(sourceFile);
-
-    DocumentEntity doc =
-        DocumentEntity.createFromImport(
-            sourceFile.getWorkSpaceId(),
-            targetCategoryId != null ? targetCategoryId : 0L,
-            docTitle,
-            "通过 AI 从 PDF 原件提炼生成的在线 Markdown 副本",
-            content,
-            sourceFile.getId(),
-            inheritedVisibility,
-            parseStatus);
-
-    DocumentEntity savedDoc = documentRepository.save(doc);
-    log.info(
-        "【DocumentImportPipeline】PDF 提炼生成新在线文档成功: newDocId={}, title={}, parseStatus={}",
-        savedDoc.getId(),
-        savedDoc.getTitle(),
-        parseStatus);
-    return savedDoc;
-  }
-
-  /** 解析原件可见性：优先继承来源文档的可见性，找不到来源文档时回退为团队内部可见 */
-  private WorkSpaceAclEnum resolveSourceVisibility(DocSourceFileEntity sourceFile) {
-    if (sourceFile.getDocumentId() == null) {
-      return WorkSpaceAclEnum.INTERNAL;
-    }
-    return documentRepository
-        .findById(sourceFile.getDocumentId())
-        .map(DocumentEntity::getVisibility)
-        .orElse(WorkSpaceAclEnum.INTERNAL);
   }
 
   /** 独立小事务：完成异步解析正文落库与切片元数据持久化 */

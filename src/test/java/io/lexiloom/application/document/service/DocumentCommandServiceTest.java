@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -34,7 +33,6 @@ import io.lexiloom.application.enums.WorkSpaceAclEnum;
 import io.lexiloom.application.exception.BusinessException;
 import java.time.LocalDateTime;
 import java.util.Optional;
-import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -42,8 +40,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
@@ -57,15 +53,9 @@ class DocumentCommandServiceTest {
   @Mock private ApplicationEventPublisher eventPublisher;
   @Mock private DocCommentRepository docCommentRepository;
 
-  @Mock
-  private DocCategoryRepository docCategoryRepository;
+  @Mock private DocCategoryRepository docCategoryRepository;
 
-  @Mock
-  private DocSourceFileRepository
-      docSourceFileRepository;
-
-  @Mock private StringRedisTemplate stringRedisTemplate;
-  @Mock private ValueOperations<String, String> valueOps;
+  @Mock private DocSourceFileRepository docSourceFileRepository;
 
   private DocumentCommandService commandService;
 
@@ -81,8 +71,7 @@ class DocumentCommandServiceTest {
             eventPublisher,
             docCommentRepository,
             docCategoryRepository,
-            docSourceFileRepository,
-            stringRedisTemplate);
+            docSourceFileRepository);
   }
 
   @Test
@@ -148,7 +137,6 @@ class DocumentCommandServiceTest {
             null,
             3,
             0,
-            0,
             10L,
             LocalDateTime.now(),
             LocalDateTime.now());
@@ -189,7 +177,6 @@ class DocumentCommandServiceTest {
             "v1.0",
             null,
             3,
-            0,
             0,
             10L,
             LocalDateTime.now(),
@@ -235,7 +222,6 @@ class DocumentCommandServiceTest {
             "v0.1-draft",
             null,
             2,
-            0,
             0,
             10L,
             LocalDateTime.now(),
@@ -355,80 +341,6 @@ class DocumentCommandServiceTest {
   }
 
   @Test
-  @DisplayName("文档点赞：首次点赞成功，写入 Redis 24h 去重并原子累加点赞数")
-  void testLikeDocumentSuccess() {
-    DocumentEntity doc =
-        DocumentEntity.createFromImport(1L, 0L, "点赞文档", "摘要", "内容", WorkSpaceAclEnum.INTERNAL);
-    ReflectionTestUtils.setField(doc, "id", 100L);
-    when(documentRepository.findById(100L)).thenReturn(Optional.of(doc));
-
-    when(stringRedisTemplate.opsForValue()).thenReturn(valueOps);
-    when(valueOps.setIfAbsent(eq("ll:doc:like:100:10"), eq("1"), eq(24L), eq(TimeUnit.HOURS)))
-        .thenReturn(Boolean.TRUE);
-
-    commandService.likeDocument(100L, 10L);
-
-    verify(docAccessControlService).assertCanRead(doc, 10L);
-    verify(documentRepository).incrementLikeCount(100L);
-  }
-
-  @Test
-  @DisplayName("文档点赞：24小时内重复点赞抛出业务异常且不累加计数")
-  void testLikeDocumentDuplicate() {
-    DocumentEntity doc =
-        DocumentEntity.createFromImport(1L, 0L, "点赞文档", "摘要", "内容", WorkSpaceAclEnum.INTERNAL);
-    ReflectionTestUtils.setField(doc, "id", 100L);
-    when(documentRepository.findById(100L)).thenReturn(Optional.of(doc));
-
-    when(stringRedisTemplate.opsForValue()).thenReturn(valueOps);
-    when(valueOps.setIfAbsent(eq("ll:doc:like:100:10"), eq("1"), eq(24L), eq(TimeUnit.HOURS)))
-        .thenReturn(Boolean.FALSE);
-
-    assertThatThrownBy(() -> commandService.likeDocument(100L, 10L))
-        .isInstanceOf(BusinessException.class)
-        .hasMessageContaining("24 小时内点赞过");
-
-    verify(documentRepository, never()).incrementLikeCount(anyLong());
-  }
-
-  @Test
-  @DisplayName("文档点赞：重复点赞返回 409 冲突语义")
-  void testLikeDocumentDuplicateReturnsConflict() {
-    DocumentEntity doc =
-        DocumentEntity.createFromImport(1L, 0L, "点赞文档", "摘要", "内容", WorkSpaceAclEnum.INTERNAL);
-    ReflectionTestUtils.setField(doc, "id", 100L);
-    when(documentRepository.findById(100L)).thenReturn(Optional.of(doc));
-    when(stringRedisTemplate.opsForValue()).thenReturn(valueOps);
-    when(valueOps.setIfAbsent(anyString(), anyString(), anyLong(), eq(TimeUnit.HOURS)))
-        .thenReturn(Boolean.FALSE);
-
-    org.assertj.core.api.Assertions.assertThatThrownBy(() -> commandService.likeDocument(100L, 10L))
-        .isInstanceOf(BusinessException.class)
-        .extracting(e -> ((BusinessException) e).getHttpStatus())
-        .isEqualTo(org.springframework.http.HttpStatus.CONFLICT);
-  }
-
-  @Test
-  @DisplayName("文档点赞：计数失败时回滚 Redis 去重标记，避免用户被误锁 24 小时")
-  void testLikeDocumentRollsBackRedisKeyOnFailure() {
-    DocumentEntity doc =
-        DocumentEntity.createFromImport(1L, 0L, "点赞文档", "摘要", "内容", WorkSpaceAclEnum.INTERNAL);
-    ReflectionTestUtils.setField(doc, "id", 100L);
-    when(documentRepository.findById(100L)).thenReturn(Optional.of(doc));
-    when(stringRedisTemplate.opsForValue()).thenReturn(valueOps);
-    when(valueOps.setIfAbsent(eq("ll:doc:like:100:10"), eq("1"), eq(24L), eq(TimeUnit.HOURS)))
-        .thenReturn(Boolean.TRUE);
-    org.mockito.Mockito.doThrow(new IllegalStateException("DB 不可用"))
-        .when(documentRepository)
-        .incrementLikeCount(100L);
-
-    assertThatThrownBy(() -> commandService.likeDocument(100L, 10L))
-        .isInstanceOf(IllegalStateException.class);
-
-    verify(stringRedisTemplate).delete("ll:doc:like:100:10");
-  }
-
-  @Test
   @DisplayName("文件导入：超过 100MB 上限直接拒绝，不读取文件内容")
   void testImportFileRejectsOversizedFile() {
     org.springframework.web.multipart.MultipartFile file =
@@ -437,15 +349,11 @@ class DocumentCommandServiceTest {
     when(file.getSize()).thenReturn(101L * 1024 * 1024);
 
     assertThatThrownBy(
-            () ->
-                commandService.importFile(
-                    1L, 0L, file, null, false, WorkSpaceAclEnum.INTERNAL, 10L))
+            () -> commandService.importFile(1L, 0L, file, null, WorkSpaceAclEnum.INTERNAL, 10L))
         .isInstanceOf(BusinessException.class)
         .hasMessageContaining("上传文件过大");
 
-    verify(importPipeline, never())
-        .importFile(
-            any(DocumentImportCommand.class), anyLong());
+    verify(importPipeline, never()).importFile(any(DocumentImportCommand.class), anyLong());
   }
 
   @Test
@@ -463,12 +371,10 @@ class DocumentCommandServiceTest {
                 new java.io.ByteArrayInputStream(
                     "hello".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
 
-    commandService.importFile(1L, 0L, file, null, false, WorkSpaceAclEnum.INTERNAL, 10L);
+    commandService.importFile(1L, 0L, file, null, WorkSpaceAclEnum.INTERNAL, 10L);
 
-    org.mockito.ArgumentCaptor<DocumentImportCommand>
-        captor =
-            org.mockito.ArgumentCaptor.forClass(
-                DocumentImportCommand.class);
+    org.mockito.ArgumentCaptor<DocumentImportCommand> captor =
+        org.mockito.ArgumentCaptor.forClass(DocumentImportCommand.class);
     verify(importPipeline).importFile(captor.capture(), eq(10L));
     assertThat(captor.getValue().originalFileName()).isEqualTo("evil.md");
   }

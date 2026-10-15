@@ -128,7 +128,6 @@ class AiChatControllerTest {
             null,
             0,
             0,
-            0,
             1L,
             null,
             null);
@@ -165,7 +164,6 @@ class AiChatControllerTest {
             1,
             null,
             100,
-            0,
             0,
             1L,
             null,
@@ -235,7 +233,6 @@ class AiChatControllerTest {
             null,
             200,
             0,
-            0,
             1L,
             null,
             null);
@@ -275,7 +272,6 @@ class AiChatControllerTest {
             1,
             1,
             null,
-            0,
             0,
             0,
             1L,

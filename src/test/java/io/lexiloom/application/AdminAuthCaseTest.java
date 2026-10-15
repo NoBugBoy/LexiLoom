@@ -163,7 +163,8 @@ class AdminAuthCaseTest {
     @Test
     @DisplayName("登录时用户不存在应抛出业务异常")
     void shouldThrowExceptionWhenUserNotFound() {
-      AdminLoginRequest request = new AdminLoginRequest("admin@lexiloom.com", "wrongpwd", null, null);
+      AdminLoginRequest request =
+          new AdminLoginRequest("admin@lexiloom.com", "wrongpwd", null, null);
       given(adminQueryService.findAdminByEmail("admin@lexiloom.com")).willReturn(Optional.empty());
 
       assertThatThrownBy(() -> adminLoginUseCase.execute(request))
@@ -174,12 +175,14 @@ class AdminAuthCaseTest {
     @Test
     @DisplayName("登录时密码不匹配应抛出业务异常")
     void shouldThrowExceptionWhenPasswordMismatch() {
-      AdminLoginRequest request = new AdminLoginRequest("admin@lexiloom.com", "wrongpwd", null, null);
+      AdminLoginRequest request =
+          new AdminLoginRequest("admin@lexiloom.com", "wrongpwd", null, null);
       AdminEntity admin = new AdminEntity();
       admin.setId(1L);
       admin.setPassword("encoded_pwd");
 
-      given(adminQueryService.findAdminByEmail("admin@lexiloom.com")).willReturn(Optional.of(admin));
+      given(adminQueryService.findAdminByEmail("admin@lexiloom.com"))
+          .willReturn(Optional.of(admin));
       given(passwordEncoder.matches("wrongpwd", "encoded_pwd")).willReturn(false);
 
       assertThatThrownBy(() -> adminLoginUseCase.execute(request))
@@ -196,7 +199,8 @@ class AdminAuthCaseTest {
       admin.setId(88L);
       admin.setPassword("encoded_correct");
 
-      given(adminQueryService.findAdminByEmail("admin@lexiloom.com")).willReturn(Optional.of(admin));
+      given(adminQueryService.findAdminByEmail("admin@lexiloom.com"))
+          .willReturn(Optional.of(admin));
       given(passwordEncoder.matches("correctpwd", "encoded_correct")).willReturn(true);
       given(adminRoleService.findRolesByUserId(88L)).willReturn(List.of(AdminRoleEnum.ADMIN));
       given(redisTokenManager.generateToken(eq(88L), any())).willReturn("mock-admin-token");

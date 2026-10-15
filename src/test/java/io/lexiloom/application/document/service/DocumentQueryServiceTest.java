@@ -49,11 +49,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 class DocumentQueryServiceTest {
 
   @Mock private DocumentRepository documentRepository;
-
-  @Mock
-  private DocSourceFileRepository
-      docSourceFileRepository;
-
+  @Mock private DocSourceFileRepository docSourceFileRepository;
   @Mock private DocAccessControlService docAccessControlService;
   @Mock private DocumentMapper documentMapper;
   @Mock private ApplicationEventPublisher eventPublisher;
@@ -80,10 +76,7 @@ class DocumentQueryServiceTest {
     DocumentEntity doc =
         DocumentEntity.createFromImport(1L, 0L, "异步文档", "摘要", "正文", WorkSpaceAclEnum.INTERNAL);
     ReflectionTestUtils.setField(doc, "id", 100L);
-    ReflectionTestUtils.setField(
-        doc,
-        "parseStatus",
-        DocParseStatusEnum.ASYNC_PROCESSING);
+    ReflectionTestUtils.setField(doc, "parseStatus", DocParseStatusEnum.ASYNC_PROCESSING);
     ReflectionTestUtils.setField(doc, "sourceFileId", 200L);
 
     when(documentRepository.findById(100L)).thenReturn(Optional.of(doc));
@@ -94,14 +87,12 @@ class DocumentQueryServiceTest {
     ReflectionTestUtils.setField(sourceFile, "id", 200L);
     when(docSourceFileRepository.findById(200L)).thenReturn(Optional.of(sourceFile));
 
-    DocParseStatusDTO statusDTO =
-        queryService.getParseStatus(100L, 10L);
+    DocParseStatusDTO statusDTO = queryService.getParseStatus(100L, 10L);
 
     assertThat(statusDTO).isNotNull();
     assertThat(statusDTO.documentId()).isEqualTo(100L);
     assertThat(statusDTO.sourceFileId()).isEqualTo(200L);
-    assertThat(statusDTO.parseStatus())
-        .isEqualTo(DocParseStatusEnum.ASYNC_PROCESSING);
+    assertThat(statusDTO.parseStatus()).isEqualTo(DocParseStatusEnum.ASYNC_PROCESSING);
     assertThat(statusDTO.errorMessage()).isNull();
 
     verify(docAccessControlService).assertCanRead(doc, 10L);
@@ -142,7 +133,6 @@ class DocumentQueryServiceTest {
             "v0.1-draft",
             null,
             2,
-            0,
             0,
             10L,
             LocalDateTime.now(),
@@ -216,7 +206,6 @@ class DocumentQueryServiceTest {
             null,
             2,
             0,
-            0,
             10L,
             LocalDateTime.now(),
             LocalDateTime.now());
@@ -234,8 +223,7 @@ class DocumentQueryServiceTest {
   @DisplayName("分页检索：非工作空间成员直接拒绝，避免跨租户枚举文档")
   void testPageDocumentsDeniedForNonWorkspaceMember() {
     org.mockito.Mockito.doThrow(
-            new BusinessException(
-                ErrorCode.Document.DOC_ACCESS_DENIED, "您不是该工作空间成员"))
+            new BusinessException(ErrorCode.Document.DOC_ACCESS_DENIED, "您不是该工作空间成员"))
         .when(docAccessControlService)
         .assertCanReadWorkSpace(2L, 10L);
 
@@ -284,7 +272,6 @@ class DocumentQueryServiceTest {
             "v0.1-draft",
             null,
             4,
-            0,
             0,
             10L,
             LocalDateTime.now(),
@@ -336,7 +323,6 @@ class DocumentQueryServiceTest {
             2,
             null,
             4,
-            0,
             0,
             10L,
             LocalDateTime.now(),

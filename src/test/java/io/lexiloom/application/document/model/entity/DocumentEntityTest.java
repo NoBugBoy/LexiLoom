@@ -31,7 +31,6 @@ class DocumentEntityTest {
     assertThat(doc.getVersionCount()).isEqualTo(1);
     assertThat(doc.getPublishedVersion()).isNull();
     assertThat(doc.getReadCount()).isEqualTo(0);
-    assertThat(doc.getLikeCount()).isEqualTo(0);
   }
 
   @Test

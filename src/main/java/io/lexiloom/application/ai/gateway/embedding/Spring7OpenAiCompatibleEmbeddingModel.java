@@ -118,7 +118,8 @@ public class Spring7OpenAiCompatibleEmbeddingModel extends AbstractEmbeddingMode
         long latency = System.currentTimeMillis() - startTime;
         if (singleResult.usage() != null) {
           log.info(
-              "【Spring7OpenAiEmbeddingModel】向量化计算完成: model={}, 条数={}, 总耗时={}ms, 消耗Token=[prompt_tokens={}, total_tokens={}]",
+              "【Spring7OpenAiEmbeddingModel】向量化计算完成: model={}, 条数={}, 总耗时={}ms,"
+                  + " 消耗Token=[prompt_tokens={}, total_tokens={}]",
               this.model,
               texts.size(),
               latency,
@@ -158,7 +159,8 @@ public class Spring7OpenAiCompatibleEmbeddingModel extends AbstractEmbeddingMode
       long latency = System.currentTimeMillis() - startTime;
       if (hasUsage) {
         log.info(
-            "【Spring7OpenAiEmbeddingModel】分批向量化计算完成: model={}, 总条数={}, 分批数={}, 总耗时={}ms, 累计Token消耗=[prompt_tokens={}, total_tokens={}]",
+            "【Spring7OpenAiEmbeddingModel】分批向量化计算完成: model={}, 总条数={}, 分批数={}, 总耗时={}ms,"
+                + " 累计Token消耗=[prompt_tokens={}, total_tokens={}]",
             this.model,
             texts.size(),
             (int) Math.ceil((double) texts.size() / MAX_BATCH_SIZE),
@@ -216,7 +218,8 @@ public class Spring7OpenAiCompatibleEmbeddingModel extends AbstractEmbeddingMode
     BatchResult result = parseEmbeddingsAndUsageFromResponse(responseJson, batch.size());
     if (result.usage() != null) {
       log.info(
-          "【Spring7OpenAiEmbeddingModel】批次向量化响应成功: model={}, 条数={}, 耗时={}ms, Token消耗=[prompt_tokens={}, total_tokens={}]",
+          "【Spring7OpenAiEmbeddingModel】批次向量化响应成功: model={}, 条数={}, 耗时={}ms,"
+              + " Token消耗=[prompt_tokens={}, total_tokens={}]",
           this.model,
           batch.size(),
           batchLatency,

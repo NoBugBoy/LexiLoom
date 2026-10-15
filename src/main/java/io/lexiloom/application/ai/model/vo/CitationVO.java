@@ -1,5 +1,6 @@
 package io.lexiloom.application.ai.model.vo;
 
+import cn.hutool.core.util.StrUtil;
 import java.util.List;
 
 /**
@@ -17,9 +18,36 @@ public record CitationVO(
     Integer page,
     List<Float> bbox,
     String chunkType,
-    String anchor) {
+    String anchor,
+    String recallSource) {
 
   public CitationVO {
     bbox = (bbox == null) ? List.of() : List.copyOf(bbox);
+    recallSource = StrUtil.blankToDefault(recallSource, "RERANK");
+  }
+
+  public CitationVO(
+      Integer citationIndex,
+      Long documentId,
+      String docTitle,
+      String headerPath,
+      String snippet,
+      Double score,
+      Integer page,
+      List<Float> bbox,
+      String chunkType,
+      String anchor) {
+    this(
+        citationIndex,
+        documentId,
+        docTitle,
+        headerPath,
+        snippet,
+        score,
+        page,
+        bbox,
+        chunkType,
+        anchor,
+        "RERANK");
   }
 }

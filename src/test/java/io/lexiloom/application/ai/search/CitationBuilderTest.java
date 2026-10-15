@@ -54,8 +54,8 @@ class CitationBuilderTest {
             .anchor("段落_2")
             .build();
 
-    ScoredDocChunkVO s1 = ScoredDocChunkVO.of(doc1, 0.95, 1);
-    ScoredDocChunkVO s2 = ScoredDocChunkVO.of(doc2, 0.88, 2);
+    ScoredDocChunkVO s1 = ScoredDocChunkVO.of(doc1, 0.95, 1, "RERANK");
+    ScoredDocChunkVO s2 = ScoredDocChunkVO.of(doc2, 0.88, 2, "BM25");
 
     List<CitationVO> citations = citationBuilder.buildCitations(List.of(s1, s2));
 
@@ -72,6 +72,7 @@ class CitationBuilderTest {
     assertThat(c1.bbox()).containsExactly(10.5f, 20.0f, 300.0f, 85.5f);
     assertThat(c1.chunkType()).isEqualTo("text");
     assertThat(c1.anchor()).isEqualTo("段落_1");
+    assertThat(c1.recallSource()).isEqualTo("RERANK");
 
     CitationVO c2 = citations.get(1);
     assertThat(c2.citationIndex()).isEqualTo(2);
@@ -82,6 +83,7 @@ class CitationBuilderTest {
     assertThat(c2.score()).isEqualTo(0.88);
     assertThat(c2.page()).isEqualTo(2);
     assertThat(c2.bbox()).containsExactly(15.0f, 30.0f, 280.0f, 90.0f);
+    assertThat(c2.recallSource()).isEqualTo("BM25");
   }
 
   @Test
@@ -101,6 +103,7 @@ class CitationBuilderTest {
 
     assertThat(citations).hasSize(1);
     assertThat(citations.getFirst().snippet()).isEqualTo(longText);
+    assertThat(citations.getFirst().recallSource()).isEqualTo("RERANK");
   }
 
   @Test
@@ -115,16 +118,36 @@ class CitationBuilderTest {
   void testFormatPromptContext_Success() {
     CitationVO c1 =
         new CitationVO(
-            1, 100L, "白皮书", "架构", "这是片段1的内容。", 0.9, 1, List.of(1f, 2f, 3f, 4f), "text", "段落_1");
+            1,
+            100L,
+            "白皮书",
+            "架构",
+            "这是片段1的内容。",
+            0.9,
+            1,
+            List.of(1f, 2f, 3f, 4f),
+            "text",
+            "段落_1",
+            "RERANK");
     CitationVO c2 =
         new CitationVO(
-            2, 100L, "白皮书", "存储", "这是片段2的内容。", 0.85, 2, List.of(5f, 6f, 7f, 8f), "text", "段落_2");
+            2,
+            100L,
+            "白皮书",
+            "存储",
+            "这是片段2的内容。",
+            0.85,
+            2,
+            List.of(5f, 6f, 7f, 8f),
+            "text",
+            "段落_2",
+            "BM25");
 
     String promptContext = citationBuilder.formatPromptContext(List.of(c1, c2));
 
-    assertThat(promptContext).contains("参考片段 [1] (来源：《白皮书》 > 章节: 架构):");
+    assertThat(promptContext).contains("参考片段 [1] 【召回类型: RERANK 语义重排】 (来源：《白皮书》 > 章节: 架构):");
     assertThat(promptContext).contains("这是片段1的内容。");
-    assertThat(promptContext).contains("参考片段 [2] (来源：《白皮书》 > 章节: 存储):");
+    assertThat(promptContext).contains("参考片段 [2] 【召回类型: BM25 词法精确匹配】 (来源：《白皮书》 > 章节: 存储):");
     assertThat(promptContext).contains("这是片段2的内容。");
   }
 

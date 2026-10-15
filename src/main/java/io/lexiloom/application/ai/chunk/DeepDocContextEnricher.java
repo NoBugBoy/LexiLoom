@@ -179,8 +179,7 @@ public class DeepDocContextEnricher {
   }
 
   /** 兼容保留旧版重载签名：基于原始 DocTextChunk 列表富化 (用于历史单测和向后兼容) */
-  public List<EnrichedDocChunk> enrich(
-      String title, List<DocTextChunk> rawChunks) {
+  public List<EnrichedDocChunk> enrich(String title, List<DocTextChunk> rawChunks) {
     if (rawChunks == null || rawChunks.isEmpty()) {
       return List.of();
     }

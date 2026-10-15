@@ -16,7 +16,6 @@ import io.lexiloom.application.common.storage.FileStorageGateway;
 import io.lexiloom.application.document.acl.DocAccessControlService;
 import io.lexiloom.application.document.model.entity.DocSourceFileEntity;
 import io.lexiloom.application.document.model.entity.DocumentEntity;
-import io.lexiloom.application.document.model.enums.DocSourceTypeEnum;
 import io.lexiloom.application.document.model.event.DocumentAsyncParseEvent;
 import io.lexiloom.application.document.parser.DocParseStatusEnum;
 import io.lexiloom.application.document.parser.DocParserGateway;
@@ -334,47 +333,6 @@ class DocumentImportPipelineTest {
   }
 
   @Test
-  @DisplayName("一键提取 PDF 在线文档：调用 OCR 提取正文并创建新 Markdown 文档")
-  void testExtractPdfToDocument() {
-    // Arrange
-    DocSourceFileEntity pdfSource =
-        DocSourceFileEntity.create(
-            1L,
-            null,
-            "技术白皮书.pdf",
-            2048L,
-            "pdf",
-            "application/pdf",
-            "pdfhash",
-            "workspaces/1/docs/whitepaper.pdf",
-            "http://rustfs/whitepaper.pdf");
-    ReflectionTestUtils.setField(pdfSource, "id", 500L);
-
-    when(docSourceFileRepository.findById(500L)).thenReturn(Optional.of(pdfSource));
-
-    when(documentRepository.save(any(DocumentEntity.class)))
-        .thenAnswer(
-            inv -> {
-              DocumentEntity doc = inv.getArgument(0);
-              ReflectionTestUtils.setField(doc, "id", 600L);
-              return doc;
-            });
-
-    // Act
-    DocumentEntity extractedDoc = pipeline.extractPdfToDocument(500L, 88L, OPERATOR_ID);
-
-    // Assert
-    assertThat(extractedDoc).isNotNull();
-    assertThat(extractedDoc.getId()).isEqualTo(600L);
-    assertThat(extractedDoc.getTitle()).isEqualTo("技术白皮书 (提炼在线版)");
-    assertThat(extractedDoc.getSourceType()).isEqualTo(DocSourceTypeEnum.IMPORT);
-    assertThat(extractedDoc.getStatus()).isEqualTo(DocumentStateEnum.PENDING_APPROVAL);
-    assertThat(extractedDoc.getParseStatus()).isEqualTo(DocParseStatusEnum.ASYNC_PROCESSING);
-    verify(docAccessControlService).assertCanReadWorkSpace(1L, OPERATOR_ID);
-    verify(eventPublisher).publishEvent(any(DocumentAsyncParseEvent.class));
-  }
-
-  @Test
   @DisplayName("异常流测试：对象存储上传失败应抛出 FILE_STORAGE_ERROR 业务异常")
   void testImportFileStorageUploadFails() {
     byte[] content = "test content".getBytes(StandardCharsets.UTF_8);
@@ -495,37 +453,6 @@ class DocumentImportPipelineTest {
             any(InputStream.class),
             anyString(),
             anyLong());
-  }
-
-  @Test
-  @DisplayName("安全：PDF 提炼前校验来源文件所属工作空间的读权限")
-  void testExtractPdfAssertsWorkspaceReadAccess() {
-    byte[] content = "pdf".getBytes(StandardCharsets.UTF_8);
-    DocSourceFileEntity sourceFile =
-        DocSourceFileEntity.create(
-            7L,
-            null,
-            "paper.pdf",
-            (long) content.length,
-            "pdf",
-            "application/pdf",
-            "hash",
-            "path",
-            "url");
-    ReflectionTestUtils.setField(sourceFile, "id", 300L);
-    when(docSourceFileRepository.findById(300L)).thenReturn(Optional.of(sourceFile));
-
-    when(documentRepository.save(any(DocumentEntity.class)))
-        .thenAnswer(
-            inv -> {
-              DocumentEntity doc = inv.getArgument(0);
-              ReflectionTestUtils.setField(doc, "id", 301L);
-              return doc;
-            });
-
-    pipeline.extractPdfToDocument(300L, 5L, OPERATOR_ID);
-
-    verify(docAccessControlService).assertCanReadWorkSpace(7L, OPERATOR_ID);
   }
 
   @Test

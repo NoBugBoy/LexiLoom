@@ -101,39 +101,68 @@ public class DefaultHybridSearchQueryService implements HybridSearchQueryService
       return List.of();
     }
 
-    // 5. 候选集组装 (根据重排策略决定是否保留双路重叠项)
-    List<DocChunkDocument> candidatesForRerank;
+    // 5. 候选集组装与重排路由
     RerankStrategyEnum strategy = rerankGateway != null ? rerankGateway.getStrategy() : null;
-    if (strategy == RerankStrategyEnum.RRF) {
-      // RRF 算法专门需要多路排名数据进行倒数排名融合累加，保留双路原序列
-      candidatesForRerank = new ArrayList<>(bm25Candidates.size() + knnCandidates.size());
-      candidatesForRerank.addAll(bm25Candidates);
-      candidatesForRerank.addAll(knnCandidates);
-    } else {
-      // 非 RRF 模式 (NoOp / CrossEncoder / Mock)，执行交叉交替去重合并
-      candidatesForRerank = interleaveAndDeduplicate(bm25Candidates, knnCandidates);
-    }
-
-    // 6. 委托 RerankGateway 进行精排打分 (仅负责打分与排序，最终截取统一交由服务层处理，
-    //    以便在截取前完成真实相似度回填、文档级多样性上限与阈值过滤)
-    RerankCommand rerankCommand =
-        RerankCommand.of(
-            command.query(), candidatesForRerank, Math.max(targetTopK, candidatesForRerank.size()));
-    List<ScoredDocChunkVO> rerankedResults =
-        rerankGateway != null ? rerankGateway.rerank(rerankCommand) : List.of();
-
-    // 7. 终态选择：真实 Cosine 回填 -> 阈值过滤 -> 文档级多样性上限 -> Top-K 截取
     double minScoreThreshold = resolveMinScoreThreshold(command);
     int maxChunksPerDocument = resolveMaxChunksPerDocument();
-    List<ScoredDocChunkVO> finalResults =
-        selectFinalResults(
-            rerankedResults,
-            command.query(),
-            vector,
-            strategy,
-            minScoreThreshold,
-            maxChunksPerDocument,
-            targetTopK);
+
+    List<ScoredDocChunkVO> finalResults;
+    if (strategy == RerankStrategyEnum.RRF) {
+      // RRF 算法专门需要多路排名数据进行倒数排名融合累加，保留双路原序列
+      List<DocChunkDocument> candidatesForRerank =
+          new ArrayList<>(bm25Candidates.size() + knnCandidates.size());
+      candidatesForRerank.addAll(bm25Candidates);
+      candidatesForRerank.addAll(knnCandidates);
+
+      RerankCommand rerankCommand =
+          RerankCommand.of(
+              command.query(),
+              candidatesForRerank,
+              Math.max(targetTopK, candidatesForRerank.size()));
+      List<ScoredDocChunkVO> rerankedResults =
+          rerankGateway != null ? rerankGateway.rerank(rerankCommand) : List.of();
+
+      finalResults =
+          selectFinalResults(
+              rerankedResults,
+              command.query(),
+              vector,
+              strategy,
+              minScoreThreshold,
+              maxChunksPerDocument,
+              targetTopK);
+    } else if (knnCandidates.isEmpty()) {
+      // 纯词法回退场景 (如未提取到向量或向量索引无命中)：全部配额由 BM25 承担
+      RerankCommand rerankCommand =
+          RerankCommand.of(
+              command.query(), bm25Candidates, Math.max(targetTopK, bm25Candidates.size()));
+      List<ScoredDocChunkVO> rerankedResults =
+          rerankGateway != null ? rerankGateway.rerank(rerankCommand) : List.of();
+      finalResults =
+          selectFinalResults(
+                  rerankedResults,
+                  command.query(),
+                  vector,
+                  strategy,
+                  minScoreThreshold,
+                  maxChunksPerDocument,
+                  targetTopK)
+              .stream()
+              .map(vo -> ScoredDocChunkVO.of(vo.chunk(), vo.score(), vo.originalRank(), "BM25"))
+              .toList();
+    } else {
+      // 配额隔离混合策略：仅将向量检索结果交由 Rerank 精排截取 Top-15，额外保留 5 条 BM25 词法结果，共 20 条交给 LLM
+      finalResults =
+          executeQuotaHybridSearch(
+              command,
+              vector,
+              bm25Candidates,
+              knnCandidates,
+              strategy,
+              minScoreThreshold,
+              maxChunksPerDocument,
+              targetTopK);
+    }
 
     long cost = System.currentTimeMillis() - startTime;
     log.info(
@@ -194,14 +223,18 @@ public class DefaultHybridSearchQueryService implements HybridSearchQueryService
 
       DocChunkDocument chunk = item.chunk();
       Double cosine = cosineSimilarity(queryVector, chunk.getContentVector());
-      double baseScore = (cosine != null) ? cosine : item.score();
+      double baseScore;
+      if (strategy == RerankStrategyEnum.CROSS_ENCODER && item.score() > 0.0) {
+        baseScore = item.score();
+      } else {
+        baseScore = (cosine != null) ? cosine : item.score();
+      }
 
-      // 阈值过滤机制：基于真实语义相似度进行严格过滤与结构保护
-      if (strategy != RerankStrategyEnum.RRF && cosine != null) {
-        boolean isHighLexicalMatch =
-            item.originalRank() <= 5 || "table".equalsIgnoreCase(chunk.getChunkType());
-        double effectiveThreshold =
-            isHighLexicalMatch ? Math.min(minScoreThreshold * 0.65, 0.22) : minScoreThreshold;
+      // 阈值过滤机制：基于真实语义相似度进行严格过滤与结构保护 (表结构宽松阈值：table 切片或包含数据表结构定义时，宽松 0.65 保护)
+      boolean isTable = isTableIntent && isTableChunk(chunk);
+      double effectiveThreshold = isTable ? minScoreThreshold * 0.65 : minScoreThreshold;
+      if (strategy != RerankStrategyEnum.RRF
+          && (strategy == RerankStrategyEnum.CROSS_ENCODER || cosine != null)) {
         if (baseScore < effectiveThreshold) {
           continue;
         }
@@ -212,11 +245,16 @@ public class DefaultHybridSearchQueryService implements HybridSearchQueryService
       // 2. 结合初筛原始排位平滑增益 (RRF 倒数排位)，尊重双路检索初筛结果；
       // 3. 意图感知加权：当用户查询显式提及"表"或"table"且切片类型为结构化表格时，赋予类型对齐增益。
       double rankBonus = 1.0 / (60.0 + item.originalRank());
-      double typeBoost =
-          (isTableIntent && "table".equalsIgnoreCase(chunk.getChunkType())) ? 0.15 : 0.0;
-      double sortScore = baseScore + rankBonus + typeBoost;
+      double intentBonus = isTable ? 0.05 : 0.0;
+      double sortScore = baseScore + rankBonus + intentBonus;
 
-      candidateItems.add(new CandidateItem(chunk, baseScore, sortScore, item.originalRank()));
+      candidateItems.add(
+          new CandidateItem(
+              chunk,
+              baseScore,
+              sortScore,
+              item.originalRank(),
+              StrUtil.blankToDefault(item.recallSource(), "RERANK")));
     }
 
     // 按综合排序得分降序排列（分数相同时保持原始顺序）
@@ -234,13 +272,17 @@ public class DefaultHybridSearchQueryService implements HybridSearchQueryService
       }
       String documentId = item.chunk().getDocumentId();
       if (maxChunksPerDocument <= 0 || StrUtil.isBlank(documentId)) {
-        selected.add(ScoredDocChunkVO.of(item.chunk(), item.displayScore(), item.originalRank()));
+        selected.add(
+            ScoredDocChunkVO.of(
+                item.chunk(), item.displayScore(), item.originalRank(), item.recallSource()));
         continue;
       }
       int used = perDocumentCount.getOrDefault(documentId, 0);
       if (used < maxChunksPerDocument) {
         perDocumentCount.put(documentId, used + 1);
-        selected.add(ScoredDocChunkVO.of(item.chunk(), item.displayScore(), item.originalRank()));
+        selected.add(
+            ScoredDocChunkVO.of(
+                item.chunk(), item.displayScore(), item.originalRank(), item.recallSource()));
       } else {
         backfillPool.add(item);
         diversityTruncated++;
@@ -256,7 +298,9 @@ public class DefaultHybridSearchQueryService implements HybridSearchQueryService
         if (selected.size() >= targetTopK) {
           break;
         }
-        selected.add(ScoredDocChunkVO.of(item.chunk(), item.displayScore(), item.originalRank()));
+        selected.add(
+            ScoredDocChunkVO.of(
+                item.chunk(), item.displayScore(), item.originalRank(), item.recallSource()));
       }
       log.info(
           "【HybridSearch】多样性回填生效: 首轮仅选出 {} 条，从备选池按分数补齐 {} 条同文档切片，最终输出 {} 条",
@@ -278,8 +322,52 @@ public class DefaultHybridSearchQueryService implements HybridSearchQueryService
     return lower.contains("表") || lower.contains("table");
   }
 
+  private boolean isTableChunk(DocChunkDocument chunk) {
+    if (chunk == null) {
+      return false;
+    }
+    if ("table".equalsIgnoreCase(chunk.getChunkType())) {
+      return true;
+    }
+    String content = chunk.getContent();
+    if (StrUtil.isNotBlank(content)) {
+      return content.contains("【数据表结构定义】")
+          || (content.contains("|")
+              && (content.contains("字段") || content.contains("类型") || content.contains("注释")));
+    }
+    return false;
+  }
+
+  /**
+   * 对词法全文检索关键词进行自然语言提问降噪与核心实体提取
+   *
+   * <p>Dense 向量检索需保留完整自然语言语义，而 BM25 作为词袋 TF-IDF 算法，极易被自然语言中的提问疑问词、
+   * 指令助词（如“有哪些”、“要返回”、“请问”）严重稀释和污染，导致命中大量包含“返回值”、“有哪些”的高频无关接口文档。 此处剥离自然语言提问助词与指令词，提取纯净的实体与技术核心词交付
+   * BM25 检索。
+   */
+  private String cleanLexicalQuery(String rawQuery) {
+    if (StrUtil.isBlank(rawQuery)) {
+      return "";
+    }
+    // 1. 过滤自然语言提问与格式指令虚词（如“有哪些”、“要返回”、“请问”、“列出”）
+    String cleaned =
+        rawQuery.replaceAll("(?i)(有哪些|有什么|是什么|怎么做|如何|为什么|请问|请告诉我|告诉我|请给出|请列出|要返回|需要返回|详细说明)", " ");
+    // 2. 过滤常见无检索区分度的连词、助词
+    cleaned =
+        cleaned.replaceAll(
+            "(?i)(?:^|\\s+|(?<=[\u4e00-\u9fa5a-zA-Z0-9]))(和|及|与|或|的|了|吗|呢|吧|啊|呀)(?:$|\\s+|(?=[\u4e00-\u9fa5a-zA-Z0-9]))",
+            " ");
+    // 3. 规范化空白字符
+    cleaned = cleaned.replaceAll("\\s+", " ").trim();
+    return StrUtil.isNotBlank(cleaned) ? cleaned : rawQuery.trim();
+  }
+
   private record CandidateItem(
-      DocChunkDocument chunk, double displayScore, double sortScore, int originalRank) {}
+      DocChunkDocument chunk,
+      double displayScore,
+      double sortScore,
+      int originalRank,
+      String recallSource) {}
 
   /**
    * 计算查询向量与切片向量的真实余弦相似度
@@ -318,22 +406,21 @@ public class DefaultHybridSearchQueryService implements HybridSearchQueryService
   /** 执行 BM25 词法全文检索 */
   private List<DocChunkDocument> searchLexical(HybridSearchCommand command, int limit) {
     try {
+      String lexicalQuery = cleanLexicalQuery(command.query());
       NativeQueryBuilder builder = NativeQuery.builder();
       builder.withQuery(
           q ->
               q.bool(
                   b -> {
                     // Must: 多字段 IK 分词加权匹配。
-                    //
                     // 采用 best_fields + tie_breaker 组合：切片正文权重最高，标题/章节路径仅作辅助加权。
-                    // 关键动机：title 与 contextPrefix 是文档级冗余字段，同一文档内每个切片取值完全一致，
-                    // 若给它们高权重，关键词命中标题时该文档全部切片会 BM25 同分并列，再按内部顺序刷屏召回结果。
-                    // tie_breaker 让非最优字段的得分参与累加，从而由各切片独有正文打破并列。
+                    // 词法检索采用 cleanLexicalQuery 剥离自然语言提问与格式指令虚词（如“有哪些”、“要返回”），
+                    // 确保聚焦技术核心实体词（如 S16、数据库表、表名、表注释），杜绝无关接口返回文档刷屏。
                     b.must(
                         m ->
                             m.multiMatch(
                                 mm ->
-                                    mm.query(command.query())
+                                    mm.query(lexicalQuery)
                                         .type(TextQueryType.BestFields)
                                         .tieBreaker(0.5)
                                         .fields(
@@ -342,12 +429,6 @@ public class DefaultHybridSearchQueryService implements HybridSearchQueryService
                                                 "contextPrefix^2.5",
                                                 "title^1",
                                                 "headerPath^1.5"))));
-
-                    // Should: 若用户提问包含表格意图，对表格类型切片赋予轻量加权
-                    String qLower = command.query().toLowerCase();
-                    if (qLower.contains("表") || qLower.contains("table")) {
-                      b.should(s -> s.term(t -> t.field("chunkType").value("table").boost(1.5f)));
-                    }
 
                     // Filter 1: 工作区隔离过滤器 (强安全隔离)
                     b.filter(
@@ -505,5 +586,152 @@ public class DefaultHybridSearchQueryService implements HybridSearchQueryService
       }
     }
     return result;
+  }
+
+  /**
+   * 配额隔离混合检索执行：向量精排 Top-N + BM25 词法保底 Top-M
+   *
+   * @param command 原始检索命令
+   * @param vector 查询向量
+   * @param bm25Candidates 词法检索候选集
+   * @param knnCandidates 稠密向量检索候选集
+   * @param strategy 重排算法策略
+   * @param minScoreThreshold 最低相似度阈值
+   * @param maxChunksPerDocument 单文档切片上限
+   * @param targetTopK 最终目标召回总数
+   * @return 最终融合切片列表
+   */
+  private List<ScoredDocChunkVO> executeQuotaHybridSearch(
+      HybridSearchCommand command,
+      float[] vector,
+      List<DocChunkDocument> bm25Candidates,
+      List<DocChunkDocument> knnCandidates,
+      RerankStrategyEnum strategy,
+      double minScoreThreshold,
+      int maxChunksPerDocument,
+      int targetTopK) {
+
+    int vectorQuota = resolveVectorTopK(targetTopK);
+    int lexicalQuota = resolveLexicalTopK(targetTopK, vectorQuota);
+
+    // 1. 向量路交由 Rerank Gateway 精排处理并截取 vectorQuota 条
+    List<ScoredDocChunkVO> vectorSelected = new ArrayList<>();
+    if (!knnCandidates.isEmpty()) {
+      RerankCommand rerankCommand =
+          RerankCommand.of(
+              command.query(), knnCandidates, Math.max(vectorQuota, knnCandidates.size()));
+      List<ScoredDocChunkVO> rerankedKnn =
+          rerankGateway != null ? rerankGateway.rerank(rerankCommand) : List.of();
+
+      vectorSelected =
+          new ArrayList<>(
+              selectFinalResults(
+                  rerankedKnn,
+                  command.query(),
+                  vector,
+                  strategy,
+                  minScoreThreshold,
+                  maxChunksPerDocument,
+                  vectorQuota));
+    }
+
+    // 2. 收集已选入向量路的切片 ID 与文档计数，用于 BM25 词法保底排重与多样性协同
+    Set<String> selectedChunkIds = new HashSet<>();
+    Map<String, Integer> perDocumentCount = new HashMap<>();
+    for (ScoredDocChunkVO vo : vectorSelected) {
+      if (vo != null && vo.chunk() != null && vo.chunk().getId() != null) {
+        selectedChunkIds.add(vo.chunk().getId());
+        String docId = vo.chunk().getDocumentId();
+        if (StrUtil.isNotBlank(docId)) {
+          perDocumentCount.put(docId, perDocumentCount.getOrDefault(docId, 0) + 1);
+        }
+      }
+    }
+
+    // 3. 词法路 (BM25) 独立保底配额提取 (排除已入围切片，确保精确关键词命中切片保底入围)
+    int remainingQuota = Math.max(0, targetTopK - vectorSelected.size());
+    int targetLexicalCount = Math.min(lexicalQuota, remainingQuota);
+    // 若向量路入围不足（如向量无匹配或因阈值过滤淘汰），允许词法路弹性补齐差额
+    if (vectorSelected.size() < vectorQuota) {
+      targetLexicalCount = remainingQuota;
+    }
+
+    List<ScoredDocChunkVO> lexicalSelected = new ArrayList<>();
+    List<ScoredDocChunkVO> lexicalBackfill = new ArrayList<>();
+    int lexicalRankCounter = vectorSelected.size() + 1;
+
+    for (int i = 0; i < bm25Candidates.size(); i++) {
+      if (lexicalSelected.size() >= targetLexicalCount) {
+        break;
+      }
+      DocChunkDocument doc = bm25Candidates.get(i);
+      if (doc == null || doc.getId() == null || selectedChunkIds.contains(doc.getId())) {
+        continue;
+      }
+
+      Double cosine = cosineSimilarity(vector, doc.getContentVector());
+      // 词法保底打分：优先取真实向量余弦；无向量时取词法排位平滑衰减
+      double score = (cosine != null && cosine > 0.0) ? cosine : (1.0 / (60.0 + (i + 1)));
+
+      String documentId = doc.getDocumentId();
+      ScoredDocChunkVO vo = ScoredDocChunkVO.of(doc, score, lexicalRankCounter++, "BM25");
+      if (maxChunksPerDocument <= 0 || StrUtil.isBlank(documentId)) {
+        lexicalSelected.add(vo);
+        selectedChunkIds.add(doc.getId());
+      } else {
+        int currentCount = perDocumentCount.getOrDefault(documentId, 0);
+        if (currentCount < maxChunksPerDocument) {
+          perDocumentCount.put(documentId, currentCount + 1);
+          lexicalSelected.add(vo);
+          selectedChunkIds.add(doc.getId());
+        } else {
+          lexicalBackfill.add(vo);
+        }
+      }
+    }
+
+    // 若多样性初选后仍未达到目标数量，从词法备选池补齐
+    if (lexicalSelected.size() < targetLexicalCount && !lexicalBackfill.isEmpty()) {
+      for (ScoredDocChunkVO backfillItem : lexicalBackfill) {
+        if (lexicalSelected.size() >= targetLexicalCount) {
+          break;
+        }
+        if (selectedChunkIds.add(backfillItem.chunk().getId())) {
+          lexicalSelected.add(backfillItem);
+        }
+      }
+    }
+
+    // 4. 合并最终结果：向量精排 Top-N + 词法保底 Top-M
+    List<ScoredDocChunkVO> finalResults =
+        new ArrayList<>(vectorSelected.size() + lexicalSelected.size());
+    finalResults.addAll(vectorSelected);
+    finalResults.addAll(lexicalSelected);
+
+    log.info(
+        "【HybridSearch】配额隔离混合召回完成: 目标TopK={}, 向量精排入围={}, 词法保底入围={}, 总输出={}",
+        targetTopK,
+        vectorSelected.size(),
+        lexicalSelected.size(),
+        finalResults.size());
+
+    return finalResults;
+  }
+
+  private int resolveVectorTopK(int totalTopK) {
+    if (aiProperties != null && aiProperties.getRag() != null) {
+      int cfgVector = aiProperties.getRag().getVectorTopK();
+      int cfgTotal = aiProperties.getRag().getTopK();
+      if (totalTopK == cfgTotal) {
+        return cfgVector;
+      }
+      double ratio = cfgTotal > 0 ? (double) cfgVector / cfgTotal : 0.75;
+      return Math.max(1, (int) Math.round(totalTopK * ratio));
+    }
+    return Math.max(1, (int) Math.round(totalTopK * 0.75));
+  }
+
+  private int resolveLexicalTopK(int totalTopK, int vectorQuota) {
+    return Math.max(0, totalTopK - vectorQuota);
   }
 }

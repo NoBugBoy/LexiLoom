@@ -127,7 +127,6 @@ class DocVersionServiceTest {
             null,
             6,
             0,
-            0,
             99L,
             LocalDateTime.now(),
             LocalDateTime.now());
@@ -176,7 +175,6 @@ class DocVersionServiceTest {
             null,
             6,
             0,
-            0,
             99L,
             LocalDateTime.now(),
             LocalDateTime.now());
@@ -184,9 +182,7 @@ class DocVersionServiceTest {
 
     versionService.rollbackToVersion(100L, 1, 99L);
 
-    verify(eventPublisher)
-        .publishEvent(
-            any(DocumentStateTransitionEvent.class));
+    verify(eventPublisher).publishEvent(any(DocumentStateTransitionEvent.class));
   }
 
   @Test

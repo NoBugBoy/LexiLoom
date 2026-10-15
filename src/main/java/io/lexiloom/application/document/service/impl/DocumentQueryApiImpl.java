@@ -3,24 +3,39 @@ package io.lexiloom.application.document.service.impl;
 import io.lexiloom.application.document.api.DocumentQueryApi;
 import io.lexiloom.application.document.api.dto.DocSourceFileDTO;
 import io.lexiloom.application.document.api.dto.DocumentDTO;
+import io.lexiloom.application.document.api.dto.WorkspaceDocStatsDTO;
 import io.lexiloom.application.document.mapper.DocSourceFileMapper;
 import io.lexiloom.application.document.mapper.DocumentMapper;
+import io.lexiloom.application.document.model.entity.DocCategoryEntity;
 import io.lexiloom.application.document.model.entity.DocTagEntity;
 import io.lexiloom.application.document.model.entity.DocTagRelationEntity;
+import io.lexiloom.application.document.model.entity.DocumentEntity;
+import io.lexiloom.application.document.parser.DocParseStatusEnum;
+import io.lexiloom.application.document.repository.DocCategoryRepository;
+import io.lexiloom.application.document.repository.DocCommentRepository;
 import io.lexiloom.application.document.repository.DocSourceFileRepository;
 import io.lexiloom.application.document.repository.DocTagRelationRepository;
 import io.lexiloom.application.document.repository.DocTagRepository;
 import io.lexiloom.application.document.repository.DocumentRepository;
+import io.lexiloom.application.document.statemachine.DocumentStateEnum;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Primary;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /** 文档模块跨模块查询服务实现 (DocumentQueryApiImpl) */
 @Slf4j
+@Primary
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -30,6 +45,8 @@ public class DocumentQueryApiImpl implements DocumentQueryApi {
   private final DocSourceFileRepository docSourceFileRepository;
   private final DocTagRelationRepository docTagRelationRepository;
   private final DocTagRepository docTagRepository;
+  private final DocCategoryRepository docCategoryRepository;
+  private final DocCommentRepository docCommentRepository;
   private final DocumentMapper documentMapper;
   private final DocSourceFileMapper docSourceFileMapper;
 
@@ -54,7 +71,17 @@ public class DocumentQueryApiImpl implements DocumentQueryApi {
     if (documentId == null) {
       return Optional.empty();
     }
-    return docSourceFileRepository.findByDocumentId(documentId).map(docSourceFileMapper::toDTO);
+    Optional<DocSourceFileDTO> directMatch =
+        docSourceFileRepository.findByDocumentId(documentId).map(docSourceFileMapper::toDTO);
+    if (directMatch.isPresent()) {
+      return directMatch;
+    }
+    return documentRepository
+        .findById(documentId)
+        .map(DocumentEntity::getSourceFileId)
+        .filter(java.util.Objects::nonNull)
+        .flatMap(docSourceFileRepository::findById)
+        .map(docSourceFileMapper::toDTO);
   }
 
   @Override
@@ -72,6 +99,200 @@ public class DocumentQueryApiImpl implements DocumentQueryApi {
     } catch (Exception e) {
       log.warn("查询文档标签失败: documentId={}, error={}", documentId, e.getMessage());
       return Collections.emptyList();
+    }
+  }
+
+  @Override
+  public WorkspaceDocStatsDTO getWorkspaceDocStats(Long workSpaceId) {
+    if (workSpaceId == null) {
+      return new WorkspaceDocStatsDTO(
+          0L, 0L, 0L, 0L, 0L, 0, 0L, 0L, "0 B", 0.0, 0L, 0L, 0L, 0L, List.of(), List.of(),
+          List.of(), List.of(), List.of());
+    }
+
+    // 1. 文档各状态数量统计
+    long totalDocuments = documentRepository.countByWorkSpaceId(workSpaceId);
+    long approvedDocuments =
+        documentRepository.countByWorkSpaceIdAndStatus(workSpaceId, DocumentStateEnum.APPROVED);
+    long pendingDocuments =
+        documentRepository.countByWorkSpaceIdAndStatus(
+            workSpaceId, DocumentStateEnum.PENDING_APPROVAL);
+    long rejectedDocuments =
+        documentRepository.countByWorkSpaceIdAndStatus(workSpaceId, DocumentStateEnum.REJECTED);
+
+    // 2. 总字数与阅读量
+    long totalWordCount = 0L;
+    long totalReadCount = 0L;
+    List<Object[]> wordReadSums = documentRepository.sumWordCountAndReadCount(workSpaceId);
+    if (wordReadSums != null && !wordReadSums.isEmpty() && wordReadSums.get(0) != null) {
+      Object[] row = wordReadSums.get(0);
+      totalWordCount = row[0] != null ? ((Number) row[0]).longValue() : 0L;
+      totalReadCount = row[1] != null ? ((Number) row[1]).longValue() : 0L;
+    }
+    int avgWordCount = totalDocuments > 0 ? (int) (totalWordCount / totalDocuments) : 0;
+
+    // 3. 源文件与存储统计
+    long totalSourceFiles = 0L;
+    long totalStorageBytes = 0L;
+    List<Object[]> sourceSums = docSourceFileRepository.countAndSumFileSize(workSpaceId);
+    if (sourceSums != null && !sourceSums.isEmpty() && sourceSums.get(0) != null) {
+      Object[] row = sourceSums.get(0);
+      totalSourceFiles = row[0] != null ? ((Number) row[0]).longValue() : 0L;
+      totalStorageBytes = row[1] != null ? ((Number) row[1]).longValue() : 0L;
+    }
+    String formattedStorage = formatStorage(totalStorageBytes);
+
+    // 4. 解析成功率统计
+    List<Object[]> parseStatusGroups = docSourceFileRepository.countGroupByParseStatus(workSpaceId);
+    long successCount = 0L;
+    long totalParsedFiles = 0L;
+    if (parseStatusGroups != null) {
+      for (Object[] row : parseStatusGroups) {
+        if (row != null && row.length >= 2) {
+          DocParseStatusEnum status = (DocParseStatusEnum) row[0];
+          long count = row[1] != null ? ((Number) row[1]).longValue() : 0L;
+          totalParsedFiles += count;
+          if (status == DocParseStatusEnum.SUCCESS || status == DocParseStatusEnum.PREVIEW_ONLY) {
+            successCount += count;
+          }
+        }
+      }
+    }
+    double parseSuccessRate =
+        totalParsedFiles > 0
+            ? Math.round(((double) successCount / totalParsedFiles * 100.0) * 10.0) / 10.0
+            : 100.0;
+
+    // 5. 分类数与互动统计
+    long categoryCount = docCategoryRepository.countByWorkSpaceId(workSpaceId);
+    long totalComments = docCommentRepository.countByWorkSpaceId(workSpaceId);
+    Long likeSum = docCommentRepository.sumLikeCountByWorkSpaceId(workSpaceId);
+    long totalCommentLikes = likeSum != null ? likeSum : 0L;
+
+    // 6. 热门必读文档 Top 10
+    List<DocumentEntity> hotEntities =
+        documentRepository.findTop10ByWorkSpaceIdOrderByReadCountDesc(workSpaceId);
+    List<WorkspaceDocStatsDTO.HotDocumentDTO> hotDocs =
+        hotEntities == null
+            ? List.of()
+            : hotEntities.stream()
+                .map(
+                    d ->
+                        new WorkspaceDocStatsDTO.HotDocumentDTO(
+                            d.getId(),
+                            d.getTitle(),
+                            d.getSummary(),
+                            d.getReadCount() != null ? d.getReadCount() : 0,
+                            d.getWordCount() != null ? d.getWordCount() : 0,
+                            d.getCreateBy(),
+                            d.getUpdateTime()))
+                .toList();
+
+    // 7. 最新发布动态 Top 5
+    List<DocumentEntity> recentEntities =
+        documentRepository.findTop5ByWorkSpaceIdOrderByUpdateTimeDesc(workSpaceId);
+    List<WorkspaceDocStatsDTO.RecentDocumentDTO> recentDocs =
+        recentEntities == null
+            ? List.of()
+            : recentEntities.stream()
+                .map(
+                    d ->
+                        new WorkspaceDocStatsDTO.RecentDocumentDTO(
+                            d.getId(),
+                            d.getTitle(),
+                            d.getCurrentVersion(),
+                            d.getCurrentVersionTag(),
+                            d.getStatus(),
+                            d.getCreateBy(),
+                            d.getUpdateTime()))
+                .toList();
+
+    // 8. 卓越作者 Top 5
+    List<Object[]> topAuthorRows =
+        documentRepository.findTopAuthors(workSpaceId, PageRequest.of(0, 5));
+    List<WorkspaceDocStatsDTO.TopAuthorDTO> topAuthors =
+        topAuthorRows == null
+            ? List.of()
+            : topAuthorRows.stream()
+                .map(
+                    row ->
+                        new WorkspaceDocStatsDTO.TopAuthorDTO(
+                            row[0] != null ? ((Number) row[0]).longValue() : 0L,
+                            row[1] != null ? ((Number) row[1]).longValue() : 0L,
+                            row[2] != null ? ((Number) row[2]).longValue() : 0L))
+                .toList();
+
+    // 9. 分类文档数量分布
+    List<Object[]> catGroups = documentRepository.countGroupByCategoryId(workSpaceId);
+    List<WorkspaceDocStatsDTO.CategoryDistributionDTO> catDistribution = new ArrayList<>();
+    if (catGroups != null) {
+      Set<Long> catIds =
+          catGroups.stream()
+              .filter(r -> r != null && r[0] != null)
+              .map(r -> ((Number) r[0]).longValue())
+              .collect(Collectors.toSet());
+      Map<Long, String> catNameMap =
+          docCategoryRepository.findAllById(catIds).stream()
+              .collect(
+                  Collectors.toMap(
+                      DocCategoryEntity::getId, DocCategoryEntity::getName, (a, b) -> a));
+      for (Object[] r : catGroups) {
+        if (r != null) {
+          Long catId = r[0] != null ? ((Number) r[0]).longValue() : null;
+          long count = r[1] != null ? ((Number) r[1]).longValue() : 0L;
+          String name = catId != null ? catNameMap.getOrDefault(catId, "未命名分类") : "未分类";
+          catDistribution.add(new WorkspaceDocStatsDTO.CategoryDistributionDTO(catId, name, count));
+        }
+      }
+    }
+
+    // 10. 文件扩展名分布
+    List<Object[]> fileExtGroups = docSourceFileRepository.countGroupByFileExt(workSpaceId);
+    List<WorkspaceDocStatsDTO.FileTypeDistributionDTO> fileDistribution =
+        fileExtGroups == null
+            ? List.of()
+            : fileExtGroups.stream()
+                .filter(r -> r != null && r[0] != null)
+                .map(
+                    r ->
+                        new WorkspaceDocStatsDTO.FileTypeDistributionDTO(
+                            String.valueOf(r[0]), r[1] != null ? ((Number) r[1]).longValue() : 0L))
+                .toList();
+
+    return new WorkspaceDocStatsDTO(
+        totalDocuments,
+        approvedDocuments,
+        pendingDocuments,
+        rejectedDocuments,
+        totalWordCount,
+        avgWordCount,
+        totalSourceFiles,
+        totalStorageBytes,
+        formattedStorage,
+        parseSuccessRate,
+        categoryCount,
+        totalComments,
+        totalCommentLikes,
+        totalReadCount,
+        hotDocs,
+        recentDocs,
+        topAuthors,
+        catDistribution,
+        fileDistribution);
+  }
+
+  private static String formatStorage(long bytes) {
+    if (bytes <= 0) {
+      return "0 B";
+    }
+    if (bytes < 1024L) {
+      return bytes + " B";
+    } else if (bytes < 1024L * 1024L) {
+      return String.format(Locale.US, "%.1f KB", (double) bytes / 1024.0);
+    } else if (bytes < 1024L * 1024L * 1024L) {
+      return String.format(Locale.US, "%.1f MB", (double) bytes / (1024.0 * 1024.0));
+    } else {
+      return String.format(Locale.US, "%.1f GB", (double) bytes / (1024.0 * 1024.0 * 1024.0));
     }
   }
 }

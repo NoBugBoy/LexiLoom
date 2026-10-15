@@ -105,10 +105,6 @@ public class DocumentEntity extends BaseEntity {
   @Column(name = "read_count", nullable = false)
   private Integer readCount;
 
-  /** 点赞收藏量 */
-  @Column(name = "like_count", nullable = false)
-  private Integer likeCount;
-
   /** 静态工厂：从外部文件导入转化创建文档（无初始源文件ID快捷重载） */
   public static DocumentEntity createFromImport(
       Long workSpaceId,
@@ -246,7 +242,6 @@ public class DocumentEntity extends BaseEntity {
     entity.publishedVersion = null;
     entity.wordCount = calculateWordCount(entity.content);
     entity.readCount = 0;
-    entity.likeCount = 0;
     return entity;
   }
 
@@ -425,18 +420,6 @@ public class DocumentEntity extends BaseEntity {
   /** 累加阅读量 */
   public void incrementReadCount() {
     this.readCount = this.readCount + 1;
-  }
-
-  /** 累加点赞数 */
-  public void incrementLikeCount() {
-    this.likeCount = this.likeCount + 1;
-  }
-
-  /** 减少点赞数（取消点赞） */
-  public void decrementLikeCount() {
-    if (this.likeCount > 0) {
-      this.likeCount = this.likeCount - 1;
-    }
   }
 
   /** 校验文档是否已正式发布/审批通过 */

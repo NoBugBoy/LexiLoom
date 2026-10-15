@@ -80,40 +80,42 @@ lexiloom:
   # ── AI 智能问答与 RAG 检索增强中心 ──────────────────────────────────────────
   ai:
     enabled: true
-    # 可选值: DEEPSEEK | QWEN | OLLAMA | MOCK (本地开发默认 MOCK，支持通过环境变量接入真实 API)
-    model-provider: ${AI_MODEL_PROVIDER:DEEPSEEK}
-    api-key: ${AI_API_KEY:${DEEPSEEK_API_KEY:}}
-    base-url: ${AI_BASE_URL:https://api.deepseek.com}
-    chat-model: ${AI_CHAT_MODEL:deepseek-flash}
-    reasoning-model: ${AI_REASONING_MODEL:deepseek-flash}
+    # 可选值: DEEPSEEK | QWEN
+    model-provider: ${AI_MODEL_PROVIDER:QWEN}
+    api-key: ${DASHSCOPE_API_KEY}
+    base-url: ${AI_BASE_URL:https://maas.qianwenaiapi.com/compatible-mode/v1}
+    chat-model: ${AI_CHAT_MODEL:qwen3.8-flash}
+    reasoning-model: ${AI_REASONING_MODEL:qwen3.8-flash}
     chunk-index-name: ${AI_CHUNK_INDEX:lexiloom_chunk_index}
     auto-create-index: true
     embedding:
-      # 可选值: OPENAI_COMPATIBLE | DASHSCOPE | OLLAMA | MOCK
+      # 可选值: DASHSCOPE | OPENAI_COMPATIBLE
       provider: ${AI_EMBEDDING_PROVIDER:DASHSCOPE}
       api-key: ${AI_EMBEDDING_API_KEY:${DASHSCOPE_API_KEY:}}
       base-url: ${AI_EMBEDDING_BASE_URL:https://maas.qianwenaiapi.com/compatible-mode/v1}
       model: ${AI_EMBEDDING_MODEL:qwen3.7-text-embedding-flash}
       dimension: 1024
     rerank:
-      # 重排完全可选（默认关闭），开启时可选: NONE | RRF | CROSS_ENCODER | MOCK
-      enabled: false
-      strategy: NONE
+      # 重排完全可选（默认关闭 NONE），开启时可选: NONE | RRF | CROSS_ENCODER
+      enabled: true
+      strategy: CROSS_ENCODER
       provider: DASHSCOPE
-      api-key: ${AI_RERANK_API_KEY:}
-      base-url: ${AI_RERANK_BASE_URL:}
-      model: ${AI_RERANK_MODEL:gte-rerank}
+      api-key: ${AI_RERANK_API_KEY:${DASHSCOPE_API_KEY:}}
+      base-url: ${AI_RERANK_BASE_URL:https://maas.qianwenaiapi.com/api/v1/services/rerank/text-rerank/text-rerank}
+      model: ${AI_RERANK_MODEL:qwen3.7-text-rerank}
       top-k: 12
       min-score: 0.60
     chunk:
       context-prefix-enabled: true
       max-token-limit: 2000
     rag:
-      top-k: 12
+      top-k: 20
+      vector-top-k: 18
+      lexical-top-k: 2
       # 真实 Cosine 相似度阈值 (非重排模拟分)，0.30 对齐 1024 维中文向量模型分布
       similarity-threshold: 0.30
       # 单篇文档在同一批结果中的最大切片数，配合两阶段回填保证多文档多样性与单文档不漏切片 (<=0 关闭)
-      max-chunks-per-document: 8
-      history-turns: 3
+      max-chunks-per-document: 20
+      history-turns: 5
       session-expire-seconds: 604800
 
