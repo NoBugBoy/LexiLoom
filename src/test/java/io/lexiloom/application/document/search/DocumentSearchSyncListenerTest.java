@@ -68,7 +68,8 @@ class DocumentSearchSyncListenerTest {
 
     when(documentRepository.findById(docId)).thenReturn(Optional.of(doc));
     when(docSourceFileRepository.findByDocumentId(docId)).thenReturn(Optional.of(sourceFile));
-    when(docSearchMapper.toSearchDoc(doc, sourceFile, Collections.emptyList())).thenReturn(searchDoc);
+    when(docSearchMapper.toSearchDoc(doc, sourceFile, Collections.emptyList()))
+        .thenReturn(searchDoc);
 
     DocumentStateTransitionEvent event =
         new DocumentStateTransitionEvent(

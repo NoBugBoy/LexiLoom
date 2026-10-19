@@ -5,9 +5,7 @@ import io.lexiloom.application.enums.ApprovalTypeEnum;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * 统一审批对外服务 API
- */
+/** 统一审批对外服务 API */
 public interface ApprovalApi {
 
   /** 提交空间跨域关联与文档精准授权审批单 */

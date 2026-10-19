@@ -37,7 +37,6 @@ public interface DocumentQueryApi {
    */
   Optional<DocSourceFileDTO> findSourceFileByDocumentId(Long documentId);
 
-
   /**
    * 聚合查询指定团队工作空间的全部文档与知识资产统计指标（供总览大屏使用）
    *
@@ -62,7 +61,8 @@ public interface DocumentQueryApi {
    * @param sourceWorkspaceId 源工作空间 ID
    * @return 目标空间与授权文档 ID 列表映射
    */
-  java.util.Map<Long, java.util.List<Long>> getApprovedLinkedWorkspaceDocIds(Long sourceWorkspaceId);
+  java.util.Map<Long, java.util.List<Long>> getApprovedLinkedWorkspaceDocIds(
+      Long sourceWorkspaceId);
 
   /**
    * 查询源工作空间已审批通过的横向关联目标工作空间 ID 列表

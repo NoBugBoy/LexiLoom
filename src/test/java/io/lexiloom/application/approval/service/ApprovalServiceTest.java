@@ -45,23 +45,11 @@ class ApprovalServiceTest {
   void setUp() {
     spaceLinkRecord =
         ApprovalRecordEntity.createSpaceLinkApproval(
-            1001L,
-            1L,
-            2L,
-            999L,
-            "张三",
-            "申请跨部门文档联合检索",
-            "{\"documentIds\":[10,20]}");
+            1001L, 1L, 2L, 999L, "张三", "申请跨部门文档联合检索", "{\"documentIds\":[10,20]}");
     ReflectionTestUtils.setField(spaceLinkRecord, "id", 5001L);
 
     docAuditRecord =
-        ApprovalRecordEntity.createDocumentAudit(
-            2001L,
-            1L,
-            999L,
-            "张三",
-            "发布v1.0技术白皮书",
-            null);
+        ApprovalRecordEntity.createDocumentAudit(2001L, 1L, 999L, "张三", "发布v1.0技术白皮书", null);
     ReflectionTestUtils.setField(docAuditRecord, "id", 5002L);
   }
 
@@ -69,11 +57,12 @@ class ApprovalServiceTest {
   @DisplayName("提交空间关联审批单：正常创建并落库")
   void testSubmitSpaceLinkApproval() {
     when(approvalRecordRepository.save(any(ApprovalRecordEntity.class)))
-        .thenAnswer(inv -> {
-          ApprovalRecordEntity r = inv.getArgument(0);
-          ReflectionTestUtils.setField(r, "id", 5003L);
-          return r;
-        });
+        .thenAnswer(
+            inv -> {
+              ApprovalRecordEntity r = inv.getArgument(0);
+              ReflectionTestUtils.setField(r, "id", 5003L);
+              return r;
+            });
 
     Long id =
         approvalService.submitSpaceLinkApproval(
@@ -87,15 +76,14 @@ class ApprovalServiceTest {
   @DisplayName("提交文档发布审核单：正常创建并落库")
   void testSubmitDocumentAudit() {
     when(approvalRecordRepository.save(any(ApprovalRecordEntity.class)))
-        .thenAnswer(inv -> {
-          ApprovalRecordEntity r = inv.getArgument(0);
-          ReflectionTestUtils.setField(r, "id", 5004L);
-          return r;
-        });
+        .thenAnswer(
+            inv -> {
+              ApprovalRecordEntity r = inv.getArgument(0);
+              ReflectionTestUtils.setField(r, "id", 5004L);
+              return r;
+            });
 
-    Long id =
-        approvalService.submitDocumentAudit(
-            2001L, 1L, 999L, "张三", "文档审批发布", null);
+    Long id = approvalService.submitDocumentAudit(2001L, 1L, 999L, "张三", "文档审批发布", null);
 
     assertThat(id).isEqualTo(5004L);
     verify(approvalRecordRepository).save(any(ApprovalRecordEntity.class));
@@ -127,9 +115,7 @@ class ApprovalServiceTest {
         .thenReturn(Optional.of(spaceLinkRecord));
 
     assertThatThrownBy(
-            () ->
-                approvalService.approve(
-                    ApprovalTypeEnum.SPACE_LINK, 1001L, 888L, "李四管理员", "  "))
+            () -> approvalService.approve(ApprovalTypeEnum.SPACE_LINK, 1001L, 888L, "李四管理员", "  "))
         .isInstanceOf(BusinessException.class)
         .hasMessageContaining("审批通过必须填写说明");
   }
@@ -141,8 +127,7 @@ class ApprovalServiceTest {
             ApprovalTypeEnum.SPACE_LINK, 1001L, ApprovalStatusEnum.PENDING))
         .thenReturn(Optional.of(spaceLinkRecord));
 
-    approvalService.reject(
-        ApprovalTypeEnum.SPACE_LINK, 1001L, 888L, "李四管理员", "包含未脱敏内部财务字段，拒绝关联");
+    approvalService.reject(ApprovalTypeEnum.SPACE_LINK, 1001L, 888L, "李四管理员", "包含未脱敏内部财务字段，拒绝关联");
 
     assertThat(spaceLinkRecord.getStatus()).isEqualTo(ApprovalStatusEnum.REJECTED);
     assertThat(spaceLinkRecord.getApproverId()).isEqualTo(888L);
@@ -160,9 +145,7 @@ class ApprovalServiceTest {
         .thenReturn(Optional.of(spaceLinkRecord));
 
     assertThatThrownBy(
-            () ->
-                approvalService.reject(
-                    ApprovalTypeEnum.SPACE_LINK, 1001L, 888L, "李四管理员", ""))
+            () -> approvalService.reject(ApprovalTypeEnum.SPACE_LINK, 1001L, 888L, "李四管理员", ""))
         .isInstanceOf(BusinessException.class)
         .hasMessageContaining("审批驳回必须填写原因");
   }
@@ -175,9 +158,7 @@ class ApprovalServiceTest {
         .thenReturn(Optional.empty());
 
     assertThatThrownBy(
-            () ->
-                approvalService.approve(
-                    ApprovalTypeEnum.SPACE_LINK, 9999L, 888L, "李四", "同意"))
+            () -> approvalService.approve(ApprovalTypeEnum.SPACE_LINK, 9999L, 888L, "李四", "同意"))
         .isInstanceOf(BusinessException.class)
         .hasMessageContaining("未找到对应的待审批单");
   }

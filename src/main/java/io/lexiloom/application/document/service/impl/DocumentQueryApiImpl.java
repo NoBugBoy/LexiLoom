@@ -46,7 +46,8 @@ public class DocumentQueryApiImpl implements DocumentQueryApi {
   private final DocSourceFileMapper docSourceFileMapper;
   private final io.lexiloom.application.document.spacelink.repository.WorkSpaceSpaceLinkRepository
       spaceLinkRepository;
-  private final io.lexiloom.application.document.spacelink.repository.WorkSpaceSpaceLinkDocRepository
+  private final io.lexiloom.application.document.spacelink.repository
+          .WorkSpaceSpaceLinkDocRepository
       spaceLinkDocRepository;
 
   @Override
@@ -82,7 +83,6 @@ public class DocumentQueryApiImpl implements DocumentQueryApi {
         .flatMap(docSourceFileRepository::findById)
         .map(docSourceFileMapper::toDTO);
   }
-
 
   @Override
   public WorkspaceDocStatsDTO getWorkspaceDocStats(Long workSpaceId) {
@@ -282,7 +282,11 @@ public class DocumentQueryApiImpl implements DocumentQueryApi {
         .map(
             d ->
                 new io.lexiloom.application.document.api.dto.LinkableDocumentDTO(
-                    d.getId(), d.getTitle(), d.getCategoryId(), d.getVisibility(), d.getUpdateTime()))
+                    d.getId(),
+                    d.getTitle(),
+                    d.getCategoryId(),
+                    d.getVisibility(),
+                    d.getUpdateTime()))
         .toList();
   }
 
@@ -295,7 +299,9 @@ public class DocumentQueryApiImpl implements DocumentQueryApi {
         .findBySourceWorkspaceIdAndStatus(
             sourceWorkspaceId, io.lexiloom.application.enums.SpaceLinkStatusEnum.APPROVED)
         .stream()
-        .map(io.lexiloom.application.document.spacelink.model.entity.WorkSpaceSpaceLinkEntity::getTargetWorkspaceId)
+        .map(
+            io.lexiloom.application.document.spacelink.model.entity.WorkSpaceSpaceLinkEntity
+                ::getTargetWorkspaceId)
         .filter(java.util.Objects::nonNull)
         .toList();
   }
@@ -306,9 +312,10 @@ public class DocumentQueryApiImpl implements DocumentQueryApi {
       return Collections.emptyMap();
     }
 
-    List<io.lexiloom.application.document.spacelink.model.entity.WorkSpaceSpaceLinkEntity> approvedLinks =
-        spaceLinkRepository.findBySourceWorkspaceIdAndStatus(
-            sourceWorkspaceId, io.lexiloom.application.enums.SpaceLinkStatusEnum.APPROVED);
+    List<io.lexiloom.application.document.spacelink.model.entity.WorkSpaceSpaceLinkEntity>
+        approvedLinks =
+            spaceLinkRepository.findBySourceWorkspaceIdAndStatus(
+                sourceWorkspaceId, io.lexiloom.application.enums.SpaceLinkStatusEnum.APPROVED);
 
     if (approvedLinks.isEmpty()) {
       return Collections.emptyMap();
@@ -316,16 +323,20 @@ public class DocumentQueryApiImpl implements DocumentQueryApi {
 
     List<Long> linkIds =
         approvedLinks.stream()
-            .map(io.lexiloom.application.document.spacelink.model.entity.WorkSpaceSpaceLinkEntity::getId)
+            .map(
+                io.lexiloom.application.document.spacelink.model.entity.WorkSpaceSpaceLinkEntity
+                    ::getId)
             .toList();
-    List<io.lexiloom.application.document.spacelink.model.entity.WorkSpaceSpaceLinkDocEntity> docEntities =
-        spaceLinkDocRepository.findByLinkIdIn(linkIds);
+    List<io.lexiloom.application.document.spacelink.model.entity.WorkSpaceSpaceLinkDocEntity>
+        docEntities = spaceLinkDocRepository.findByLinkIdIn(linkIds);
 
     Map<Long, List<Long>> result = new HashMap<>();
-    for (io.lexiloom.application.document.spacelink.model.entity.WorkSpaceSpaceLinkEntity link : approvedLinks) {
+    for (io.lexiloom.application.document.spacelink.model.entity.WorkSpaceSpaceLinkEntity link :
+        approvedLinks) {
       result.putIfAbsent(link.getTargetWorkspaceId(), new ArrayList<>());
     }
-    for (io.lexiloom.application.document.spacelink.model.entity.WorkSpaceSpaceLinkDocEntity doc : docEntities) {
+    for (io.lexiloom.application.document.spacelink.model.entity.WorkSpaceSpaceLinkDocEntity doc :
+        docEntities) {
       result
           .computeIfAbsent(doc.getTargetWorkspaceId(), k -> new ArrayList<>())
           .add(doc.getDocumentId());

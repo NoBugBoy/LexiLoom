@@ -678,8 +678,7 @@ class HybridSearchQueryServiceTest {
     Long linkedWsId = 102L;
 
     // 1. Mock 拓扑关系：100 下有子空间 101，且横向关联已审批 102 (精准授权文档 201)
-    when(workSpaceQueryService.listChildWorkspaceIds(primaryWsId))
-        .thenReturn(List.of(childWsId));
+    when(workSpaceQueryService.listChildWorkspaceIds(primaryWsId)).thenReturn(List.of(childWsId));
     when(documentQueryApi.getApprovedLinkedWorkspaceDocIds(primaryWsId))
         .thenReturn(Map.of(linkedWsId, List.of(201L)));
 
@@ -838,10 +837,8 @@ class HybridSearchQueryServiceTest {
     Long primaryWsId = 100L;
     Long childWsId = 101L;
 
-    when(workSpaceQueryService.listChildWorkspaceIds(primaryWsId))
-        .thenReturn(List.of(childWsId));
-    when(documentQueryApi.getApprovedLinkedWorkspaceDocIds(primaryWsId))
-        .thenReturn(Map.of());
+    when(workSpaceQueryService.listChildWorkspaceIds(primaryWsId)).thenReturn(List.of(childWsId));
+    when(documentQueryApi.getApprovedLinkedWorkspaceDocIds(primaryWsId)).thenReturn(Map.of());
 
     // 权重 50:50，目标 TopK=20，原本分配各 10 条
     Map<Long, Integer> weights = Map.of(primaryWsId, 50, childWsId, 50);
@@ -949,10 +946,8 @@ class HybridSearchQueryServiceTest {
     Long primaryWsId = 100L;
     Long childWsId = 101L;
 
-    when(workSpaceQueryService.listChildWorkspaceIds(primaryWsId))
-        .thenReturn(List.of(childWsId));
-    when(documentQueryApi.getApprovedLinkedWorkspaceDocIds(primaryWsId))
-        .thenReturn(Map.of());
+    when(workSpaceQueryService.listChildWorkspaceIds(primaryWsId)).thenReturn(List.of(childWsId));
+    when(documentQueryApi.getApprovedLinkedWorkspaceDocIds(primaryWsId)).thenReturn(Map.of());
 
     // 1. 传入 topK = 5 (< 20) -> 应保底按 20 召回
     Map<Long, Integer> weights = Map.of(primaryWsId, 50, childWsId, 50);
@@ -1030,4 +1025,3 @@ class HybridSearchQueryServiceTest {
     assertThat(maxResults).hasSize(50);
   }
 }
-

@@ -143,7 +143,7 @@ class DocumentEntityTest {
     // 验证：文档标题依然严格保持为原文件名，没有被正文标题覆盖篡改
     assertThat(doc.getTitle()).isEqualTo("2026业务架构设计");
     assertThat(doc.getContent()).isEqualTo("# 概述与背景\n\n正文正文正文");
-    assertThat(doc.getParseStatus()).isEqualTo(io.lexiloom.application.document.parser.DocParseStatusEnum.SUCCESS);
+    assertThat(doc.getParseStatus())
+        .isEqualTo(io.lexiloom.application.document.parser.DocParseStatusEnum.SUCCESS);
   }
 }
-

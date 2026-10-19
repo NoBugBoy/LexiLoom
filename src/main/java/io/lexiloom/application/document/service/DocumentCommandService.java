@@ -147,32 +147,29 @@ public class DocumentCommandService {
 
     // 联动统一审批单
     if (approvalApi != null) {
-      String userName =
-          io.lexiloom.application.common.SecurityHolder.getUsername().orElse(null);
+      String userName = io.lexiloom.application.common.SecurityHolder.getUsername().orElse(null);
       String comment = StrUtil.blankToDefault(request.reason(), "管理员审核操作");
       try {
-        if (request.event() == io.lexiloom.application.document.statemachine.DocumentEventEnum.APPROVE) {
+        if (request.event()
+            == io.lexiloom.application.document.statemachine.DocumentEventEnum.APPROVE) {
           approvalApi.approve(
               io.lexiloom.application.enums.ApprovalTypeEnum.DOCUMENT_AUDIT,
               docId,
               userId,
               userName,
               comment);
-        } else if (request.event() == io.lexiloom.application.document.statemachine.DocumentEventEnum.REJECT) {
+        } else if (request.event()
+            == io.lexiloom.application.document.statemachine.DocumentEventEnum.REJECT) {
           approvalApi.reject(
               io.lexiloom.application.enums.ApprovalTypeEnum.DOCUMENT_AUDIT,
               docId,
               userId,
               userName,
               comment);
-        } else if (request.event() == io.lexiloom.application.document.statemachine.DocumentEventEnum.SUBMIT) {
+        } else if (request.event()
+            == io.lexiloom.application.document.statemachine.DocumentEventEnum.SUBMIT) {
           approvalApi.submitDocumentAudit(
-              docId,
-              doc.getWorkSpaceId(),
-              userId,
-              userName,
-              comment,
-              null);
+              docId, doc.getWorkSpaceId(), userId, userName, comment, null);
         }
       } catch (Exception e) {
         log.warn(

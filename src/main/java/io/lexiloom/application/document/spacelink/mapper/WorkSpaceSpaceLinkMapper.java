@@ -21,8 +21,5 @@ public interface WorkSpaceSpaceLinkMapper {
   @Mapping(source = "link.createTime", target = "createTime")
   @Mapping(source = "link.updateTime", target = "updateTime")
   SpaceLinkResponse toResponse(
-      WorkSpaceSpaceLinkEntity link,
-      String sourceName,
-      String targetName,
-      List<Long> documentIds);
+      WorkSpaceSpaceLinkEntity link, String sourceName, String targetName, List<Long> documentIds);
 }

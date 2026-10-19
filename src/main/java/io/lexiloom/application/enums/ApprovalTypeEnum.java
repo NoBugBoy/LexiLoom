@@ -3,9 +3,7 @@ package io.lexiloom.application.enums;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
-/**
- * 通用审批业务类型枚举
- */
+/** 通用审批业务类型枚举 */
 @Getter
 @RequiredArgsConstructor
 public enum ApprovalTypeEnum {

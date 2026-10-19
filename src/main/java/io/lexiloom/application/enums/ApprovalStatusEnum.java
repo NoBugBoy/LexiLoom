@@ -3,9 +3,7 @@ package io.lexiloom.application.enums;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
-/**
- * 审批单状态枚举
- */
+/** 审批单状态枚举 */
 @Getter
 @RequiredArgsConstructor
 public enum ApprovalStatusEnum {

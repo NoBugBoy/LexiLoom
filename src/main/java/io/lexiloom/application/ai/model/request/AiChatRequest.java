@@ -24,11 +24,7 @@ public record AiChatRequest(
   }
 
   public AiChatRequest(
-      String message,
-      Long workspaceId,
-      String sessionId,
-      Boolean enableThinking,
-      Long documentId) {
+      String message, Long workspaceId, String sessionId, Boolean enableThinking, Long documentId) {
     this(message, workspaceId, sessionId, enableThinking, documentId, null, Collections.emptyMap());
   }
 

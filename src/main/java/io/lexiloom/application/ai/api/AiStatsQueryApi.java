@@ -1,8 +1,6 @@
 package io.lexiloom.application.ai.api;
 
-/**
- * AI 智脑对外状态与统计查询 API
- */
+/** AI 智脑对外状态与统计查询 API */
 public interface AiStatsQueryApi {
 
   /**

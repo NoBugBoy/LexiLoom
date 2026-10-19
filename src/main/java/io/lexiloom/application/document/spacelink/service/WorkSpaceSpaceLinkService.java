@@ -21,9 +21,7 @@ public interface WorkSpaceSpaceLinkService {
   Long apply(
       Long sourceWorkspaceId, Long targetWorkspaceId, List<Long> documentIds, String applyReason);
 
-  /**
-   * 发起 SpaceLink 关联申请 (兼容简易调用)
-   */
+  /** 发起 SpaceLink 关联申请 (兼容简易调用) */
   default Long apply(Long sourceWorkspaceId, Long targetWorkspaceId) {
     return apply(sourceWorkspaceId, targetWorkspaceId, List.of(), null);
   }

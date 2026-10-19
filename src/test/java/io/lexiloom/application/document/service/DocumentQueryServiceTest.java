@@ -151,7 +151,8 @@ class DocumentQueryServiceTest {
   @DisplayName("查阅文档详情：存在来源文件时，将 content 替换为 RustFS 访问地址以供前端原件预览")
   void testGetByIdWithSourceFileReplacesContentWithRustFsUrl() {
     DocumentEntity doc =
-        DocumentEntity.createFromImport(1L, 0L, "设计文档", "摘要", "未格式化的解析正文", WorkSpaceAclEnum.INTERNAL);
+        DocumentEntity.createFromImport(
+            1L, 0L, "设计文档", "摘要", "未格式化的解析正文", WorkSpaceAclEnum.INTERNAL);
     ReflectionTestUtils.setField(doc, "id", 19L);
     ReflectionTestUtils.setField(doc, "sourceFileId", 300L);
 

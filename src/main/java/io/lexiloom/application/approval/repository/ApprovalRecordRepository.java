@@ -10,9 +10,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
-/**
- * 统一审批记录仓储
- */
+/** 统一审批记录仓储 */
 @Repository
 public interface ApprovalRecordRepository extends JpaRepository<ApprovalRecordEntity, Long> {
 
@@ -25,9 +23,8 @@ public interface ApprovalRecordRepository extends JpaRepository<ApprovalRecordEn
       Long targetWorkspaceId, Pageable pageable);
 
   /** 查询某业务实体最新一条指定状态的审批单 */
-  Optional<ApprovalRecordEntity>
-      findFirstByApprovalTypeAndBizIdAndStatusOrderByCreateTimeDesc(
-          ApprovalTypeEnum approvalType, Long bizId, ApprovalStatusEnum status);
+  Optional<ApprovalRecordEntity> findFirstByApprovalTypeAndBizIdAndStatusOrderByCreateTimeDesc(
+      ApprovalTypeEnum approvalType, Long bizId, ApprovalStatusEnum status);
 
   /** 查询某业务实体关联的所有审批流转记录（按时间倒序） */
   List<ApprovalRecordEntity> findAllByApprovalTypeAndBizIdOrderByCreateTimeDesc(

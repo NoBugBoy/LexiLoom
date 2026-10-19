@@ -238,8 +238,7 @@ public class DefaultRagChatService implements RagChatService {
   }
 
   private List<CitationVO> performSearchAndBuildCitations(AiChatRequest request) {
-    int requestedTopK =
-        request.topK() != null ? request.topK() : aiProperties.getRag().getTopK();
+    int requestedTopK = request.topK() != null ? request.topK() : aiProperties.getRag().getTopK();
     int minTopK = aiProperties.getRag().getMinTopK();
     int maxTopK = aiProperties.getRag().getMaxTopK();
     int topK = Math.max(minTopK, Math.min(requestedTopK, maxTopK));
@@ -268,6 +267,15 @@ public class DefaultRagChatService implements RagChatService {
             request.weights());
 
     List<ScoredDocChunkVO> scoredChunks = hybridSearchQueryService.hybridSearch(searchCommand);
+    long distinctWorkspaces =
+        scoredChunks.stream()
+            .map(s -> s.chunk() != null ? s.chunk().getWorkspaceId() : null)
+            .filter(java.util.Objects::nonNull)
+            .distinct()
+            .count();
+    if (distinctWorkspaces > 1) {
+      log.info("【RAG】多空间知识召回完成: 本次对话聚合引用了 {} 个工作空间的文档切片", distinctWorkspaces);
+    }
     return citationBuilder.buildCitations(scoredChunks);
   }
 

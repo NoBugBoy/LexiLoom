@@ -18,9 +18,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * 统一审批管理 REST 控制器
- */
+/** 统一审批管理 REST 控制器 */
 @Validated
 @RestController
 @RequestMapping({"/api/approvals", "/approvals"})
@@ -53,18 +51,10 @@ public class ApprovalController {
 
     if ("APPROVE".equalsIgnoreCase(request.action())) {
       approvalApi.approve(
-          request.approvalType(),
-          request.bizId(),
-          approverId,
-          approverName,
-          request.comment());
+          request.approvalType(), request.bizId(), approverId, approverName, request.comment());
     } else if ("REJECT".equalsIgnoreCase(request.action())) {
       approvalApi.reject(
-          request.approvalType(),
-          request.bizId(),
-          approverId,
-          approverName,
-          request.comment());
+          request.approvalType(), request.bizId(), approverId, approverName, request.comment());
     } else {
       throw BusinessException.badRequest("不支持的审批动作: " + request.action());
     }

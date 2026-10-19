@@ -118,7 +118,9 @@ public class WorkSpaceSpaceLinkServiceImpl implements WorkSpaceSpaceLinkService 
     List<WorkSpaceSpaceLinkDocEntity> docEntities =
         documentIds.stream()
             .distinct()
-            .map(docId -> WorkSpaceSpaceLinkDocEntity.create(savedLink.getId(), targetWorkspaceId, docId))
+            .map(
+                docId ->
+                    WorkSpaceSpaceLinkDocEntity.create(savedLink.getId(), targetWorkspaceId, docId))
             .toList();
     workSpaceSpaceLinkDocRepository.saveAll(docEntities);
 
@@ -133,7 +135,8 @@ public class WorkSpaceSpaceLinkServiceImpl implements WorkSpaceSpaceLinkService 
         documentIds);
 
     log.info(
-        "【SpaceLink】已发起关联申请并生成审批单: linkId={}, sourceWorkspaceId={}, targetWorkspaceId={}, docCount={}",
+        "【SpaceLink】已发起关联申请并生成审批单: linkId={}, sourceWorkspaceId={}, targetWorkspaceId={},"
+            + " docCount={}",
         savedLink.getId(),
         sourceWorkspaceId,
         targetWorkspaceId,
@@ -163,11 +166,7 @@ public class WorkSpaceSpaceLinkServiceImpl implements WorkSpaceSpaceLinkService 
 
     // 驱动统一审批单流转至 APPROVED
     approvalApi.approve(
-        ApprovalTypeEnum.SPACE_LINK,
-        linkId,
-        currentUserId,
-        currentUserName,
-        comment);
+        ApprovalTypeEnum.SPACE_LINK, linkId, currentUserId, currentUserName, comment);
 
     log.info(
         "【SpaceLink】审批通过: linkId={}, sourceWorkspaceId={}, targetWorkspaceId={}, comment={}",
@@ -197,12 +196,7 @@ public class WorkSpaceSpaceLinkServiceImpl implements WorkSpaceSpaceLinkService 
     workSpaceSpaceLinkRepository.save(link);
 
     // 驱动统一审批单流转至 REJECTED
-    approvalApi.reject(
-        ApprovalTypeEnum.SPACE_LINK,
-        linkId,
-        currentUserId,
-        currentUserName,
-        reason);
+    approvalApi.reject(ApprovalTypeEnum.SPACE_LINK, linkId, currentUserId, currentUserName, reason);
 
     log.info(
         "【SpaceLink】审批驳回: linkId={}, sourceWorkspaceId={}, targetWorkspaceId={}, reason={}",
@@ -289,8 +283,7 @@ public class WorkSpaceSpaceLinkServiceImpl implements WorkSpaceSpaceLinkService 
             .getById(workspaceId)
             .orElseThrow(() -> BusinessException.badRequest("工作空间不存在: " + workspaceId));
 
-    WorkspaceSourceItem primaryItem =
-        new WorkspaceSourceItem(primary.id(), primary.name());
+    WorkspaceSourceItem primaryItem = new WorkspaceSourceItem(primary.id(), primary.name());
 
     // 1. 直系子空间 (向下聚合：parentId = workspaceId 且 childAssocEnabled = true)
     List<Long> childIds = workSpaceQueryService.listChildWorkspaceIds(workspaceId);
@@ -366,7 +359,8 @@ public class WorkSpaceSpaceLinkServiceImpl implements WorkSpaceSpaceLinkService 
             .collect(
                 Collectors.groupingBy(
                     WorkSpaceSpaceLinkDocEntity::getLinkId,
-                    Collectors.mapping(WorkSpaceSpaceLinkDocEntity::getDocumentId, Collectors.toList())));
+                    Collectors.mapping(
+                        WorkSpaceSpaceLinkDocEntity::getDocumentId, Collectors.toList())));
 
     return links.stream()
         .map(

@@ -116,7 +116,8 @@ public class WorkSpaceOverviewQueryService {
             guestCount);
 
     // 5. AI 智脑检索指标 (ES 密集向量切片)
-    long totalChunks = aiStatsQueryApi != null ? aiStatsQueryApi.countChunksByWorkspaceId(workSpaceId) : 0L;
+    long totalChunks =
+        aiStatsQueryApi != null ? aiStatsQueryApi.countChunksByWorkspaceId(workSpaceId) : 0L;
     boolean aiEnabled = aiStatsQueryApi != null && aiStatsQueryApi.isAiEnabled();
     WorkSpaceOverviewResponse.AiStatsVO aiStatsVO =
         new WorkSpaceOverviewResponse.AiStatsVO(totalChunks, aiEnabled);

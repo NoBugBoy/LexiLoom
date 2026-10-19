@@ -17,9 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
 
-/**
- * 统一审批对外接口实现
- */
+/** 统一审批对外接口实现 */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -61,7 +59,8 @@ public class ApprovalServiceImpl implements ApprovalApi {
 
     ApprovalRecordEntity saved = approvalRecordRepository.save(record);
     log.info(
-        "【Approval】已生成跨空间关联审批单: recordId={}, spaceLinkId={}, sourceWorkspaceId={}, targetWorkspaceId={}, docCount={}",
+        "【Approval】已生成跨空间关联审批单: recordId={}, spaceLinkId={}, sourceWorkspaceId={},"
+            + " targetWorkspaceId={}, docCount={}",
         saved.getId(),
         spaceLinkId,
         sourceWorkspaceId,
@@ -107,8 +106,7 @@ public class ApprovalServiceImpl implements ApprovalApi {
                 type, bizId, ApprovalStatusEnum.PENDING)
             .orElseThrow(
                 () ->
-                    BusinessException.badRequest(
-                        "未找到对应的待审批单: type=" + type + ", bizId=" + bizId));
+                    BusinessException.badRequest("未找到对应的待审批单: type=" + type + ", bizId=" + bizId));
 
     record.approve(approverId, approverName, approvalComment);
     approvalRecordRepository.save(record);
@@ -135,8 +133,7 @@ public class ApprovalServiceImpl implements ApprovalApi {
                 type, bizId, ApprovalStatusEnum.PENDING)
             .orElseThrow(
                 () ->
-                    BusinessException.badRequest(
-                        "未找到对应的待审批单: type=" + type + ", bizId=" + bizId));
+                    BusinessException.badRequest("未找到对应的待审批单: type=" + type + ", bizId=" + bizId));
 
     record.reject(approverId, approverName, approvalComment);
     approvalRecordRepository.save(record);
@@ -151,8 +148,7 @@ public class ApprovalServiceImpl implements ApprovalApi {
 
   @Override
   @Transactional(readOnly = true)
-  public Optional<ApprovalRecordDTO> getLatestPendingApproval(
-      ApprovalTypeEnum type, Long bizId) {
+  public Optional<ApprovalRecordDTO> getLatestPendingApproval(ApprovalTypeEnum type, Long bizId) {
     return approvalRecordRepository
         .findFirstByApprovalTypeAndBizIdAndStatusOrderByCreateTimeDesc(
             type, bizId, ApprovalStatusEnum.PENDING)

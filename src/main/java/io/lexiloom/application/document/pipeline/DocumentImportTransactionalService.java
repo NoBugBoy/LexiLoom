@@ -57,7 +57,13 @@ public class DocumentImportTransactionalService {
       DocumentRepository documentRepository,
       DocVersionRepository docVersionRepository,
       org.springframework.context.ApplicationEventPublisher eventPublisher) {
-    this(docSourceFileRepository, documentRepository, docVersionRepository, eventPublisher, null, null);
+    this(
+        docSourceFileRepository,
+        documentRepository,
+        docVersionRepository,
+        eventPublisher,
+        null,
+        null);
   }
 
   public DocumentImportTransactionalService(
@@ -176,7 +182,10 @@ public class DocumentImportTransactionalService {
               "文档导入解析完成，待审批发布",
               null);
         } catch (Exception e) {
-          log.warn("【DocumentImportPipeline】自动登记发布审批单异常: docId={}, error={}", savedDoc.getId(), e.getMessage());
+          log.warn(
+              "【DocumentImportPipeline】自动登记发布审批单异常: docId={}, error={}",
+              savedDoc.getId(),
+              e.getMessage());
         }
       }
 
@@ -402,7 +411,10 @@ public class DocumentImportTransactionalService {
               "升级新版本导入，待审批发布",
               null);
         } catch (Exception e) {
-          log.warn("【DocumentImportPipeline】自动登记发布审批单异常: docId={}, error={}", savedDoc.getId(), e.getMessage());
+          log.warn(
+              "【DocumentImportPipeline】自动登记发布审批单异常: docId={}, error={}",
+              savedDoc.getId(),
+              e.getMessage());
         }
       }
 

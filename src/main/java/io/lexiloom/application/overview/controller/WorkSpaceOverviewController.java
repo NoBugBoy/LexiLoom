@@ -9,9 +9,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * 团队工作空间数据总览仪表盘 API 控制器
- */
+/** 团队工作空间数据总览仪表盘 API 控制器 */
 @RestController
 @RequestMapping("/workspace")
 @RequiredArgsConstructor

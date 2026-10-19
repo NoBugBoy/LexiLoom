@@ -6,9 +6,7 @@ import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
-/**
- * 空间横向关联授权文档明细仓储
- */
+/** 空间横向关联授权文档明细仓储 */
 @Repository
 public interface WorkSpaceSpaceLinkDocRepository
     extends JpaRepository<WorkSpaceSpaceLinkDocEntity, Long> {

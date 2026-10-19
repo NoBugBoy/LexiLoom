@@ -57,9 +57,7 @@ class WorkSpaceSpaceLinkControllerTest {
 
     mockMvc
         .perform(
-            post("/workspace/1/space-links")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(json))
+            post("/workspace/1/space-links").contentType(MediaType.APPLICATION_JSON).content(json))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$", is(888)));
 
@@ -150,12 +148,7 @@ class WorkSpaceSpaceLinkControllerTest {
   @DisplayName("GET /workspace/{sourceWorkspaceId}/space-links/linkable-documents - 查询可关联目标文档列表")
   void testListLinkableDocuments() throws Exception {
     LinkableDocumentDTO docItem =
-        new LinkableDocumentDTO(
-            101L,
-            "技术架构规范",
-            1L,
-            WorkSpaceAclEnum.PUBLIC,
-            LocalDateTime.now());
+        new LinkableDocumentDTO(101L, "技术架构规范", 1L, WorkSpaceAclEnum.PUBLIC, LocalDateTime.now());
     when(workSpaceSpaceLinkService.listLinkableDocuments(1L, 2L, "技术"))
         .thenReturn(List.of(docItem));
 

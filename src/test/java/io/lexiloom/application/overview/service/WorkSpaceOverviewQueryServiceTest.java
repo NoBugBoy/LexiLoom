@@ -103,7 +103,8 @@ class WorkSpaceOverviewQueryServiceTest {
   @Test
   @DisplayName("私有空间且非成员访问时抛出 Forbidden")
   void testGetOverview_PrivateWorkspace_NonMember_ThrowsForbidden() {
-    WorkSpaceDTO ws = createWorkspaceDTO(10L, "机密空间", "secret-ws", 100L, 50, WorkSpaceAclEnum.PRIVATE);
+    WorkSpaceDTO ws =
+        createWorkspaceDTO(10L, "机密空间", "secret-ws", 100L, 50, WorkSpaceAclEnum.PRIVATE);
     when(workSpaceQueryService.getById(10L)).thenReturn(Optional.of(ws));
     when(workSpaceMemberQueryService.isMember(10L, 200L)).thenReturn(false);
 
@@ -139,7 +140,8 @@ class WorkSpaceOverviewQueryServiceTest {
     Long ownerId = 100L;
     Long authorId = 101L;
 
-    WorkSpaceDTO ws = createWorkspaceDTO(wsId, "开源协作组", "open-team", ownerId, 60, WorkSpaceAclEnum.INTERNAL);
+    WorkSpaceDTO ws =
+        createWorkspaceDTO(wsId, "开源协作组", "open-team", ownerId, 60, WorkSpaceAclEnum.INTERNAL);
     when(workSpaceQueryService.getById(wsId)).thenReturn(Optional.of(ws));
     when(workSpaceMemberQueryService.isMember(wsId, ownerId)).thenReturn(true);
     when(redisTemplate.opsForValue()).thenReturn(valueOperations);
@@ -153,13 +155,7 @@ class WorkSpaceOverviewQueryServiceTest {
         new WorkspaceDocStatsDTO.TopAuthorDTO(authorId, 5L, 12000L);
     WorkspaceDocStatsDTO.RecentDocumentDTO recentDoc =
         new WorkspaceDocStatsDTO.RecentDocumentDTO(
-            11L,
-            "发布文档",
-            2,
-            "v1.1",
-            DocumentStateEnum.APPROVED,
-            authorId,
-            LocalDateTime.now());
+            11L, "发布文档", 2, "v1.1", DocumentStateEnum.APPROVED, authorId, LocalDateTime.now());
     WorkspaceDocStatsDTO.CategoryDistributionDTO catDist =
         new WorkspaceDocStatsDTO.CategoryDistributionDTO(1L, "技术规范", 3L);
     WorkspaceDocStatsDTO.FileTypeDistributionDTO fileDist =
@@ -206,7 +202,16 @@ class WorkSpaceOverviewQueryServiceTest {
     // Mock Users
     UserDTO authorUser =
         new UserDTO(
-            authorId, "openId", "unionId", "张工", "http://avatar.com/zhang.jpg", "zhang@test.com", true, "13800000000", "+86", true);
+            authorId,
+            "openId",
+            "unionId",
+            "张工",
+            "http://avatar.com/zhang.jpg",
+            "zhang@test.com",
+            true,
+            "13800000000",
+            "+86",
+            true);
     when(userQueryService.findUserMapByIds(any())).thenReturn(Map.of(authorId, authorUser));
 
     when(objectMapper.writeValueAsString(any())).thenReturn("{\"cached\":true}");

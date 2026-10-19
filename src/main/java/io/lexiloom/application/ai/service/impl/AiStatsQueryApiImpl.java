@@ -7,9 +7,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-/**
- * AI 智脑状态与统计查询实现
- */
+/** AI 智脑状态与统计查询实现 */
 @Slf4j
 @Service
 @RequiredArgsConstructor

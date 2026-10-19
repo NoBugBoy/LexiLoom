@@ -97,7 +97,8 @@ class WorkSpaceSpaceLinkServiceTest {
   @Test
   @DisplayName("申请 SpaceLink：非管理员用户拒绝申请")
   void testApplyForbiddenForNonAdmin() {
-    when(workSpaceMemberQueryService.hasRole(1L, userId, WorkSpaceRoleEnum.ADMIN)).thenReturn(false);
+    when(workSpaceMemberQueryService.hasRole(1L, userId, WorkSpaceRoleEnum.ADMIN))
+        .thenReturn(false);
 
     assertThatThrownBy(() -> spaceLinkService.apply(1L, 2L, List.of(101L), "申请关联"))
         .isInstanceOf(BusinessException.class)
@@ -135,7 +136,8 @@ class WorkSpaceSpaceLinkServiceTest {
     DocumentEntity doc =
         DocumentEntity.createFromImport(2L, 1L, "公开文档", "摘要", "内容", WorkSpaceAclEnum.PUBLIC);
     ReflectionTestUtils.setField(doc, "id", 101L);
-    when(documentRepository.findLinkableDocuments(eq(2L), eq(DocumentStateEnum.APPROVED), any(), any()))
+    when(documentRepository.findLinkableDocuments(
+            eq(2L), eq(DocumentStateEnum.APPROVED), any(), any()))
         .thenReturn(List.of(doc));
 
     WorkSpaceDTO target = createWorkspaceDTO(2L, "目标空间", WorkSpaceStatusEnum.NORMAL);
@@ -158,13 +160,7 @@ class WorkSpaceSpaceLinkServiceTest {
     verify(workSpaceSpaceLinkDocRepository).saveAll(any());
     verify(approvalApi)
         .submitSpaceLinkApproval(
-            eq(1001L),
-            eq(1L),
-            eq(2L),
-            eq(userId),
-            any(),
-            eq("申请关联"),
-            eq(List.of(101L)));
+            eq(1001L), eq(1L), eq(2L), eq(userId), any(), eq("申请关联"), eq(List.of(101L)));
   }
 
   @Test
@@ -175,7 +171,8 @@ class WorkSpaceSpaceLinkServiceTest {
     DocumentEntity doc =
         DocumentEntity.createFromImport(2L, 1L, "公开文档", "摘要", "内容", WorkSpaceAclEnum.PUBLIC);
     ReflectionTestUtils.setField(doc, "id", 101L);
-    when(documentRepository.findLinkableDocuments(eq(2L), eq(DocumentStateEnum.APPROVED), any(), any()))
+    when(documentRepository.findLinkableDocuments(
+            eq(2L), eq(DocumentStateEnum.APPROVED), any(), any()))
         .thenReturn(List.of(doc));
 
     WorkSpaceDTO target = createWorkspaceDTO(2L, "目标空间", WorkSpaceStatusEnum.NORMAL);
@@ -212,12 +209,7 @@ class WorkSpaceSpaceLinkServiceTest {
     assertThat(link.getStatus()).isEqualTo(SpaceLinkStatusEnum.APPROVED);
     verify(workSpaceSpaceLinkRepository).save(link);
     verify(approvalApi)
-        .approve(
-            eq(ApprovalTypeEnum.SPACE_LINK),
-            eq(1003L),
-            eq(userId),
-            any(),
-            eq("同意关联"));
+        .approve(eq(ApprovalTypeEnum.SPACE_LINK), eq(1003L), eq(userId), any(), eq("同意关联"));
   }
 
   @Test
@@ -249,12 +241,7 @@ class WorkSpaceSpaceLinkServiceTest {
     assertThat(link.getRejectReason()).isEqualTo("暂无合作计划");
     verify(workSpaceSpaceLinkRepository).save(link);
     verify(approvalApi)
-        .reject(
-            eq(ApprovalTypeEnum.SPACE_LINK),
-            eq(1005L),
-            eq(userId),
-            any(),
-            eq("暂无合作计划"));
+        .reject(eq(ApprovalTypeEnum.SPACE_LINK), eq(1005L), eq(userId), any(), eq("暂无合作计划"));
   }
 
   @Test
@@ -266,12 +253,11 @@ class WorkSpaceSpaceLinkServiceTest {
 
     WorkSpaceSpaceLinkEntity link = WorkSpaceSpaceLinkEntity.create(1L, 3L);
     link.approve();
-    when(workSpaceSpaceLinkRepository.findBySourceWorkspaceIdAndStatus(1L, SpaceLinkStatusEnum.APPROVED))
+    when(workSpaceSpaceLinkRepository.findBySourceWorkspaceIdAndStatus(
+            1L, SpaceLinkStatusEnum.APPROVED))
         .thenReturn(List.of(link));
-    when(workSpaceQueryService.getWorkspaceNames(List.of(2L)))
-        .thenReturn(Map.of(2L, "B项目"));
-    when(workSpaceQueryService.getWorkspaceNames(List.of(3L)))
-        .thenReturn(Map.of(3L, "C项目"));
+    when(workSpaceQueryService.getWorkspaceNames(List.of(2L))).thenReturn(Map.of(2L, "B项目"));
+    when(workSpaceQueryService.getWorkspaceNames(List.of(3L))).thenReturn(Map.of(3L, "C项目"));
 
     AvailableSourcesResponse response = spaceLinkService.getAvailableSources(1L);
 
@@ -295,8 +281,7 @@ class WorkSpaceSpaceLinkServiceTest {
     ReflectionTestUtils.setField(link, "id", 1006L);
 
     when(workSpaceSpaceLinkRepository.findBySourceWorkspaceId(1L)).thenReturn(List.of(link));
-    when(workSpaceQueryService.getWorkspaceNames(any()))
-        .thenReturn(Map.of(1L, "源空间", 2L, "目标空间"));
+    when(workSpaceQueryService.getWorkspaceNames(any())).thenReturn(Map.of(1L, "源空间", 2L, "目标空间"));
     when(workSpaceSpaceLinkDocRepository.findByLinkIdIn(any())).thenReturn(List.of());
 
     SpaceLinkResponse mockResponse =

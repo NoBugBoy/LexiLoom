@@ -25,9 +25,7 @@ public class WorkSpaceSpaceLinkController {
 
   private final WorkSpaceSpaceLinkService workSpaceSpaceLinkService;
 
-  /**
-   * 发起 SpaceLink 关联申请 (支持选择目标空间具体的 PUBLIC / INTERNAL 文档清单与申请说明)
-   */
+  /** 发起 SpaceLink 关联申请 (支持选择目标空间具体的 PUBLIC / INTERNAL 文档清单与申请说明) */
   @PostMapping("/{sourceWorkspaceId}/space-links")
   public Long apply(
       @PathVariable("sourceWorkspaceId") Long sourceWorkspaceId,
@@ -39,9 +37,7 @@ public class WorkSpaceSpaceLinkController {
         request.applyReason());
   }
 
-  /**
-   * 目标工作区审批 SpaceLink 关联申请 (强制要求填写说明为什么同意或为什么驳回)
-   */
+  /** 目标工作区审批 SpaceLink 关联申请 (强制要求填写说明为什么同意或为什么驳回) */
   @PostMapping("/{targetWorkspaceId}/space-links/{linkId}/approval")
   public void approve(
       @PathVariable("targetWorkspaceId") Long targetWorkspaceId,
@@ -54,9 +50,7 @@ public class WorkSpaceSpaceLinkController {
     }
   }
 
-  /**
-   * 查询目标工作区下可供申请关联的文档列表 (仅 PUBLIC 与 INTERNAL，且已审批通过，仅返回名称与元数据)
-   */
+  /** 查询目标工作区下可供申请关联的文档列表 (仅 PUBLIC 与 INTERNAL，且已审批通过，仅返回名称与元数据) */
   @GetMapping("/{sourceWorkspaceId}/space-links/linkable-documents")
   public List<LinkableDocumentDTO> getLinkableDocuments(
       @PathVariable("sourceWorkspaceId") Long sourceWorkspaceId,

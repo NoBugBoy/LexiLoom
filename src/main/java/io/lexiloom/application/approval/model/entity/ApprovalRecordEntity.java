@@ -20,15 +20,16 @@ import lombok.NoArgsConstructor;
 /**
  * 统一通用审批流记录实体 (ApprovalRecord)
  *
- * <p>遵循 DDD 充血模型设计，自闭合管理文档发布审批、跨空间横向关联及文档精准授权审批，
- * 强制约束审批动作附带决断说明（为什么同意 / 为什么驳回）。
+ * <p>遵循 DDD 充血模型设计，自闭合管理文档发布审批、跨空间横向关联及文档精准授权审批， 强制约束审批动作附带决断说明（为什么同意 / 为什么驳回）。
  */
 @Entity
 @Table(
     name = "ll_approval_record",
     comment = "统一业务审批流记录表",
     indexes = {
-      @Index(name = "idx_approval_target_status", columnList = "target_workspace_id, status, approval_type"),
+      @Index(
+          name = "idx_approval_target_status",
+          columnList = "target_workspace_id, status, approval_type"),
       @Index(name = "idx_approval_biz", columnList = "biz_id, approval_type")
     })
 @Getter

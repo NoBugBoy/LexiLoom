@@ -27,6 +27,8 @@ public class DatabaseSchemaInitializer implements ApplicationRunner {
   public void run(ApplicationArguments args) {
     upgradeSerializedEventColumn();
     migrateLegacyConstraints();
+    migrateSpaceLinkTable();
+    initHistoricalDocumentApprovals();
   }
 
   /** 自动升级 event_publication.serialized_event 为 text 大文本类型 */
@@ -96,6 +98,130 @@ public class DatabaseSchemaInitializer implements ApplicationRunner {
       }
     } catch (Exception e) {
       log.warn("【DatabaseSchemaInitializer】检查或迁移历史表约束异常: {}", e.getMessage());
+    }
+  }
+
+  /** 自动检测并对齐 ll_workspace_space_link 表结构，补齐 BaseEntity 审计与软删除字段并清理旧字段 */
+  private void migrateSpaceLinkTable() {
+    try {
+      List<String> tables =
+          jdbcTemplate.queryForList(
+              "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND"
+                  + " table_name = 'll_workspace_space_link'",
+              String.class);
+      if (tables.isEmpty()) {
+        return;
+      }
+
+      // 1. 确保 BaseEntity 所需的审计与软删除字段存在
+      jdbcTemplate.execute(
+          "ALTER TABLE ll_workspace_space_link ADD COLUMN IF NOT EXISTS create_by BIGINT");
+      jdbcTemplate.execute(
+          "ALTER TABLE ll_workspace_space_link ADD COLUMN IF NOT EXISTS create_time TIMESTAMP"
+              + " WITHOUT TIME ZONE");
+      jdbcTemplate.execute(
+          "ALTER TABLE ll_workspace_space_link ADD COLUMN IF NOT EXISTS update_by BIGINT");
+      jdbcTemplate.execute(
+          "ALTER TABLE ll_workspace_space_link ADD COLUMN IF NOT EXISTS update_time TIMESTAMP"
+              + " WITHOUT TIME ZONE");
+      jdbcTemplate.execute(
+          "ALTER TABLE ll_workspace_space_link ADD COLUMN IF NOT EXISTS del_flag BIGINT NOT NULL"
+              + " DEFAULT 0");
+
+      // 2. 如果存在旧的 created_at / updated_at 字段，同步数据并清理
+      List<String> columns =
+          jdbcTemplate.queryForList(
+              "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND"
+                  + " table_name = 'll_workspace_space_link'",
+              String.class);
+
+      if (columns.contains("created_at")) {
+        jdbcTemplate.execute(
+            "UPDATE ll_workspace_space_link SET create_time = created_at WHERE create_time IS"
+                + " NULL");
+        jdbcTemplate.execute(
+            "ALTER TABLE ll_workspace_space_link DROP COLUMN IF EXISTS created_at");
+      }
+      if (columns.contains("updated_at")) {
+        jdbcTemplate.execute(
+            "UPDATE ll_workspace_space_link SET update_time = updated_at WHERE update_time IS"
+                + " NULL");
+        jdbcTemplate.execute(
+            "ALTER TABLE ll_workspace_space_link DROP COLUMN IF EXISTS updated_at");
+      }
+
+      // 3. 清理已收敛至 ll_approval_record 的历史遗留字段（或解除非空约束）
+      if (columns.contains("applicant_id")) {
+        jdbcTemplate.execute(
+            "ALTER TABLE ll_workspace_space_link DROP COLUMN IF EXISTS applicant_id");
+      }
+      if (columns.contains("approver_id")) {
+        jdbcTemplate.execute(
+            "ALTER TABLE ll_workspace_space_link DROP COLUMN IF EXISTS approver_id");
+      }
+      if (columns.contains("remark")) {
+        jdbcTemplate.execute("ALTER TABLE ll_workspace_space_link DROP COLUMN IF EXISTS remark");
+      }
+
+      log.info("【DatabaseSchemaInitializer】ll_workspace_space_link 表结构自愈检查与迁移完成");
+    } catch (Exception e) {
+      log.warn(
+          "【DatabaseSchemaInitializer】检查或迁移 ll_workspace_space_link 表结构异常: {}", e.getMessage());
+    }
+  }
+
+  /** 自动将历史已发布的存量文档补充同步至统一审批流记录表 (ll_approval_record) */
+  private void initHistoricalDocumentApprovals() {
+    try {
+      List<String> tables =
+          jdbcTemplate.queryForList(
+              "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND"
+                  + " table_name IN ('ll_document', 'll_approval_record')",
+              String.class);
+      if (tables.size() < 2) {
+        return;
+      }
+
+      int inserted =
+          jdbcTemplate.update(
+              "INSERT INTO ll_approval_record ("
+                  + "approval_type, biz_id, workspace_id, target_workspace_id, "
+                  + "applicant_id, applicant_name, apply_reason, status, "
+                  + "approver_id, approver_name, approval_comment, approval_time, "
+                  + "extra_data, create_time, update_time, create_by, update_by, del_flag) "
+                  + "SELECT "
+                  + "'DOCUMENT_AUDIT' AS approval_type, "
+                  + "d.id AS biz_id, "
+                  + "d.work_space_id AS workspace_id, "
+                  + "d.work_space_id AS target_workspace_id, "
+                  + "COALESCE(d.create_by, 1) AS applicant_id, "
+                  + "'admin@knowflow.com' AS applicant_name, "
+                  + "'历史文档数据迁移' AS apply_reason, "
+                  + "'APPROVED' AS status, "
+                  + "1 AS approver_id, "
+                  + "'admin@knowflow.com' AS approver_name, "
+                  + "'历史文档默认审批通过' AS approval_comment, "
+                  + "COALESCE(d.update_time, d.create_time, CURRENT_TIMESTAMP) AS approval_time, "
+                  + "NULL AS extra_data, "
+                  + "COALESCE(d.create_time, CURRENT_TIMESTAMP) AS create_time, "
+                  + "COALESCE(d.update_time, d.create_time, CURRENT_TIMESTAMP) AS update_time, "
+                  + "COALESCE(d.create_by, 1) AS create_by, "
+                  + "1 AS update_by, "
+                  + "0 AS del_flag "
+                  + "FROM ll_document d "
+                  + "WHERE d.del_flag = 0 "
+                  + "  AND d.status = 'APPROVED' "
+                  + "  AND NOT EXISTS ("
+                  + "      SELECT 1 FROM ll_approval_record a "
+                  + "      WHERE a.approval_type = 'DOCUMENT_AUDIT' AND a.biz_id = d.id"
+                  + "  )");
+
+      if (inserted > 0) {
+        log.info(
+            "【DatabaseSchemaInitializer】已自动将 {} 篇历史已发布文档同步至审批记录表 (ll_approval_record)", inserted);
+      }
+    } catch (Exception e) {
+      log.warn("【DatabaseSchemaInitializer】同步历史文档审批记录异常: {}", e.getMessage());
     }
   }
 }

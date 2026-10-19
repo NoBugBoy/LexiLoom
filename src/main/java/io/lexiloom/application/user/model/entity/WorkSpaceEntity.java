@@ -73,7 +73,8 @@ public class WorkSpaceEntity extends BaseEntity {
       Long ownerId,
       Integer maxMembers,
       WorkSpaceAclEnum visibility) {
-    return create(name, code, description, avatarUrl, ownerId, maxMembers, visibility, null, Boolean.TRUE);
+    return create(
+        name, code, description, avatarUrl, ownerId, maxMembers, visibility, null, Boolean.TRUE);
   }
 
   /** 静态工厂：创建新团队 (支持父工作区与子空间关联配置) */

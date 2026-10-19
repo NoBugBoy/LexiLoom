@@ -114,9 +114,7 @@ class ApprovalControllerTest {
 
     mockMvc
         .perform(
-            get("/api/approvals/history")
-                .param("type", "DOCUMENT_AUDIT")
-                .param("bizId", "2001"))
+            get("/api/approvals/history").param("type", "DOCUMENT_AUDIT").param("bizId", "2001"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$", hasSize(1)))
         .andExpect(jsonPath("$[0].status", is("APPROVED")))
@@ -140,9 +138,7 @@ class ApprovalControllerTest {
 
     mockMvc
         .perform(
-            post("/api/approvals/action")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(json))
+            post("/api/approvals/action").contentType(MediaType.APPLICATION_JSON).content(json))
         .andExpect(status().isOk());
 
     verify(approvalApi)
@@ -169,9 +165,7 @@ class ApprovalControllerTest {
 
     mockMvc
         .perform(
-            post("/api/approvals/action")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(json))
+            post("/api/approvals/action").contentType(MediaType.APPLICATION_JSON).content(json))
         .andExpect(status().isOk());
 
     verify(approvalApi)
