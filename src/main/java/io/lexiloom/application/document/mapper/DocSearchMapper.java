@@ -25,6 +25,7 @@ public interface DocSearchMapper {
   @Mapping(source = "doc.sourceType", target = "sourceType")
   @Mapping(source = "doc.createBy", target = "authorId")
   @Mapping(source = "doc.status", target = "status")
+  @Mapping(source = "doc.visibility", target = "visibility")
   @Mapping(source = "doc.updateTime", target = "publishedAt")
   @Mapping(target = "titleSuggest", ignore = true)
   @Mapping(target = "contentVector", ignore = true)

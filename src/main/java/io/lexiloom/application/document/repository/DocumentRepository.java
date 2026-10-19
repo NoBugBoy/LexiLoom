@@ -52,4 +52,17 @@ public interface DocumentRepository
   @org.springframework.data.jpa.repository.Query(
       "UPDATE DocumentEntity d SET d.readCount = d.readCount + 1 WHERE d.id = :id")
   void incrementReadCount(@org.springframework.data.repository.query.Param("id") Long id);
+
+  @org.springframework.data.jpa.repository.Query(
+      "SELECT d FROM DocumentEntity d WHERE d.workSpaceId = :workSpaceId "
+          + "AND d.status = :status "
+          + "AND d.visibility IN :visibilities "
+          + "AND (:keyword IS NULL OR :keyword = '' OR d.title LIKE CONCAT('%', :keyword, '%')) "
+          + "ORDER BY d.updateTime DESC")
+  List<DocumentEntity> findLinkableDocuments(
+      @org.springframework.data.repository.query.Param("workSpaceId") Long workSpaceId,
+      @org.springframework.data.repository.query.Param("status") DocumentStateEnum status,
+      @org.springframework.data.repository.query.Param("visibilities")
+          java.util.Collection<io.lexiloom.application.enums.WorkSpaceAclEnum> visibilities,
+      @org.springframework.data.repository.query.Param("keyword") String keyword);
 }

@@ -245,14 +245,19 @@ public class DocumentEntity extends BaseEntity {
     return entity;
   }
 
-  /** 标记异步解析成功并更新提取出的正文 */
+  /** 标记异步解析成功并更新提取出的正文（文档标题严格使用文件名，禁止被正文解析内容中的标题覆盖） */
   public void markParseSuccess(String newContent, String suggestedTitle) {
-    if (StrUtil.isNotBlank(suggestedTitle)) {
+    if (StrUtil.isBlank(this.title) && StrUtil.isNotBlank(suggestedTitle)) {
       this.title = suggestedTitle.trim();
     }
     this.content = (newContent == null) ? "" : newContent;
     this.wordCount = calculateWordCount(this.content);
     this.parseStatus = DocParseStatusEnum.SUCCESS;
+  }
+
+  /** 标记异步解析成功并更新提取出的正文 */
+  public void markParseSuccess(String newContent) {
+    markParseSuccess(newContent, null);
   }
 
   /** 标记异步解析失败 */

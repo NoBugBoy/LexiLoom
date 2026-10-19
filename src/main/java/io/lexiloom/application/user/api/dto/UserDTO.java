@@ -8,6 +8,7 @@ public record UserDTO(
     String openId,
     String unionId,
     String userName,
+    String avatarUrl,
     String email,
     Boolean emailVerified,
     String phoneNumber,

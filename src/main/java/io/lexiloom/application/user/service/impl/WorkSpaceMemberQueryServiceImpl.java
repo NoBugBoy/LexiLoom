@@ -68,4 +68,14 @@ public class WorkSpaceMemberQueryServiceImpl implements WorkSpaceMemberQueryServ
         .map(member -> member.hasAtLeastRole(requiredRole))
         .orElse(false);
   }
+
+  @Override
+  public long countMembers(Long workSpaceId) {
+    return workSpaceMemberRepository.countByWorkSpaceId(workSpaceId);
+  }
+
+  @Override
+  public long countMembersByRole(Long workSpaceId, WorkSpaceRoleEnum role) {
+    return workSpaceMemberRepository.countByWorkSpaceIdAndRole(workSpaceId, role);
+  }
 }

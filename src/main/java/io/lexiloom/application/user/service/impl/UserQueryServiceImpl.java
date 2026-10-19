@@ -32,4 +32,29 @@ public class UserQueryServiceImpl implements UserQueryService {
     }
     return userRepository.findByEmail(email.trim());
   }
+
+  @Override
+  public java.util.Map<Long, io.lexiloom.application.user.api.dto.UserDTO> findUserMapByIds(
+      java.util.Collection<Long> userIds) {
+    if (userIds == null || userIds.isEmpty()) {
+      return java.util.Map.of();
+    }
+    return userRepository.findAllById(userIds).stream()
+        .collect(
+            java.util.stream.Collectors.toMap(
+                UserEntity::getId,
+                u ->
+                    new io.lexiloom.application.user.api.dto.UserDTO(
+                        u.getId(),
+                        u.getOpenId(),
+                        u.getUnionId(),
+                        u.getUserName(),
+                        u.getAvatarUrl(),
+                        u.getEmail(),
+                        u.getEmailVerified(),
+                        u.getPhoneNumber(),
+                        u.getCountryCode(),
+                        u.getPhoneVerified()),
+                (u1, u2) -> u1));
+  }
 }

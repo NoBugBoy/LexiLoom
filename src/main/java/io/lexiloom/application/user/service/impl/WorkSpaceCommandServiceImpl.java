@@ -33,6 +33,13 @@ public class WorkSpaceCommandServiceImpl implements WorkSpaceCommandService {
       throw BusinessException.badRequest("团队唯一标识(code)已存在: " + request.code());
     }
 
+    // 校验父空间是否存在
+    if (request.parentId() != null) {
+      workSpaceRepository
+          .findById(request.parentId())
+          .orElseThrow(() -> BusinessException.badRequest("指定的父工作空间不存在: " + request.parentId()));
+    }
+
     // 2. 充血实体构建并校验前置条件
     WorkSpaceEntity workSpace =
         WorkSpaceEntity.create(
@@ -42,7 +49,9 @@ public class WorkSpaceCommandServiceImpl implements WorkSpaceCommandService {
             request.avatarUrl(),
             currentUserId,
             request.maxMembers(),
-            request.visibility());
+            request.visibility(),
+            request.parentId(),
+            request.childAssocEnabled());
 
     WorkSpaceEntity saved = workSpaceRepository.save(workSpace);
 
@@ -160,6 +169,37 @@ public class WorkSpaceCommandServiceImpl implements WorkSpaceCommandService {
     currentOwnerMember.demoteFromOwner(WorkSpaceRoleEnum.ADMIN);
     workSpaceMemberRepository.save(newOwnerMember);
     workSpaceMemberRepository.save(currentOwnerMember);
+  }
+
+  @Override
+  @Transactional(rollbackFor = Throwable.class)
+  public void updateChildAssoc(Long workSpaceId, Boolean childAssocEnabled) {
+    Long currentUserId = SecurityHolder.getUserId();
+    WorkSpaceEntity workSpace = findWorkSpaceOrThrow(workSpaceId);
+    assertCanManage(workSpaceId, currentUserId);
+
+    workSpace.updateChildAssoc(childAssocEnabled);
+    workSpaceRepository.save(workSpace);
+  }
+
+  @Override
+  @Transactional(rollbackFor = Throwable.class)
+  public void changeParent(Long workSpaceId, Long parentId) {
+    Long currentUserId = SecurityHolder.getUserId();
+    WorkSpaceEntity workSpace = findWorkSpaceOrThrow(workSpaceId);
+    assertCanManage(workSpaceId, currentUserId);
+
+    if (parentId != null) {
+      if (Objects.equals(workSpaceId, parentId)) {
+        throw BusinessException.badRequest("不能将工作空间自身设置为父空间");
+      }
+      workSpaceRepository
+          .findById(parentId)
+          .orElseThrow(() -> BusinessException.badRequest("指定的父工作空间不存在: " + parentId));
+    }
+
+    workSpace.changeParent(parentId);
+    workSpaceRepository.save(workSpace);
   }
 
   private WorkSpaceEntity findWorkSpaceOrThrow(Long workSpaceId) {

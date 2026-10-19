@@ -80,9 +80,11 @@ class RagPromptTemplateTest {
     String prompt = command.prompt();
     assertThat(prompt)
         .contains("【参考资料】")
-        .contains("参考片段 [1] (来源：《分布式事务规范.pdf》 > 章节: Saga模式设计):")
+        .contains("参考片段 [1]")
+        .contains("(来源：《分布式事务规范.pdf》 > 章节: Saga模式设计):")
         .contains("Saga 由一系列正向操作和补偿事务构成。")
-        .contains("参考片段 [2] (来源：《分布式事务规范.pdf》 > 章节: TCC模式设计):")
+        .contains("参考片段 [2]")
+        .contains("(来源：《分布式事务规范.pdf》 > 章节: TCC模式设计):")
         .contains("TCC 包含 Try、Confirm、Cancel 三个阶段。")
         .contains("【用户问题】")
         .contains("请比较 Saga 与 TCC 的优缺点");

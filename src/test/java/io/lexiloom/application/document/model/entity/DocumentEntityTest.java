@@ -120,4 +120,30 @@ class DocumentEntityTest {
     assertThat(doc.getStatus()).isEqualTo(DocumentStateEnum.PENDING_APPROVAL);
     assertThat(doc.getContent()).isEqualTo("初始内容");
   }
+
+  @Test
+  @DisplayName("异步解析成功时 - 必须直接保留文件名标题，严禁被正文提取出的标题覆盖")
+  void testMarkParseSuccessRetainsFileNameTitle() {
+    // 模拟基于文件名导入的文档，初始标题为文件名（如 2026业务架构设计）
+    DocumentEntity doc =
+        DocumentEntity.createFromImport(
+            1L,
+            10L,
+            "2026业务架构设计",
+            "导入摘要",
+            "占位内容",
+            50L,
+            "2026业务架构设计.docx",
+            WorkSpaceAclEnum.INTERNAL,
+            null);
+
+    // 模拟解析引擎提取了正文 Markdown 中的一级标题 "# 概述与背景"
+    doc.markParseSuccess("# 概述与背景\n\n正文正文正文", "概述与背景");
+
+    // 验证：文档标题依然严格保持为原文件名，没有被正文标题覆盖篡改
+    assertThat(doc.getTitle()).isEqualTo("2026业务架构设计");
+    assertThat(doc.getContent()).isEqualTo("# 概述与背景\n\n正文正文正文");
+    assertThat(doc.getParseStatus()).isEqualTo(io.lexiloom.application.document.parser.DocParseStatusEnum.SUCCESS);
+  }
 }
+

@@ -21,4 +21,10 @@ public interface WorkSpaceQueryService {
 
   /** 查询指定用户加入的所有团队 */
   List<WorkSpaceResponse> listMyWorkSpaces(Long userId);
+
+  /** 查询允许父级关联的直系子工作空间 ID 列表 */
+  List<Long> listChildWorkspaceIds(Long parentWorkspaceId);
+
+  /** 批量获取工作空间名称映射 (Key: workspaceId, Value: name) */
+  java.util.Map<Long, String> getWorkspaceNames(java.util.Collection<Long> workspaceIds);
 }

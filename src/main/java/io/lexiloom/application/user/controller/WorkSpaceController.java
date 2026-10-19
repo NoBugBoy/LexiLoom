@@ -7,10 +7,8 @@ import io.lexiloom.application.user.mapper.WorkSpaceMapper;
 import io.lexiloom.application.user.model.request.WorkSpaceCreateRequest;
 import io.lexiloom.application.user.model.request.WorkSpacePageRequest;
 import io.lexiloom.application.user.model.request.WorkSpaceUpdateRequest;
-import io.lexiloom.application.user.model.response.WorkSpaceOverviewResponse;
 import io.lexiloom.application.user.model.response.WorkSpaceResponse;
 import io.lexiloom.application.user.service.WorkSpaceCommandService;
-import io.lexiloom.application.user.service.WorkSpaceOverviewQueryService;
 import jakarta.validation.constraints.NotNull;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -33,7 +31,6 @@ public class WorkSpaceController {
 
   private final WorkSpaceCommandService workSpaceCommandService;
   private final WorkSpaceQueryService workSpaceQueryService;
-  private final WorkSpaceOverviewQueryService workSpaceOverviewQueryService;
   private final WorkSpaceMapper workSpaceMapper;
 
   public record UpdateMaxMembersRequest(@NotNull(message = "配额人数上限不能为空") Integer maxMembers) {}
@@ -53,12 +50,6 @@ public class WorkSpaceController {
         .getById(id)
         .map(workSpaceMapper::toResponse)
         .orElseThrow(() -> BusinessException.badRequest("团队不存在: " + id));
-  }
-
-  /** 获取团队/工作空间数据总览大屏指标 */
-  @GetMapping("/{id}/overview")
-  public WorkSpaceOverviewResponse getOverview(@PathVariable("id") Long id) {
-    return workSpaceOverviewQueryService.getOverview(id, SecurityHolder.getUserId());
   }
 
   /** 根据英文唯一标识(code)获取团队详情 */

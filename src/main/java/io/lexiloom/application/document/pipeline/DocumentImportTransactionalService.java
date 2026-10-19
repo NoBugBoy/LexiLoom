@@ -31,6 +31,7 @@ public class DocumentImportTransactionalService {
   private final DocVersionRepository docVersionRepository;
   private final org.springframework.context.ApplicationEventPublisher eventPublisher;
   private final tools.jackson.databind.ObjectMapper objectMapper;
+  private final io.lexiloom.application.approval.api.ApprovalApi approvalApi;
 
   @org.springframework.beans.factory.annotation.Autowired
   public DocumentImportTransactionalService(
@@ -39,13 +40,16 @@ public class DocumentImportTransactionalService {
       DocVersionRepository docVersionRepository,
       org.springframework.context.ApplicationEventPublisher eventPublisher,
       @org.springframework.beans.factory.annotation.Autowired(required = false)
-          tools.jackson.databind.ObjectMapper objectMapper) {
+          tools.jackson.databind.ObjectMapper objectMapper,
+      @org.springframework.beans.factory.annotation.Autowired(required = false)
+          io.lexiloom.application.approval.api.ApprovalApi approvalApi) {
     this.docSourceFileRepository = docSourceFileRepository;
     this.documentRepository = documentRepository;
     this.docVersionRepository = docVersionRepository;
     this.eventPublisher = eventPublisher;
     this.objectMapper =
         objectMapper != null ? objectMapper : new tools.jackson.databind.ObjectMapper();
+    this.approvalApi = approvalApi;
   }
 
   public DocumentImportTransactionalService(
@@ -53,12 +57,12 @@ public class DocumentImportTransactionalService {
       DocumentRepository documentRepository,
       DocVersionRepository docVersionRepository,
       org.springframework.context.ApplicationEventPublisher eventPublisher) {
-    this(docSourceFileRepository, documentRepository, docVersionRepository, eventPublisher, null);
+    this(docSourceFileRepository, documentRepository, docVersionRepository, eventPublisher, null, null);
   }
 
   public DocumentImportTransactionalService(
       DocSourceFileRepository docSourceFileRepository, DocumentRepository documentRepository) {
-    this(docSourceFileRepository, documentRepository, null, null, null);
+    this(docSourceFileRepository, documentRepository, null, null, null, null);
   }
 
   private String serializeMetadata(java.util.Map<String, Object> metadata) {
@@ -136,7 +140,7 @@ public class DocumentImportTransactionalService {
 
     String fileName = DocumentImportPipeline.sanitizeFileName(command.originalFileName());
     String fallbackTitle = StrUtil.subBefore(fileName, ".", true);
-    String docTitle = StrUtil.blankToDefault(parseResult.suggestedTitle(), fallbackTitle);
+    String docTitle = StrUtil.isNotBlank(fallbackTitle) ? fallbackTitle : fileName;
 
     if (parseResult.isAsyncProcessing()) {
       // 异步解析处理中（后台排队解析）
@@ -161,6 +165,20 @@ public class DocumentImportTransactionalService {
       DocumentEntity savedDoc = documentRepository.save(doc);
       sourceFile.bindDocument(savedDoc.getId());
       docSourceFileRepository.save(sourceFile);
+
+      if (approvalApi != null) {
+        try {
+          approvalApi.submitDocumentAudit(
+              savedDoc.getId(),
+              savedDoc.getWorkSpaceId(),
+              operatorId != null ? operatorId : 0L,
+              null,
+              "文档导入解析完成，待审批发布",
+              null);
+        } catch (Exception e) {
+          log.warn("【DocumentImportPipeline】自动登记发布审批单异常: docId={}, error={}", savedDoc.getId(), e.getMessage());
+        }
+      }
 
       log.info(
           "【DocumentImportPipeline】异步解析任务已登记: docId={}, sourceFileId={}, batchId={}",
@@ -347,7 +365,7 @@ public class DocumentImportTransactionalService {
 
     String fileName = DocumentImportPipeline.sanitizeFileName(command.originalFileName());
     String fallbackTitle = StrUtil.subBefore(fileName, ".", true);
-    String docTitle = StrUtil.blankToDefault(parseResult.suggestedTitle(), fallbackTitle);
+    String docTitle = StrUtil.isNotBlank(fallbackTitle) ? fallbackTitle : fileName;
 
     int nextVersion =
         (existingDoc.getCurrentVersion() != null ? existingDoc.getCurrentVersion() : 1) + 1;
@@ -373,6 +391,20 @@ public class DocumentImportTransactionalService {
       DocumentEntity savedDoc = documentRepository.save(existingDoc);
       sourceFile.bindDocument(savedDoc.getId());
       docSourceFileRepository.save(sourceFile);
+
+      if (approvalApi != null) {
+        try {
+          approvalApi.submitDocumentAudit(
+              savedDoc.getId(),
+              savedDoc.getWorkSpaceId(),
+              operatorId != null ? operatorId : 0L,
+              null,
+              "升级新版本导入，待审批发布",
+              null);
+        } catch (Exception e) {
+          log.warn("【DocumentImportPipeline】自动登记发布审批单异常: docId={}, error={}", savedDoc.getId(), e.getMessage());
+        }
+      }
 
       if (oldStatus == DocumentStateEnum.APPROVED && eventPublisher != null) {
         eventPublisher.publishEvent(

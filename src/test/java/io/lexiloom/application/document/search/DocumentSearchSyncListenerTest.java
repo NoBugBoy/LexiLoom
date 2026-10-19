@@ -9,22 +9,18 @@ import static org.mockito.Mockito.when;
 
 import io.lexiloom.application.document.mapper.DocSearchMapper;
 import io.lexiloom.application.document.model.entity.DocSourceFileEntity;
-import io.lexiloom.application.document.model.entity.DocTagEntity;
-import io.lexiloom.application.document.model.entity.DocTagRelationEntity;
 import io.lexiloom.application.document.model.entity.DocumentEntity;
 import io.lexiloom.application.document.model.event.DocumentDeletedEvent;
 import io.lexiloom.application.document.model.event.DocumentUpdatedEvent;
 import io.lexiloom.application.document.parser.DocParserEngineEnum;
 import io.lexiloom.application.document.repository.DocSourceFileRepository;
-import io.lexiloom.application.document.repository.DocTagRelationRepository;
-import io.lexiloom.application.document.repository.DocTagRepository;
 import io.lexiloom.application.document.repository.DocumentRepository;
 import io.lexiloom.application.document.statemachine.DocumentEventEnum;
 import io.lexiloom.application.document.statemachine.DocumentStateEnum;
 import io.lexiloom.application.document.statemachine.DocumentStateTransitionEvent;
 import io.lexiloom.application.enums.WorkSpaceAclEnum;
 import java.time.LocalDateTime;
-import java.util.List;
+import java.util.Collections;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -38,8 +34,6 @@ class DocumentSearchSyncListenerTest {
 
   @Mock private DocumentRepository documentRepository;
   @Mock private DocSourceFileRepository docSourceFileRepository;
-  @Mock private DocTagRelationRepository docTagRelationRepository;
-  @Mock private DocTagRepository docTagRepository;
   @Mock private DocSearchRepository docSearchRepository;
   @Mock private DocSearchMapper docSearchMapper;
 
@@ -69,17 +63,12 @@ class DocumentSearchSyncListenerTest {
             "http://rustfs/spring.docx");
     sourceFile.markParseSuccess("从 docx 提取的纯文本", DocParserEngineEnum.DEEPDOC);
 
-    DocTagRelationEntity relation = DocTagRelationEntity.create(docId, 301L);
-    DocTagEntity tag = DocTagEntity.create(workspaceId, "后端", "#FFFFFF");
-
     DocSearchDocument searchDoc =
         DocSearchDocument.builder().id("101").workspaceId("1").title("Spring 实战").build();
 
     when(documentRepository.findById(docId)).thenReturn(Optional.of(doc));
     when(docSourceFileRepository.findByDocumentId(docId)).thenReturn(Optional.of(sourceFile));
-    when(docTagRelationRepository.findByDocumentId(docId)).thenReturn(List.of(relation));
-    when(docTagRepository.findAllById(List.of(301L))).thenReturn(List.of(tag));
-    when(docSearchMapper.toSearchDoc(doc, sourceFile, List.of("后端"))).thenReturn(searchDoc);
+    when(docSearchMapper.toSearchDoc(doc, sourceFile, Collections.emptyList())).thenReturn(searchDoc);
 
     DocumentStateTransitionEvent event =
         new DocumentStateTransitionEvent(
@@ -193,7 +182,6 @@ class DocumentSearchSyncListenerTest {
 
     when(documentRepository.findById(docId)).thenReturn(Optional.of(doc));
     when(docSourceFileRepository.findByDocumentId(docId)).thenReturn(Optional.empty());
-    when(docTagRelationRepository.findByDocumentId(docId)).thenReturn(List.of());
     when(docSearchMapper.toSearchDoc(eq(doc), any(), any()))
         .thenReturn(DocSearchDocument.builder().id("106").build());
     doThrow(new RuntimeException("ES unavailable")).when(docSearchRepository).save(any());
@@ -237,7 +225,6 @@ class DocumentSearchSyncListenerTest {
 
     when(documentRepository.findById(docId)).thenReturn(Optional.of(doc));
     when(docSourceFileRepository.findByDocumentId(docId)).thenReturn(Optional.empty());
-    when(docTagRelationRepository.findByDocumentId(docId)).thenReturn(List.of());
     when(docSearchMapper.toSearchDoc(eq(doc), any(), any()))
         .thenReturn(DocSearchDocument.builder().id("108").build());
 

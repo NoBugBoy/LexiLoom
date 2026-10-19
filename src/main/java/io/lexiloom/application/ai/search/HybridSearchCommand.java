@@ -3,6 +3,7 @@ package io.lexiloom.application.ai.search;
 import cn.hutool.core.util.StrUtil;
 import io.lexiloom.application.exception.BusinessException;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 双路混合检索与重排命令 (不可变 record)
@@ -28,7 +29,8 @@ public record HybridSearchCommand(
     List<String> tags,
     Long categoryId,
     Long userId,
-    boolean isAdmin) {
+    boolean isAdmin,
+    Map<Long, Integer> weights) {
 
   public HybridSearchCommand {
     if (workspaceId == null) {
@@ -40,9 +42,36 @@ public record HybridSearchCommand(
     query = query.trim();
     topK = topK > 0 ? topK : 5;
     tags = tags != null ? List.copyOf(tags) : List.of();
+    weights = weights != null ? Map.copyOf(weights) : java.util.Collections.emptyMap();
   }
 
-  /** 兼容旧版 8 参数构造函数 (默认 userId=null, isAdmin=false) */
+  /** 兼容 10 参数构造器 (默认 weights 为空) */
+  public HybridSearchCommand(
+      Long workspaceId,
+      String query,
+      float[] queryVector,
+      int topK,
+      Double minScore,
+      Long documentId,
+      List<String> tags,
+      Long categoryId,
+      Long userId,
+      boolean isAdmin) {
+    this(
+        workspaceId,
+        query,
+        queryVector,
+        topK,
+        minScore,
+        documentId,
+        tags,
+        categoryId,
+        userId,
+        isAdmin,
+        java.util.Collections.emptyMap());
+  }
+
+  /** 兼容旧版 8 参数构造函数 (默认 userId=null, isAdmin=false, weights 为空) */
   public HybridSearchCommand(
       Long workspaceId,
       String query,
@@ -62,7 +91,8 @@ public record HybridSearchCommand(
         tags,
         categoryId,
         null,
-        false);
+        false,
+        java.util.Collections.emptyMap());
   }
 
   public static HybridSearchCommand of(Long workspaceId, String query, int topK) {

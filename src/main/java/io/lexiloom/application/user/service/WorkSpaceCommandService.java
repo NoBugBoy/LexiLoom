@@ -34,4 +34,10 @@ public interface WorkSpaceCommandService {
 
   /** 转让团队所有权 */
   void transferOwnership(Long workSpaceId, Long newOwnerId);
+
+  /** 配置子空间是否允许被父空间聚合 */
+  void updateChildAssoc(Long workSpaceId, Boolean childAssocEnabled);
+
+  /** 变更父工作空间 */
+  void changeParent(Long workSpaceId, Long parentId);
 }

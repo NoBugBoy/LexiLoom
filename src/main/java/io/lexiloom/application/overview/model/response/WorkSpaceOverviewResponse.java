@@ -1,4 +1,4 @@
-package io.lexiloom.application.user.model.response;
+package io.lexiloom.application.overview.model.response;
 
 import io.lexiloom.application.document.statemachine.DocumentStateEnum;
 import io.lexiloom.application.enums.WorkSpaceAclEnum;

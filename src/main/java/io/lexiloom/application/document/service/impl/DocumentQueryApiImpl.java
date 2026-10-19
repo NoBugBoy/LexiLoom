@@ -16,6 +16,7 @@ import io.lexiloom.application.document.repository.DocumentRepository;
 import io.lexiloom.application.document.statemachine.DocumentStateEnum;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -43,6 +44,10 @@ public class DocumentQueryApiImpl implements DocumentQueryApi {
   private final DocCommentRepository docCommentRepository;
   private final DocumentMapper documentMapper;
   private final DocSourceFileMapper docSourceFileMapper;
+  private final io.lexiloom.application.document.spacelink.repository.WorkSpaceSpaceLinkRepository
+      spaceLinkRepository;
+  private final io.lexiloom.application.document.spacelink.repository.WorkSpaceSpaceLinkDocRepository
+      spaceLinkDocRepository;
 
   @Override
   public Optional<DocumentDTO> findDocumentById(Long documentId) {
@@ -256,6 +261,76 @@ public class DocumentQueryApiImpl implements DocumentQueryApi {
         topAuthors,
         catDistribution,
         fileDistribution);
+  }
+
+  @Override
+  public List<io.lexiloom.application.document.api.dto.LinkableDocumentDTO> listLinkableDocuments(
+      Long targetWorkspaceId, String keyword) {
+    if (targetWorkspaceId == null) {
+      return Collections.emptyList();
+    }
+    List<io.lexiloom.application.enums.WorkSpaceAclEnum> visibilities =
+        List.of(
+            io.lexiloom.application.enums.WorkSpaceAclEnum.PUBLIC,
+            io.lexiloom.application.enums.WorkSpaceAclEnum.INTERNAL);
+
+    List<DocumentEntity> docs =
+        documentRepository.findLinkableDocuments(
+            targetWorkspaceId, DocumentStateEnum.APPROVED, visibilities, keyword);
+
+    return docs.stream()
+        .map(
+            d ->
+                new io.lexiloom.application.document.api.dto.LinkableDocumentDTO(
+                    d.getId(), d.getTitle(), d.getCategoryId(), d.getVisibility(), d.getUpdateTime()))
+        .toList();
+  }
+
+  @Override
+  public List<Long> listApprovedLinkedWorkspaceIds(Long sourceWorkspaceId) {
+    if (sourceWorkspaceId == null) {
+      return Collections.emptyList();
+    }
+    return spaceLinkRepository
+        .findBySourceWorkspaceIdAndStatus(
+            sourceWorkspaceId, io.lexiloom.application.enums.SpaceLinkStatusEnum.APPROVED)
+        .stream()
+        .map(io.lexiloom.application.document.spacelink.model.entity.WorkSpaceSpaceLinkEntity::getTargetWorkspaceId)
+        .filter(java.util.Objects::nonNull)
+        .toList();
+  }
+
+  @Override
+  public Map<Long, List<Long>> getApprovedLinkedWorkspaceDocIds(Long sourceWorkspaceId) {
+    if (sourceWorkspaceId == null) {
+      return Collections.emptyMap();
+    }
+
+    List<io.lexiloom.application.document.spacelink.model.entity.WorkSpaceSpaceLinkEntity> approvedLinks =
+        spaceLinkRepository.findBySourceWorkspaceIdAndStatus(
+            sourceWorkspaceId, io.lexiloom.application.enums.SpaceLinkStatusEnum.APPROVED);
+
+    if (approvedLinks.isEmpty()) {
+      return Collections.emptyMap();
+    }
+
+    List<Long> linkIds =
+        approvedLinks.stream()
+            .map(io.lexiloom.application.document.spacelink.model.entity.WorkSpaceSpaceLinkEntity::getId)
+            .toList();
+    List<io.lexiloom.application.document.spacelink.model.entity.WorkSpaceSpaceLinkDocEntity> docEntities =
+        spaceLinkDocRepository.findByLinkIdIn(linkIds);
+
+    Map<Long, List<Long>> result = new HashMap<>();
+    for (io.lexiloom.application.document.spacelink.model.entity.WorkSpaceSpaceLinkEntity link : approvedLinks) {
+      result.putIfAbsent(link.getTargetWorkspaceId(), new ArrayList<>());
+    }
+    for (io.lexiloom.application.document.spacelink.model.entity.WorkSpaceSpaceLinkDocEntity doc : docEntities) {
+      result
+          .computeIfAbsent(doc.getTargetWorkspaceId(), k -> new ArrayList<>())
+          .add(doc.getDocumentId());
+    }
+    return result;
   }
 
   private static String formatStorage(long bytes) {

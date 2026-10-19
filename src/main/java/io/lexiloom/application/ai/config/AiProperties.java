@@ -137,6 +137,12 @@ public class AiProperties {
     /** 词法全文检索 (BM25) 独立保底配额数量 (默认 5) */
     private int lexicalTopK = 5;
 
+    /** 单次检索最大召回切片硬上限 (默认 50) */
+    private int maxTopK = 50;
+
+    /** 单次检索保底最小召回数 (默认 20) */
+    private int minTopK = 20;
+
     /**
      * 候选切片最小语义相似度过滤阈值 (真实 Cosine 相似度，非重排模拟分)
      *

@@ -56,6 +56,7 @@ class DocumentCommandServiceTest {
   @Mock private DocCategoryRepository docCategoryRepository;
 
   @Mock private DocSourceFileRepository docSourceFileRepository;
+  @Mock private io.lexiloom.application.approval.api.ApprovalApi approvalApi;
 
   private DocumentCommandService commandService;
 
@@ -71,7 +72,8 @@ class DocumentCommandServiceTest {
             eventPublisher,
             docCommentRepository,
             docCategoryRepository,
-            docSourceFileRepository);
+            docSourceFileRepository,
+            approvalApi);
   }
 
   @Test

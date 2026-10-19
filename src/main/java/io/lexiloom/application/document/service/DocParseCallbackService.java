@@ -127,7 +127,7 @@ public class DocParseCallbackService {
     log.info(
         "【DocParseCallbackService】异步解析结果处理落库完成并已触发检索向量同步: docId={}, title={}, wordCount={}",
         docId,
-        suggestedTitle,
+        doc.getTitle(),
         cleanedMarkdown != null ? cleanedMarkdown.length() : 0);
   }
 }

@@ -1,4 +1,4 @@
-package io.lexiloom.application.user.service;
+package io.lexiloom.application.overview.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -9,22 +9,23 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.lexiloom.application.ai.config.AiProperties;
-import io.lexiloom.application.ai.repository.DocChunkRepository;
+import io.lexiloom.application.ai.api.AiStatsQueryApi;
 import io.lexiloom.application.document.api.DocumentQueryApi;
 import io.lexiloom.application.document.api.dto.WorkspaceDocStatsDTO;
+import io.lexiloom.application.document.statemachine.DocumentStateEnum;
 import io.lexiloom.application.enums.WorkSpaceAclEnum;
 import io.lexiloom.application.enums.WorkSpaceRoleEnum;
+import io.lexiloom.application.enums.WorkSpaceStatusEnum;
 import io.lexiloom.application.exception.BusinessException;
+import io.lexiloom.application.overview.model.response.WorkSpaceOverviewResponse;
+import io.lexiloom.application.user.api.UserQueryService;
 import io.lexiloom.application.user.api.WorkSpaceMemberQueryService;
-import io.lexiloom.application.user.model.entity.UserEntity;
-import io.lexiloom.application.user.model.entity.WorkSpaceEntity;
-import io.lexiloom.application.user.model.response.WorkSpaceOverviewResponse;
-import io.lexiloom.application.user.repository.UserRepository;
-import io.lexiloom.application.user.repository.WorkSpaceMemberRepository;
-import io.lexiloom.application.user.repository.WorkSpaceRepository;
+import io.lexiloom.application.user.api.WorkSpaceQueryService;
+import io.lexiloom.application.user.api.dto.UserDTO;
+import io.lexiloom.application.user.api.dto.WorkSpaceDTO;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,19 +36,16 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
-import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.ObjectMapper;
 
 @ExtendWith(MockitoExtension.class)
 class WorkSpaceOverviewQueryServiceTest {
 
-  @Mock private WorkSpaceRepository workSpaceRepository;
-  @Mock private WorkSpaceMemberRepository workSpaceMemberRepository;
+  @Mock private WorkSpaceQueryService workSpaceQueryService;
   @Mock private WorkSpaceMemberQueryService workSpaceMemberQueryService;
-  @Mock private UserRepository userRepository;
+  @Mock private UserQueryService userQueryService;
   @Mock private DocumentQueryApi documentQueryApi;
-  @Mock private DocChunkRepository docChunkRepository;
-  @Mock private AiProperties aiProperties;
+  @Mock private AiStatsQueryApi aiStatsQueryApi;
   @Mock private StringRedisTemplate redisTemplate;
   @Mock private ValueOperations<String, String> valueOperations;
   @Mock private ObjectMapper objectMapper;
@@ -58,15 +56,30 @@ class WorkSpaceOverviewQueryServiceTest {
   void setUp() {
     overviewQueryService =
         new WorkSpaceOverviewQueryService(
-            workSpaceRepository,
-            workSpaceMemberRepository,
+            workSpaceQueryService,
             workSpaceMemberQueryService,
-            userRepository,
+            userQueryService,
             documentQueryApi,
-            docChunkRepository,
-            aiProperties,
+            aiStatsQueryApi,
             redisTemplate,
             objectMapper);
+  }
+
+  private WorkSpaceDTO createWorkspaceDTO(
+      Long id, String name, String code, Long ownerId, Integer maxMembers, WorkSpaceAclEnum acl) {
+    return new WorkSpaceDTO(
+        id,
+        name,
+        "简介",
+        code,
+        "http://avatar.png",
+        ownerId,
+        maxMembers,
+        WorkSpaceStatusEnum.NORMAL,
+        acl,
+        null,
+        true,
+        LocalDateTime.now());
   }
 
   @Test
@@ -80,7 +93,7 @@ class WorkSpaceOverviewQueryServiceTest {
   @Test
   @DisplayName("空间不存在时抛出 BadRequest")
   void testGetOverview_WorkspaceNotFound_ThrowsException() {
-    when(workSpaceRepository.findById(999L)).thenReturn(Optional.empty());
+    when(workSpaceQueryService.getById(999L)).thenReturn(Optional.empty());
 
     assertThatThrownBy(() -> overviewQueryService.getOverview(999L, 1L))
         .isInstanceOf(BusinessException.class)
@@ -90,12 +103,8 @@ class WorkSpaceOverviewQueryServiceTest {
   @Test
   @DisplayName("私有空间且非成员访问时抛出 Forbidden")
   void testGetOverview_PrivateWorkspace_NonMember_ThrowsForbidden() {
-    WorkSpaceEntity ws =
-        WorkSpaceEntity.create(
-            "机密空间", "secret-ws", "内部机密", null, 100L, 50, WorkSpaceAclEnum.PRIVATE);
-    ReflectionTestUtils.setField(ws, "id", 10L);
-
-    when(workSpaceRepository.findById(10L)).thenReturn(Optional.of(ws));
+    WorkSpaceDTO ws = createWorkspaceDTO(10L, "机密空间", "secret-ws", 100L, 50, WorkSpaceAclEnum.PRIVATE);
+    when(workSpaceQueryService.getById(10L)).thenReturn(Optional.of(ws));
     when(workSpaceMemberQueryService.isMember(10L, 200L)).thenReturn(false);
 
     assertThatThrownBy(() -> overviewQueryService.getOverview(10L, 200L))
@@ -106,11 +115,8 @@ class WorkSpaceOverviewQueryServiceTest {
   @Test
   @DisplayName("Redis 缓存命中时直接反序列化返回，不打数据库")
   void testGetOverview_CacheHit_ReturnsCachedResponse() throws Exception {
-    WorkSpaceEntity ws =
-        WorkSpaceEntity.create("测试空间", "test-ws", "测试描述", null, 1L, 100, WorkSpaceAclEnum.PUBLIC);
-    ReflectionTestUtils.setField(ws, "id", 1L);
-
-    when(workSpaceRepository.findById(1L)).thenReturn(Optional.of(ws));
+    WorkSpaceDTO ws = createWorkspaceDTO(1L, "测试空间", "test-ws", 1L, 100, WorkSpaceAclEnum.PUBLIC);
+    when(workSpaceQueryService.getById(1L)).thenReturn(Optional.of(ws));
     when(redisTemplate.opsForValue()).thenReturn(valueOperations);
     when(valueOperations.get("ll:ws:overview:1")).thenReturn("{\"meta\":{}}");
 
@@ -133,18 +139,8 @@ class WorkSpaceOverviewQueryServiceTest {
     Long ownerId = 100L;
     Long authorId = 101L;
 
-    WorkSpaceEntity ws =
-        WorkSpaceEntity.create(
-            "开源协作组",
-            "open-team",
-            "简介",
-            "http://avatar.png",
-            ownerId,
-            60,
-            WorkSpaceAclEnum.INTERNAL);
-    ReflectionTestUtils.setField(ws, "id", wsId);
-
-    when(workSpaceRepository.findById(wsId)).thenReturn(Optional.of(ws));
+    WorkSpaceDTO ws = createWorkspaceDTO(wsId, "开源协作组", "open-team", ownerId, 60, WorkSpaceAclEnum.INTERNAL);
+    when(workSpaceQueryService.getById(wsId)).thenReturn(Optional.of(ws));
     when(workSpaceMemberQueryService.isMember(wsId, ownerId)).thenReturn(true);
     when(redisTemplate.opsForValue()).thenReturn(valueOperations);
     when(valueOperations.get("ll:ws:overview:1")).thenReturn(null);
@@ -161,7 +157,7 @@ class WorkSpaceOverviewQueryServiceTest {
             "发布文档",
             2,
             "v1.1",
-            io.lexiloom.application.document.statemachine.DocumentStateEnum.APPROVED,
+            DocumentStateEnum.APPROVED,
             authorId,
             LocalDateTime.now());
     WorkspaceDocStatsDTO.CategoryDistributionDTO catDist =
@@ -193,26 +189,25 @@ class WorkSpaceOverviewQueryServiceTest {
     when(documentQueryApi.getWorkspaceDocStats(wsId)).thenReturn(docStats);
 
     // Mock Members
-    when(workSpaceMemberRepository.countByWorkSpaceId(wsId)).thenReturn(12L);
-    when(workSpaceMemberRepository.countByWorkSpaceIdAndRole(wsId, WorkSpaceRoleEnum.OWNER))
+    when(workSpaceMemberQueryService.countMembers(wsId)).thenReturn(12L);
+    when(workSpaceMemberQueryService.countMembersByRole(wsId, WorkSpaceRoleEnum.OWNER))
         .thenReturn(1L);
-    when(workSpaceMemberRepository.countByWorkSpaceIdAndRole(wsId, WorkSpaceRoleEnum.ADMIN))
+    when(workSpaceMemberQueryService.countMembersByRole(wsId, WorkSpaceRoleEnum.ADMIN))
         .thenReturn(2L);
-    when(workSpaceMemberRepository.countByWorkSpaceIdAndRole(wsId, WorkSpaceRoleEnum.MEMBER))
+    when(workSpaceMemberQueryService.countMembersByRole(wsId, WorkSpaceRoleEnum.MEMBER))
         .thenReturn(8L);
-    when(workSpaceMemberRepository.countByWorkSpaceIdAndRole(wsId, WorkSpaceRoleEnum.GUEST))
+    when(workSpaceMemberQueryService.countMembersByRole(wsId, WorkSpaceRoleEnum.GUEST))
         .thenReturn(1L);
 
     // Mock AI DocChunks
-    when(docChunkRepository.countByWorkspaceId("1")).thenReturn(240L);
-    when(aiProperties.isEnabled()).thenReturn(true);
+    when(aiStatsQueryApi.countChunksByWorkspaceId(wsId)).thenReturn(240L);
+    when(aiStatsQueryApi.isAiEnabled()).thenReturn(true);
 
     // Mock Users
-    UserEntity authorUser = new UserEntity();
-    ReflectionTestUtils.setField(authorUser, "id", authorId);
-    authorUser.setUserName("张工");
-    authorUser.setAvatarUrl("http://avatar.com/zhang.jpg");
-    when(userRepository.findAllById(any())).thenReturn(List.of(authorUser));
+    UserDTO authorUser =
+        new UserDTO(
+            authorId, "openId", "unionId", "张工", "http://avatar.com/zhang.jpg", "zhang@test.com", true, "13800000000", "+86", true);
+    when(userQueryService.findUserMapByIds(any())).thenReturn(Map.of(authorId, authorUser));
 
     when(objectMapper.writeValueAsString(any())).thenReturn("{\"cached\":true}");
 

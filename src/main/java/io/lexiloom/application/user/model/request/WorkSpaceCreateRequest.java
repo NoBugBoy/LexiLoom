@@ -13,4 +13,17 @@ public record WorkSpaceCreateRequest(
     @Size(max = 500, message = "团队简介长度不能超过500个字符") String description,
     String avatarUrl,
     Integer maxMembers,
-    WorkSpaceAclEnum visibility) {}
+    WorkSpaceAclEnum visibility,
+    Long parentId,
+    Boolean childAssocEnabled) {
+
+  public WorkSpaceCreateRequest(
+      String name,
+      String code,
+      String description,
+      String avatarUrl,
+      Integer maxMembers,
+      WorkSpaceAclEnum visibility) {
+    this(name, code, description, avatarUrl, maxMembers, visibility, null, Boolean.TRUE);
+  }
+}

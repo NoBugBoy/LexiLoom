@@ -53,6 +53,8 @@ lexiloom:
       top-k: 20
       vector-top-k: 15
       lexical-top-k: 5
+      max-top-k: ${AI_RAG_MAX_TOP_K:50}
+      min-top-k: ${AI_RAG_MIN_TOP_K:20}
       # 真实 Cosine 相似度阈值 (非重排模拟分)，0.30 对齐 1024 维中文向量模型分布
       similarity-threshold: 0.30
       # 单篇文档在同一批结果中的最大切片数，配合两阶段回填保证多文档多样性与单文档不漏切片 (<=0 关闭)

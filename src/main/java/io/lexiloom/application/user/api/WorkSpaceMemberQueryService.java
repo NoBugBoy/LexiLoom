@@ -25,4 +25,10 @@ public interface WorkSpaceMemberQueryService {
 
   /** 校验用户在团队中是否拥有不低于 requiredRole 的权限 */
   boolean hasRole(Long workSpaceId, Long userId, WorkSpaceRoleEnum requiredRole);
+
+  /** 统计团队当前有效成员总数 */
+  long countMembers(Long workSpaceId);
+
+  /** 统计团队指定角色的成员数量 */
+  long countMembersByRole(Long workSpaceId, WorkSpaceRoleEnum role);
 }

@@ -80,6 +80,10 @@ public class DocSearchDocument {
   @Field(type = FieldType.Keyword)
   private String status;
 
+  /** 访问控制级别：PUBLIC / INTERNAL / PRIVATE */
+  @Field(type = FieldType.Keyword)
+  private String visibility;
+
   /** 发布时间 (用于检索结果按时间排序) */
   @Field(
       type = FieldType.Date,

@@ -12,6 +12,7 @@ import io.lexiloom.application.user.model.response.WorkSpaceResponse;
 import io.lexiloom.application.user.repository.WorkSpaceMemberRepository;
 import io.lexiloom.application.user.repository.WorkSpaceRepository;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -85,5 +86,27 @@ public class WorkSpaceQueryServiceImpl implements WorkSpaceQueryService {
     return workSpaceRepository.findAllById(workSpaceIds).stream()
         .map(workSpaceMapper::toResponse)
         .toList();
+  }
+
+  @Override
+  public List<Long> listChildWorkspaceIds(Long parentWorkspaceId) {
+    if (parentWorkspaceId == null) {
+      return List.of();
+    }
+    return workSpaceRepository.findByParentIdAndChildAssocEnabledTrue(parentWorkspaceId).stream()
+        .map(WorkSpaceEntity::getId)
+        .filter(Objects::nonNull)
+        .toList();
+  }
+
+  @Override
+  public java.util.Map<Long, String> getWorkspaceNames(java.util.Collection<Long> workspaceIds) {
+    if (workspaceIds == null || workspaceIds.isEmpty()) {
+      return java.util.Map.of();
+    }
+    return workSpaceRepository.findAllById(workspaceIds).stream()
+        .collect(
+            java.util.stream.Collectors.toMap(
+                WorkSpaceEntity::getId, WorkSpaceEntity::getName, (a, b) -> a));
   }
 }

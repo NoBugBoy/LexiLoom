@@ -238,7 +238,11 @@ public class DefaultRagChatService implements RagChatService {
   }
 
   private List<CitationVO> performSearchAndBuildCitations(AiChatRequest request) {
-    int topK = aiProperties.getRag().getTopK();
+    int requestedTopK =
+        request.topK() != null ? request.topK() : aiProperties.getRag().getTopK();
+    int minTopK = aiProperties.getRag().getMinTopK();
+    int maxTopK = aiProperties.getRag().getMaxTopK();
+    int topK = Math.max(minTopK, Math.min(requestedTopK, maxTopK));
     double minScore = aiProperties.getRag().getSimilarityThreshold();
 
     Long currentUserId =
@@ -260,7 +264,8 @@ public class DefaultRagChatService implements RagChatService {
             List.of(),
             null,
             currentUserId,
-            isAdmin);
+            isAdmin,
+            request.weights());
 
     List<ScoredDocChunkVO> scoredChunks = hybridSearchQueryService.hybridSearch(searchCommand);
     return citationBuilder.buildCitations(scoredChunks);

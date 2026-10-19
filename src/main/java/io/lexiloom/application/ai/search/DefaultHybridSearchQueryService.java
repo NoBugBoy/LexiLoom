@@ -10,6 +10,7 @@ import io.lexiloom.application.ai.gateway.rerank.RerankCommand;
 import io.lexiloom.application.ai.gateway.rerank.RerankGateway;
 import io.lexiloom.application.ai.gateway.rerank.ScoredDocChunkVO;
 import io.lexiloom.application.ai.model.search.DocChunkDocument;
+import io.lexiloom.application.user.api.WorkSpaceQueryService;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -17,14 +18,15 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.elasticsearch.client.elc.NativeQuery;
 import org.springframework.data.elasticsearch.client.elc.NativeQueryBuilder;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.data.elasticsearch.core.SearchHits;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
 /**
@@ -40,7 +42,8 @@ import org.springframework.stereotype.Service;
  *             contextPrefix^0.5，best_fields + tie_breaker)，正文主导打分、文档级冗余字段降权以防同文档并列刷屏；
  *         <li>路径 2 (稠密向量检索)：基于 Elasticsearch 8.x kNN 检索 content_vector 向量相似度；
  *       </ul>
- *   <li>多租户过滤：双路检索强制附加 {@code workspaceId} 过滤，杜绝跨租户数据越权；
+ *   <li>多空间拓扑与安全围栏：主空间检索全量权限切片，直系子空间/横向空间强制仅检索 PUBLIC 切片；
+ *   <li>加权配额与余量补偿：前端实时传递 weights 比例分发召回名额，缺额空间自适应回补给主空间；
  *   <li>精排融合：委托 {@link RerankGateway}（NoOp / RRF / CrossEncoder）执行打分排序；
  *   <li>终态选择：真实向量余弦回填 + 相似度阈值过滤 + 文档级多样性上限 + Top-K 截取。
  * </ol>
@@ -48,13 +51,47 @@ import org.springframework.stereotype.Service;
 @Slf4j
 @Service
 @Primary
-@RequiredArgsConstructor
 public class DefaultHybridSearchQueryService implements HybridSearchQueryService {
 
   private final ElasticsearchOperations elasticsearchOperations;
   private final EmbeddingGateway embeddingGateway;
   private final RerankGateway rerankGateway;
   private final AiProperties aiProperties;
+  private final WorkSpaceQueryService workSpaceQueryService;
+  private final io.lexiloom.application.document.api.DocumentQueryApi documentQueryApi;
+
+  @Autowired
+  public DefaultHybridSearchQueryService(
+      ElasticsearchOperations elasticsearchOperations,
+      EmbeddingGateway embeddingGateway,
+      RerankGateway rerankGateway,
+      AiProperties aiProperties,
+      @Nullable WorkSpaceQueryService workSpaceQueryService,
+      @Nullable io.lexiloom.application.document.api.DocumentQueryApi documentQueryApi) {
+    this.elasticsearchOperations = elasticsearchOperations;
+    this.embeddingGateway = embeddingGateway;
+    this.rerankGateway = rerankGateway;
+    this.aiProperties = aiProperties;
+    this.workSpaceQueryService = workSpaceQueryService;
+    this.documentQueryApi = documentQueryApi;
+  }
+
+  public DefaultHybridSearchQueryService(
+      ElasticsearchOperations elasticsearchOperations,
+      EmbeddingGateway embeddingGateway,
+      RerankGateway rerankGateway,
+      AiProperties aiProperties,
+      @Nullable WorkSpaceQueryService workSpaceQueryService) {
+    this(elasticsearchOperations, embeddingGateway, rerankGateway, aiProperties, workSpaceQueryService, null);
+  }
+
+  public DefaultHybridSearchQueryService(
+      ElasticsearchOperations elasticsearchOperations,
+      EmbeddingGateway embeddingGateway,
+      RerankGateway rerankGateway,
+      AiProperties aiProperties) {
+    this(elasticsearchOperations, embeddingGateway, rerankGateway, aiProperties, null, null);
+  }
 
   @Override
   public List<ScoredDocChunkVO> hybridSearch(HybridSearchCommand command) {
@@ -63,9 +100,6 @@ public class DefaultHybridSearchQueryService implements HybridSearchQueryService
     }
 
     long startTime = System.currentTimeMillis();
-    int targetTopK = command.topK();
-    // 候选池需显著大于目标条数，才能为文档级多样性上限与真实相似度阈值留出足够筛选余量
-    int candidateLimit = Math.max(targetTopK * 5, 50);
 
     // 1. 获取问题向量 (优先使用入参自带的向量，无则调用 EmbeddingGateway 计算)
     float[] vector = command.queryVector();
@@ -80,35 +114,94 @@ public class DefaultHybridSearchQueryService implements HybridSearchQueryService
       }
     }
 
-    // 2. 路径 1: 词法全文召回 (BM25 + IK 分词)
+    RerankStrategyEnum strategy = rerankGateway != null ? rerankGateway.getStrategy() : null;
+    double minScoreThreshold = resolveMinScoreThreshold(command);
+    int maxChunksPerDocument = resolveMaxChunksPerDocument();
+
+    // 2. 检查多工作空间拓扑逻辑：若未指定单文档且存在多源配置与权重，走多空间加权召回
+    List<SourceMeta> sources =
+        (command.documentId() == null) ? resolveAvailableSources(command.workspaceId()) : List.of();
+    boolean hasMultiSource =
+        sources.size() > 1
+            && command.weights() != null
+            && !command.weights().isEmpty()
+            && command.weights().entrySet().stream()
+                .anyMatch(
+                    e ->
+                        sources.stream().anyMatch(s -> s.workspaceId().equals(e.getKey()))
+                            && e.getValue() != null
+                            && e.getValue() > 0);
+
+    int targetTopK = resolveTargetTopK(command, hasMultiSource);
+
+    List<ScoredDocChunkVO> finalResults;
+    if (hasMultiSource) {
+      finalResults =
+          executeMultiWorkspaceHybridSearch(
+              command,
+              vector,
+              sources,
+              targetTopK,
+              strategy,
+              minScoreThreshold,
+              maxChunksPerDocument);
+    } else {
+      finalResults =
+          executeSingleWorkspaceHybridSearch(
+              command,
+              vector,
+              targetTopK,
+              strategy,
+              minScoreThreshold,
+              maxChunksPerDocument);
+    }
+
+    long cost = System.currentTimeMillis() - startTime;
+    log.info(
+        "【HybridSearch】检索与重排完成: query=[{}], 多源={}, 精排输出数={}, 阈值={}, 单文档切片上限={}, 耗时={}ms, 策略={}",
+        command.query(),
+        hasMultiSource,
+        finalResults.size(),
+        minScoreThreshold,
+        maxChunksPerDocument,
+        cost,
+        strategy);
+
+    return List.copyOf(finalResults);
+  }
+
+  /** 单工作空间混合检索执行流程 (保持 100% 向后兼容) */
+  private List<ScoredDocChunkVO> executeSingleWorkspaceHybridSearch(
+      HybridSearchCommand command,
+      float[] vector,
+      int targetTopK,
+      RerankStrategyEnum strategy,
+      double minScoreThreshold,
+      int maxChunksPerDocument) {
+
+    int candidateLimit = Math.max(targetTopK * 5, 50);
+
+    // 1. 词法全文召回 (BM25 + IK 分词)
     List<DocChunkDocument> bm25Candidates = searchLexical(command, candidateLimit);
 
-    // 3. 路径 2: 稠密向量召回 (ES 8.x kNN Dense Vector)
+    // 2. 稠密向量召回 (ES 8.x kNN Dense Vector)
     List<DocChunkDocument> knnCandidates =
         (vector != null && vector.length > 0)
             ? searchVector(command, vector, candidateLimit)
             : List.of();
 
     log.info(
-        "【HybridSearch】双路初筛召回完成: query=[{}], workspaceId={}, BM25候选数={}, kNN候选数={}",
+        "【HybridSearch】单空间双路初筛完成: query=[{}], workspaceId={}, BM25候选数={}, kNN候选数={}",
         command.query(),
         command.workspaceId(),
         bm25Candidates.size(),
         knnCandidates.size());
 
-    // 4. 若双路均未命中，直接返回空
     if (bm25Candidates.isEmpty() && knnCandidates.isEmpty()) {
       return List.of();
     }
 
-    // 5. 候选集组装与重排路由
-    RerankStrategyEnum strategy = rerankGateway != null ? rerankGateway.getStrategy() : null;
-    double minScoreThreshold = resolveMinScoreThreshold(command);
-    int maxChunksPerDocument = resolveMaxChunksPerDocument();
-
-    List<ScoredDocChunkVO> finalResults;
     if (strategy == RerankStrategyEnum.RRF) {
-      // RRF 算法专门需要多路排名数据进行倒数排名融合累加，保留双路原序列
       List<DocChunkDocument> candidatesForRerank =
           new ArrayList<>(bm25Candidates.size() + knnCandidates.size());
       candidatesForRerank.addAll(bm25Candidates);
@@ -122,59 +215,147 @@ public class DefaultHybridSearchQueryService implements HybridSearchQueryService
       List<ScoredDocChunkVO> rerankedResults =
           rerankGateway != null ? rerankGateway.rerank(rerankCommand) : List.of();
 
-      finalResults =
-          selectFinalResults(
+      return selectFinalResults(
+          rerankedResults,
+          command.query(),
+          vector,
+          strategy,
+          minScoreThreshold,
+          maxChunksPerDocument,
+          targetTopK);
+    } else if (knnCandidates.isEmpty()) {
+      RerankCommand rerankCommand =
+          RerankCommand.of(
+              command.query(), bm25Candidates, Math.max(targetTopK, bm25Candidates.size()));
+      List<ScoredDocChunkVO> rerankedResults =
+          rerankGateway != null ? rerankGateway.rerank(rerankCommand) : List.of();
+      return selectFinalResults(
               rerankedResults,
               command.query(),
               vector,
               strategy,
               minScoreThreshold,
               maxChunksPerDocument,
-              targetTopK);
-    } else if (knnCandidates.isEmpty()) {
-      // 纯词法回退场景 (如未提取到向量或向量索引无命中)：全部配额由 BM25 承担
-      RerankCommand rerankCommand =
-          RerankCommand.of(
-              command.query(), bm25Candidates, Math.max(targetTopK, bm25Candidates.size()));
-      List<ScoredDocChunkVO> rerankedResults =
-          rerankGateway != null ? rerankGateway.rerank(rerankCommand) : List.of();
-      finalResults =
-          selectFinalResults(
-                  rerankedResults,
-                  command.query(),
-                  vector,
-                  strategy,
-                  minScoreThreshold,
-                  maxChunksPerDocument,
-                  targetTopK)
-              .stream()
-              .map(vo -> ScoredDocChunkVO.of(vo.chunk(), vo.score(), vo.originalRank(), "BM25"))
-              .toList();
+              targetTopK)
+          .stream()
+          .map(vo -> ScoredDocChunkVO.of(vo.chunk(), vo.score(), vo.originalRank(), "BM25"))
+          .toList();
     } else {
-      // 配额隔离混合策略：仅将向量检索结果交由 Rerank 精排截取 Top-15，额外保留 5 条 BM25 词法结果，共 20 条交给 LLM
-      finalResults =
-          executeQuotaHybridSearch(
-              command,
-              vector,
-              bm25Candidates,
-              knnCandidates,
-              strategy,
-              minScoreThreshold,
-              maxChunksPerDocument,
-              targetTopK);
+      return executeQuotaHybridSearch(
+          command,
+          vector,
+          bm25Candidates,
+          knnCandidates,
+          strategy,
+          minScoreThreshold,
+          maxChunksPerDocument,
+          targetTopK);
+    }
+  }
+
+  /** 多工作空间加权召回、余量自适应补偿与统一 Rerank 精排 */
+  private List<ScoredDocChunkVO> executeMultiWorkspaceHybridSearch(
+      HybridSearchCommand command,
+      float[] vector,
+      List<SourceMeta> sources,
+      int targetTopK,
+      RerankStrategyEnum strategy,
+      double minScoreThreshold,
+      int maxChunksPerDocument) {
+
+    Long primaryId = command.workspaceId();
+    Map<Long, Integer> quotas = calculateQuotas(targetTopK, command.weights(), sources, primaryId);
+
+    // 1. 各关联空间分别召回 (按需过滤 PUBLIC 或细粒度授权文档)，统计不足配额差额
+    Map<Long, List<DocChunkDocument>> selectedChunksBySpace = new HashMap<>();
+    int totalDeficit = 0;
+
+    for (SourceMeta source : sources) {
+      if (source.workspaceId().equals(primaryId)) {
+        continue;
+      }
+      int quota = quotas.getOrDefault(source.workspaceId(), 0);
+      if (quota <= 0) {
+        selectedChunksBySpace.put(source.workspaceId(), List.of());
+        continue;
+      }
+
+      // 若为显式横向关联且未授权任何文档，跳过召回并将配额补偿回主空间
+      if ("EXPLICIT".equals(source.sourceType())
+          && (source.allowedDocIds() == null || source.allowedDocIds().isEmpty())) {
+        log.info("【HybridSearch】横向关联空间未授权任何文档，跳过召回并补偿配额: workspaceId={}", source.workspaceId());
+        selectedChunksBySpace.put(source.workspaceId(), List.of());
+        totalDeficit += quota;
+        continue;
+      }
+
+      int candidateLimit = Math.max(quota * 4, 20);
+      List<DocChunkDocument> bm25 =
+          searchLexicalForWorkspace(
+              command, source.workspaceId(), source.onlyPublic(), source.allowedDocIds(), candidateLimit);
+      List<DocChunkDocument> knn =
+          (vector != null && vector.length > 0)
+              ? searchVectorForWorkspace(
+                  command, vector, source.workspaceId(), source.onlyPublic(), source.allowedDocIds(), candidateLimit)
+              : List.of();
+
+      List<DocChunkDocument> merged = interleaveAndDeduplicate(knn, bm25);
+      int actual = Math.min(quota, merged.size());
+      selectedChunksBySpace.put(source.workspaceId(), merged.subList(0, actual));
+
+      if (actual < quota) {
+        totalDeficit += (quota - actual);
+      }
     }
 
-    long cost = System.currentTimeMillis() - startTime;
-    log.info(
-        "【HybridSearch】双路召回与重排完成: query=[{}], 精排输出数={}, 阈值={}, 单文档切片上限={}, 耗时={}ms, 策略={}",
-        command.query(),
-        finalResults.size(),
-        minScoreThreshold,
-        maxChunksPerDocument,
-        cost,
-        strategy);
+    // 2. 主空间召回：基础配额 + 关联空间缺额自适应补偿
+    int primaryQuota = quotas.getOrDefault(primaryId, targetTopK) + totalDeficit;
+    int primaryCandidateLimit = Math.max(primaryQuota * 4, Math.max(targetTopK * 4, 50));
+    List<DocChunkDocument> primaryBm25 =
+        searchLexicalForWorkspace(command, primaryId, false, null, primaryCandidateLimit);
+    List<DocChunkDocument> primaryKnn =
+        (vector != null && vector.length > 0)
+            ? searchVectorForWorkspace(command, vector, primaryId, false, null, primaryCandidateLimit)
+            : List.of();
 
-    return List.copyOf(finalResults);
+    List<DocChunkDocument> primaryMerged = interleaveAndDeduplicate(primaryKnn, primaryBm25);
+    int primaryActual = Math.min(primaryQuota, primaryMerged.size());
+    selectedChunksBySpace.put(primaryId, primaryMerged.subList(0, primaryActual));
+
+    // 3. 汇聚所有空间召回的候选切片并去重
+    List<DocChunkDocument> allCandidates = new ArrayList<>();
+    Set<String> seenIds = new HashSet<>();
+    for (List<DocChunkDocument> list : selectedChunksBySpace.values()) {
+      for (DocChunkDocument doc : list) {
+        if (doc != null && doc.getId() != null && seenIds.add(doc.getId())) {
+          allCandidates.add(doc);
+        }
+      }
+    }
+
+    if (allCandidates.isEmpty()) {
+      return List.of();
+    }
+
+    // 4. 统一 Rerank 精排：多源候选池统一送入模型重排，消除跨空间得分尺度差异
+    if (strategy != null && rerankGateway != null && strategy != RerankStrategyEnum.NONE) {
+      RerankCommand rerankCommand =
+          RerankCommand.of(command.query(), allCandidates, Math.max(targetTopK, allCandidates.size()));
+      List<ScoredDocChunkVO> rerankedResults = rerankGateway.rerank(rerankCommand);
+      return selectFinalResults(
+          rerankedResults, command.query(), vector, strategy, minScoreThreshold, maxChunksPerDocument, targetTopK);
+    }
+
+    // 降级：无 Rerank 时按余弦相似度与平滑排位选择
+    List<ScoredDocChunkVO> fallbackList = new ArrayList<>(allCandidates.size());
+    for (int i = 0; i < allCandidates.size(); i++) {
+      DocChunkDocument doc = allCandidates.get(i);
+      Double cos = cosineSimilarity(vector, doc.getContentVector());
+      double score = cos != null ? cos : (1.0 / (60.0 + (i + 1)));
+      fallbackList.add(ScoredDocChunkVO.of(doc, score, i + 1, "HYBRID"));
+    }
+    return selectFinalResults(
+        fallbackList, command.query(), vector, strategy, minScoreThreshold, maxChunksPerDocument, targetTopK);
   }
 
   /** 解析最低相似度阈值：优先取调用方入参，其次取全局 RAG 配置 */
@@ -403,8 +584,24 @@ public class DefaultHybridSearchQueryService implements HybridSearchQueryService
     return dot / (Math.sqrt(queryNorm) * Math.sqrt(chunkNorm));
   }
 
-  /** 执行 BM25 词法全文检索 */
+  /** 执行 BM25 词法全文检索 (同空间全量/ACL权限) */
   private List<DocChunkDocument> searchLexical(HybridSearchCommand command, int limit) {
+    return searchLexicalForWorkspace(command, command.workspaceId(), false, limit);
+  }
+
+  /** 执行指定工作空间的 BM25 词法全文检索 (兼容 4 参数重载) */
+  private List<DocChunkDocument> searchLexicalForWorkspace(
+      HybridSearchCommand command, Long workspaceId, boolean onlyPublic, int limit) {
+    return searchLexicalForWorkspace(command, workspaceId, onlyPublic, null, limit);
+  }
+
+  /** 执行指定工作空间的 BM25 词法全文检索 (支持细粒度授权文档与 PUBLIC 过滤) */
+  private List<DocChunkDocument> searchLexicalForWorkspace(
+      HybridSearchCommand command,
+      Long workspaceId,
+      boolean onlyPublic,
+      List<Long> allowedDocIds,
+      int limit) {
     try {
       String lexicalQuery = cleanLexicalQuery(command.query());
       NativeQueryBuilder builder = NativeQuery.builder();
@@ -412,10 +609,6 @@ public class DefaultHybridSearchQueryService implements HybridSearchQueryService
           q ->
               q.bool(
                   b -> {
-                    // Must: 多字段 IK 分词加权匹配。
-                    // 采用 best_fields + tie_breaker 组合：切片正文权重最高，标题/章节路径仅作辅助加权。
-                    // 词法检索采用 cleanLexicalQuery 剥离自然语言提问与格式指令虚词（如“有哪些”、“要返回”），
-                    // 确保聚焦技术核心实体词（如 S16、数据库表、表名、表注释），杜绝无关接口返回文档刷屏。
                     b.must(
                         m ->
                             m.multiMatch(
@@ -430,13 +623,13 @@ public class DefaultHybridSearchQueryService implements HybridSearchQueryService
                                                 "title^1",
                                                 "headerPath^1.5"))));
 
-                    // Filter 1: 工作区隔离过滤器 (强安全隔离)
+                    // Filter 1: 工作区隔离过滤器
                     b.filter(
                         f ->
                             f.term(
                                 t ->
                                     t.field("workspaceId")
-                                        .value(String.valueOf(command.workspaceId()))));
+                                        .value(String.valueOf(workspaceId))));
 
                     // Filter 2: 可选文档范围过滤
                     if (command.documentId() != null) {
@@ -465,8 +658,16 @@ public class DefaultHybridSearchQueryService implements HybridSearchQueryService
                       b.filter(f -> f.terms(ts -> ts.field("tags").terms(t -> t.value(tagValues))));
                     }
 
-                    // Filter 5: 文档可见性与租户细粒度 ACL 过滤
-                    applyAclFilter(b, command);
+                    // Filter 5: 文档可见性与租户细粒度 ACL 过滤 (优先应用细粒度授权文档名单)
+                    if (allowedDocIds != null && !allowedDocIds.isEmpty()) {
+                      List<FieldValue> docIdValues =
+                          allowedDocIds.stream().map(String::valueOf).map(FieldValue::of).toList();
+                      b.filter(f -> f.terms(ts -> ts.field("documentId").terms(t -> t.value(docIdValues))));
+                    } else if (onlyPublic) {
+                      b.filter(f -> f.term(t -> t.field("visibility").value("PUBLIC")));
+                    } else {
+                      applyAclFilter(b, command);
+                    }
 
                     return b;
                   }));
@@ -483,14 +684,34 @@ public class DefaultHybridSearchQueryService implements HybridSearchQueryService
           .toList();
     } catch (Exception e) {
       log.warn(
-          "【HybridSearch】BM25 词法全文检索异常: query=[{}], error={}", command.query(), e.getMessage());
+          "【HybridSearch】BM25 词法全文检索异常: workspaceId={}, query=[{}], error={}",
+          workspaceId,
+          command.query(),
+          e.getMessage());
       return List.of();
     }
   }
 
-  /** 执行 kNN 向量相似度检索 */
+  /** 执行 kNN 向量相似度检索 (同空间全量/ACL权限) */
   private List<DocChunkDocument> searchVector(
       HybridSearchCommand command, float[] queryVector, int limit) {
+    return searchVectorForWorkspace(command, queryVector, command.workspaceId(), false, null, limit);
+  }
+
+  /** 执行指定工作空间的 kNN 向量相似度检索 (兼容 5 参数重载) */
+  private List<DocChunkDocument> searchVectorForWorkspace(
+      HybridSearchCommand command, float[] queryVector, Long workspaceId, boolean onlyPublic, int limit) {
+    return searchVectorForWorkspace(command, queryVector, workspaceId, onlyPublic, null, limit);
+  }
+
+  /** 执行指定工作空间的 kNN 向量相似度检索 (支持细粒度授权文档与 PUBLIC 过滤) */
+  private List<DocChunkDocument> searchVectorForWorkspace(
+      HybridSearchCommand command,
+      float[] queryVector,
+      Long workspaceId,
+      boolean onlyPublic,
+      List<Long> allowedDocIds,
+      int limit) {
     try {
       List<Float> vectorList = new ArrayList<>(queryVector.length);
       for (float f : queryVector) {
@@ -514,7 +735,7 @@ public class DefaultHybridSearchQueryService implements HybridSearchQueryService
                                       bf.term(
                                           t ->
                                               t.field("workspaceId")
-                                                  .value(String.valueOf(command.workspaceId()))));
+                                                  .value(String.valueOf(workspaceId))));
 
                               // Filter 2: 可选文档范围过滤
                               if (command.documentId() != null) {
@@ -546,8 +767,24 @@ public class DefaultHybridSearchQueryService implements HybridSearchQueryService
                                             ts -> ts.field("tags").terms(t -> t.value(tagValues))));
                               }
 
-                              // Filter 5: 文档可见性与租户细粒度 ACL 过滤
-                              applyAclFilter(b, command);
+                              // Filter 5: 文档可见性与租户细粒度 ACL 过滤 (优先应用细粒度授权文档名单)
+                              if (allowedDocIds != null && !allowedDocIds.isEmpty()) {
+                                List<FieldValue> docIdValues =
+                                    allowedDocIds.stream().map(String::valueOf).map(FieldValue::of).toList();
+                                b.filter(
+                                    bf ->
+                                        bf.terms(
+                                            ts -> ts.field("documentId").terms(t -> t.value(docIdValues))));
+                              } else if (onlyPublic) {
+                                b.filter(
+                                    bf ->
+                                        bf.term(
+                                            t ->
+                                                t.field("visibility")
+                                                    .value("PUBLIC")));
+                              } else {
+                                applyAclFilter(b, command);
+                              }
 
                               return b;
                             }));
@@ -565,7 +802,11 @@ public class DefaultHybridSearchQueryService implements HybridSearchQueryService
           .map(org.springframework.data.elasticsearch.core.SearchHit::getContent)
           .toList();
     } catch (Exception e) {
-      log.warn("【HybridSearch】kNN 向量检索异常: query=[{}], error={}", command.query(), e.getMessage());
+      log.warn(
+          "【HybridSearch】kNN 向量检索异常: workspaceId={}, query=[{}], error={}",
+          workspaceId,
+          command.query(),
+          e.getMessage());
       return List.of();
     }
   }
@@ -814,4 +1055,121 @@ public class DefaultHybridSearchQueryService implements HybridSearchQueryService
   private int resolveLexicalTopK(int totalTopK, int vectorQuota) {
     return Math.max(0, totalTopK - vectorQuota);
   }
+
+  private int resolveTargetTopK(HybridSearchCommand command, boolean hasMultiSource) {
+    int minTopK =
+        (aiProperties != null && aiProperties.getRag() != null)
+            ? aiProperties.getRag().getMinTopK()
+            : 20;
+    int maxTopK =
+        (aiProperties != null && aiProperties.getRag() != null)
+            ? aiProperties.getRag().getMaxTopK()
+            : 50;
+
+    int requested = command.topK();
+    if (hasMultiSource) {
+      if (requested <= 0 || requested < minTopK) {
+        return minTopK;
+      }
+      return Math.min(requested, maxTopK);
+    }
+
+    if (requested > 0) {
+      return Math.min(requested, maxTopK);
+    }
+    if (aiProperties != null && aiProperties.getRag() != null) {
+      return aiProperties.getRag().getTopK();
+    }
+    return minTopK;
+  }
+
+  private List<SourceMeta> resolveAvailableSources(Long primaryId) {
+    List<SourceMeta> sources = new ArrayList<>();
+    sources.add(new SourceMeta(primaryId, "PRIMARY", false, null));
+
+    if (workSpaceQueryService != null) {
+      try {
+        List<Long> childIds = workSpaceQueryService.listChildWorkspaceIds(primaryId);
+        if (childIds != null) {
+          for (Long childId : childIds) {
+            if (childId != null && !childId.equals(primaryId)) {
+              sources.add(new SourceMeta(childId, "CHILD_AUTO", true, null));
+            }
+          }
+        }
+      } catch (Exception e) {
+        log.warn("【HybridSearch】查询子工作空间异常: primaryId={}, error={}", primaryId, e.getMessage());
+      }
+    }
+
+    if (documentQueryApi != null) {
+      try {
+        Map<Long, List<Long>> linkedDocMap =
+            documentQueryApi.getApprovedLinkedWorkspaceDocIds(primaryId);
+        if (linkedDocMap != null) {
+          for (Map.Entry<Long, List<Long>> entry : linkedDocMap.entrySet()) {
+            Long linkedId = entry.getKey();
+            List<Long> docIds = entry.getValue();
+            if (linkedId != null
+                && !linkedId.equals(primaryId)
+                && sources.stream().noneMatch(s -> s.workspaceId().equals(linkedId))) {
+              sources.add(new SourceMeta(linkedId, "EXPLICIT", false, docIds));
+            }
+          }
+        }
+      } catch (Exception e) {
+        log.warn("【HybridSearch】查询横向关联空间及文档清单异常: primaryId={}, error={}", primaryId, e.getMessage());
+      }
+    }
+
+    return sources;
+  }
+
+  private Map<Long, Integer> calculateQuotas(
+      int targetTopK,
+      Map<Long, Integer> weights,
+      List<SourceMeta> sources,
+      Long primaryId) {
+
+    Map<Long, Integer> allocated = new HashMap<>();
+    if (weights == null || weights.isEmpty()) {
+      allocated.put(primaryId, targetTopK);
+      return allocated;
+    }
+
+    Map<Long, Integer> validWeights = new HashMap<>();
+    int sum = 0;
+    for (SourceMeta meta : sources) {
+      Integer w = weights.get(meta.workspaceId());
+      if (w != null && w > 0) {
+        validWeights.put(meta.workspaceId(), w);
+        sum += w;
+      } else {
+        validWeights.put(meta.workspaceId(), 0);
+      }
+    }
+
+    if (sum <= 0) {
+      allocated.put(primaryId, targetTopK);
+      return allocated;
+    }
+
+    int allocatedSum = 0;
+    for (SourceMeta meta : sources) {
+      int w = validWeights.getOrDefault(meta.workspaceId(), 0);
+      int quota = (int) Math.floor((double) targetTopK * w / sum);
+      allocated.put(meta.workspaceId(), quota);
+      allocatedSum += quota;
+    }
+
+    int remainder = targetTopK - allocatedSum;
+    if (remainder > 0) {
+      allocated.put(primaryId, allocated.getOrDefault(primaryId, 0) + remainder);
+    }
+
+    return allocated;
+  }
+
+  private record SourceMeta(
+      Long workspaceId, String sourceType, boolean onlyPublic, List<Long> allowedDocIds) {}
 }

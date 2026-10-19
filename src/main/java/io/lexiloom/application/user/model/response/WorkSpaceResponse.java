@@ -14,4 +14,6 @@ public record WorkSpaceResponse(
     Integer maxMembers,
     WorkSpaceStatusEnum status,
     WorkSpaceAclEnum visibility,
+    Long parentId,
+    Boolean childAssocEnabled,
     LocalDateTime createTime) {}

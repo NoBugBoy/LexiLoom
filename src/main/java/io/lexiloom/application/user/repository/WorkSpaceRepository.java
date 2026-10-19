@@ -12,4 +12,8 @@ public interface WorkSpaceRepository extends BaseRepository<WorkSpaceEntity> {
   Optional<WorkSpaceEntity> findByCode(String code);
 
   boolean existsByCode(String code);
+
+  java.util.List<WorkSpaceEntity> findByParentId(Long parentId);
+
+  java.util.List<WorkSpaceEntity> findByParentIdAndChildAssocEnabledTrue(Long parentId);
 }

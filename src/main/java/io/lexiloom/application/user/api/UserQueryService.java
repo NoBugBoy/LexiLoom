@@ -31,4 +31,13 @@ public interface UserQueryService {
    * @return 匹配的用户；不存在时返回 empty
    */
   Optional<UserEntity> getUserByEmail(String email);
+
+  /**
+   * 批量查询用户传输对象映射 (Key: userId, Value: UserDTO)
+   *
+   * @param userIds 用户 ID 集合
+   * @return 用户传输对象映射
+   */
+  java.util.Map<Long, io.lexiloom.application.user.api.dto.UserDTO> findUserMapByIds(
+      java.util.Collection<Long> userIds);
 }

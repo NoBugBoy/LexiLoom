@@ -17,8 +17,10 @@ import io.lexiloom.application.ai.gateway.rerank.RerankGateway;
 import io.lexiloom.application.ai.gateway.rerank.ScoredDocChunkVO;
 import io.lexiloom.application.ai.model.search.DocChunkDocument;
 import io.lexiloom.application.exception.BusinessException;
+import io.lexiloom.application.user.api.WorkSpaceQueryService;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -37,6 +39,8 @@ class HybridSearchQueryServiceTest {
   @Mock private ElasticsearchOperations elasticsearchOperations;
   @Mock private EmbeddingGateway embeddingGateway;
   @Mock private RerankGateway rerankGateway;
+  @Mock private WorkSpaceQueryService workSpaceQueryService;
+  @Mock private io.lexiloom.application.document.api.DocumentQueryApi documentQueryApi;
 
   private AiProperties aiProperties;
   private DefaultHybridSearchQueryService service;
@@ -46,7 +50,12 @@ class HybridSearchQueryServiceTest {
     aiProperties = new AiProperties();
     service =
         new DefaultHybridSearchQueryService(
-            elasticsearchOperations, embeddingGateway, rerankGateway, aiProperties);
+            elasticsearchOperations,
+            embeddingGateway,
+            rerankGateway,
+            aiProperties,
+            workSpaceQueryService,
+            documentQueryApi);
   }
 
   @SuppressWarnings("unchecked")
@@ -593,8 +602,9 @@ class HybridSearchQueryServiceTest {
             .build();
 
     SearchHits<DocChunkDocument> hits = createSearchHits(List.of(doc));
+    SearchHits<DocChunkDocument> emptyHits = createSearchHits(List.of());
     when(elasticsearchOperations.search(any(NativeQuery.class), eq(DocChunkDocument.class)))
-        .thenReturn(hits, createSearchHits(List.of()));
+        .thenReturn(hits, emptyHits);
     when(rerankGateway.getStrategy()).thenReturn(RerankStrategyEnum.NONE);
     when(rerankGateway.rerank(any(RerankCommand.class)))
         .thenAnswer(inv -> List.of(ScoredDocChunkVO.of(doc, 0.9, 1)));
@@ -634,8 +644,9 @@ class HybridSearchQueryServiceTest {
             .build();
 
     SearchHits<DocChunkDocument> hits = createSearchHits(List.of(doc));
+    SearchHits<DocChunkDocument> emptyHits = createSearchHits(List.of());
     when(elasticsearchOperations.search(any(NativeQuery.class), eq(DocChunkDocument.class)))
-        .thenReturn(hits, createSearchHits(List.of()));
+        .thenReturn(hits, emptyHits);
     when(rerankGateway.getStrategy()).thenReturn(RerankStrategyEnum.NONE);
     when(rerankGateway.rerank(any(RerankCommand.class)))
         .thenAnswer(inv -> List.of(ScoredDocChunkVO.of(doc, 0.9, 1)));
@@ -658,4 +669,365 @@ class HybridSearchQueryServiceTest {
     var shouldClauses = aclFilterOpt.get().bool().should();
     assertThat(shouldClauses).hasSize(3); // 1. PUBLIC/INTERNAL, 2. 自己PRIVATE, 3. 历史无visibility
   }
+
+  @Test
+  @DisplayName("多工作空间加权混合检索：按权重动态分配配额，非主空间强制 PUBLIC 可见性围栏，并执行统一 Rerank 精排")
+  void testMultiWorkspaceHybridSearchWithWeightsAndPublicOnly() {
+    Long primaryWsId = 100L;
+    Long childWsId = 101L;
+    Long linkedWsId = 102L;
+
+    // 1. Mock 拓扑关系：100 下有子空间 101，且横向关联已审批 102 (精准授权文档 201)
+    when(workSpaceQueryService.listChildWorkspaceIds(primaryWsId))
+        .thenReturn(List.of(childWsId));
+    when(documentQueryApi.getApprovedLinkedWorkspaceDocIds(primaryWsId))
+        .thenReturn(Map.of(linkedWsId, List.of(201L)));
+
+    // 2. 模拟前端传递权重：主空间 80，子空间 10，关联空间 10，topK = 20 (配额: 16, 2, 2)
+    Map<Long, Integer> weights = Map.of(primaryWsId, 80, childWsId, 10, linkedWsId, 10);
+    HybridSearchCommand command =
+        new HybridSearchCommand(
+            primaryWsId, "多源跨空间检索", null, 20, null, null, List.of(), null, 999L, false, weights);
+
+    // 构造候选切片
+    List<DocChunkDocument> primaryDocs = new ArrayList<>();
+    for (int i = 0; i < 20; i++) {
+      primaryDocs.add(
+          DocChunkDocument.builder()
+              .id("p_" + i)
+              .workspaceId(String.valueOf(primaryWsId))
+              .documentId("doc_p")
+              .content("主空间文档" + i)
+              .build());
+    }
+    List<DocChunkDocument> childDocs = new ArrayList<>();
+    for (int i = 0; i < 5; i++) {
+      childDocs.add(
+          DocChunkDocument.builder()
+              .id("c_" + i)
+              .workspaceId(String.valueOf(childWsId))
+              .documentId("doc_c")
+              .visibility("PUBLIC")
+              .content("子空间公开文档" + i)
+              .build());
+    }
+    List<DocChunkDocument> linkedDocs = new ArrayList<>();
+    for (int i = 0; i < 5; i++) {
+      linkedDocs.add(
+          DocChunkDocument.builder()
+              .id("l_" + i)
+              .workspaceId(String.valueOf(linkedWsId))
+              .documentId("201")
+              .visibility("INTERNAL")
+              .content("关联空间授权文档" + i)
+              .build());
+    }
+
+    SearchHits<DocChunkDocument> primaryHits = createSearchHits(primaryDocs);
+    SearchHits<DocChunkDocument> childHits = createSearchHits(childDocs);
+    SearchHits<DocChunkDocument> linkedHits = createSearchHits(linkedDocs);
+    SearchHits<DocChunkDocument> emptyHits = createSearchHits(List.of());
+
+    when(elasticsearchOperations.search(any(NativeQuery.class), eq(DocChunkDocument.class)))
+        .thenAnswer(
+            inv -> {
+              NativeQuery q = inv.getArgument(0);
+              String ws = null;
+              if (q.getQuery() != null && q.getQuery().isBool()) {
+                for (var f : q.getQuery().bool().filter()) {
+                  if (f.isTerm() && "workspaceId".equals(f.term().field())) {
+                    ws = f.term().value().stringValue();
+                    break;
+                  }
+                }
+              } else if (q.getKnnSearches() != null && !q.getKnnSearches().isEmpty()) {
+                for (var knn : q.getKnnSearches()) {
+                  if (knn.filter() != null) {
+                    for (var f : knn.filter()) {
+                      if (f.isBool()) {
+                        for (var bf : f.bool().filter()) {
+                          if (bf.isTerm() && "workspaceId".equals(bf.term().field())) {
+                            ws = bf.term().value().stringValue();
+                            break;
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+              if (String.valueOf(primaryWsId).equals(ws)) {
+                return primaryHits;
+              } else if (String.valueOf(childWsId).equals(ws)) {
+                return childHits;
+              } else if (String.valueOf(linkedWsId).equals(ws)) {
+                return linkedHits;
+              }
+              return emptyHits;
+            });
+
+    when(embeddingGateway.embed("多源跨空间检索")).thenReturn(new float[] {0.1f});
+    when(rerankGateway.getStrategy()).thenReturn(RerankStrategyEnum.CROSS_ENCODER);
+    when(rerankGateway.rerank(any(RerankCommand.class)))
+        .thenAnswer(
+            inv -> {
+              RerankCommand cmd = inv.getArgument(0);
+              List<ScoredDocChunkVO> list = new ArrayList<>();
+              for (int i = 0; i < cmd.candidates().size(); i++) {
+                list.add(ScoredDocChunkVO.of(cmd.candidates().get(i), 0.99 - i * 0.01, i + 1));
+              }
+              return list;
+            });
+
+    List<ScoredDocChunkVO> results = service.hybridSearch(command);
+
+    // 验证总召回条数为 20
+    assertThat(results).hasSize(20);
+
+    // 验证配额：主空间 16 条，子空间 2 条，关联空间 2 条
+    long primaryCount =
+        results.stream()
+            .filter(r -> String.valueOf(primaryWsId).equals(r.chunk().getWorkspaceId()))
+            .count();
+    long childCount =
+        results.stream()
+            .filter(r -> String.valueOf(childWsId).equals(r.chunk().getWorkspaceId()))
+            .count();
+    long linkedCount =
+        results.stream()
+            .filter(r -> String.valueOf(linkedWsId).equals(r.chunk().getWorkspaceId()))
+            .count();
+
+    assertThat(primaryCount).isEqualTo(16);
+    assertThat(childCount).isEqualTo(2);
+    assertThat(linkedCount).isEqualTo(2);
+
+    // 验证子空间与关联空间检索的 ES Query 中必须强制 visibility = PUBLIC
+    ArgumentCaptor<NativeQuery> captor = ArgumentCaptor.forClass(NativeQuery.class);
+    verify(elasticsearchOperations, org.mockito.Mockito.atLeast(3))
+        .search(captor.capture(), eq(DocChunkDocument.class));
+
+    List<NativeQuery> allQueries = captor.getAllValues();
+    boolean childHasPublicFilter =
+        allQueries.stream()
+            .filter(q -> q.getQuery() != null && q.getQuery().isBool())
+            .filter(
+                q ->
+                    q.getQuery().bool().filter().stream()
+                        .anyMatch(
+                            f ->
+                                f.isTerm()
+                                    && "workspaceId".equals(f.term().field())
+                                    && String.valueOf(childWsId)
+                                        .equals(f.term().value().stringValue())))
+            .allMatch(
+                q ->
+                    q.getQuery().bool().filter().stream()
+                        .anyMatch(
+                            f ->
+                                f.isTerm()
+                                    && "visibility".equals(f.term().field())
+                                    && "PUBLIC".equals(f.term().value().stringValue())));
+
+    assertThat(childHasPublicFilter).isTrue();
+  }
+
+  @Test
+  @DisplayName("多工作空间加权混合检索：子空间不足时缺额自动自适应补偿回主空间")
+  void testMultiWorkspaceHybridSearchCompensationWhenDeficient() {
+    Long primaryWsId = 100L;
+    Long childWsId = 101L;
+
+    when(workSpaceQueryService.listChildWorkspaceIds(primaryWsId))
+        .thenReturn(List.of(childWsId));
+    when(documentQueryApi.getApprovedLinkedWorkspaceDocIds(primaryWsId))
+        .thenReturn(Map.of());
+
+    // 权重 50:50，目标 TopK=20，原本分配各 10 条
+    Map<Long, Integer> weights = Map.of(primaryWsId, 50, childWsId, 50);
+    HybridSearchCommand command =
+        new HybridSearchCommand(
+            primaryWsId, "缺额补偿检索", null, 20, null, null, List.of(), null, 999L, false, weights);
+
+    // 主空间有 25 条候选切片
+    List<DocChunkDocument> primaryDocs = new ArrayList<>();
+    for (int i = 0; i < 25; i++) {
+      primaryDocs.add(
+          DocChunkDocument.builder()
+              .id("p_" + i)
+              .workspaceId(String.valueOf(primaryWsId))
+              .documentId("doc_p")
+              .content("主空间文档" + i)
+              .build());
+    }
+    // 子空间仅有 2 条切片（短缺 8 条）
+    List<DocChunkDocument> childDocs = new ArrayList<>();
+    for (int i = 0; i < 2; i++) {
+      childDocs.add(
+          DocChunkDocument.builder()
+              .id("c_" + i)
+              .workspaceId(String.valueOf(childWsId))
+              .documentId("doc_c")
+              .visibility("PUBLIC")
+              .content("子空间文档" + i)
+              .build());
+    }
+
+    SearchHits<DocChunkDocument> primaryHits = createSearchHits(primaryDocs);
+    SearchHits<DocChunkDocument> childHits = createSearchHits(childDocs);
+    SearchHits<DocChunkDocument> emptyHits = createSearchHits(List.of());
+
+    when(elasticsearchOperations.search(any(NativeQuery.class), eq(DocChunkDocument.class)))
+        .thenAnswer(
+            inv -> {
+              NativeQuery q = inv.getArgument(0);
+              String ws = null;
+              if (q.getQuery() != null && q.getQuery().isBool()) {
+                for (var f : q.getQuery().bool().filter()) {
+                  if (f.isTerm() && "workspaceId".equals(f.term().field())) {
+                    ws = f.term().value().stringValue();
+                    break;
+                  }
+                }
+              } else if (q.getKnnSearches() != null && !q.getKnnSearches().isEmpty()) {
+                for (var knn : q.getKnnSearches()) {
+                  if (knn.filter() != null) {
+                    for (var f : knn.filter()) {
+                      if (f.isBool()) {
+                        for (var bf : f.bool().filter()) {
+                          if (bf.isTerm() && "workspaceId".equals(bf.term().field())) {
+                            ws = bf.term().value().stringValue();
+                            break;
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+              if (String.valueOf(primaryWsId).equals(ws)) {
+                return primaryHits;
+              } else if (String.valueOf(childWsId).equals(ws)) {
+                return childHits;
+              }
+              return emptyHits;
+            });
+
+    when(embeddingGateway.embed("缺额补偿检索")).thenReturn(new float[] {0.1f});
+    when(rerankGateway.getStrategy()).thenReturn(RerankStrategyEnum.CROSS_ENCODER);
+    when(rerankGateway.rerank(any(RerankCommand.class)))
+        .thenAnswer(
+            inv -> {
+              RerankCommand cmd = inv.getArgument(0);
+              List<ScoredDocChunkVO> list = new ArrayList<>();
+              for (int i = 0; i < cmd.candidates().size(); i++) {
+                list.add(ScoredDocChunkVO.of(cmd.candidates().get(i), 0.99 - i * 0.01, i + 1));
+              }
+              return list;
+            });
+
+    List<ScoredDocChunkVO> results = service.hybridSearch(command);
+
+    // 验证总数达到 20，其中子空间 2 条，主空间补偿获得 18 条 (10 + 8)
+    assertThat(results).hasSize(20);
+    long primaryCount =
+        results.stream()
+            .filter(r -> String.valueOf(primaryWsId).equals(r.chunk().getWorkspaceId()))
+            .count();
+    long childCount =
+        results.stream()
+            .filter(r -> String.valueOf(childWsId).equals(r.chunk().getWorkspaceId()))
+            .count();
+
+    assertThat(childCount).isEqualTo(2);
+    assertThat(primaryCount).isEqualTo(18);
+  }
+
+  @Test
+  @DisplayName("多工作空间检索：前端传入 topK < 20 自动保底 20，传入 topK > 50 自动截断保护为 50")
+  void testMultiWorkspaceTopKClampBetweenMinAndMax() {
+    Long primaryWsId = 100L;
+    Long childWsId = 101L;
+
+    when(workSpaceQueryService.listChildWorkspaceIds(primaryWsId))
+        .thenReturn(List.of(childWsId));
+    when(documentQueryApi.getApprovedLinkedWorkspaceDocIds(primaryWsId))
+        .thenReturn(Map.of());
+
+    // 1. 传入 topK = 5 (< 20) -> 应保底按 20 召回
+    Map<Long, Integer> weights = Map.of(primaryWsId, 50, childWsId, 50);
+    HybridSearchCommand cmdMin =
+        new HybridSearchCommand(
+            primaryWsId, "保底截断测试", null, 5, null, null, List.of(), null, 999L, false, weights);
+
+    when(elasticsearchOperations.search(any(NativeQuery.class), eq(DocChunkDocument.class)))
+        .thenAnswer(
+            inv -> {
+              NativeQuery q = inv.getArgument(0);
+              String ws = null;
+              if (q.getQuery() != null && q.getQuery().isBool()) {
+                for (var f : q.getQuery().bool().filter()) {
+                  if (f.isTerm() && "workspaceId".equals(f.term().field())) {
+                    ws = f.term().value().stringValue();
+                    break;
+                  }
+                }
+              } else if (q.getKnnSearches() != null && !q.getKnnSearches().isEmpty()) {
+                for (var knn : q.getKnnSearches()) {
+                  if (knn.filter() != null) {
+                    for (var f : knn.filter()) {
+                      if (f.isBool()) {
+                        for (var bf : f.bool().filter()) {
+                          if (bf.isTerm() && "workspaceId".equals(bf.term().field())) {
+                            ws = bf.term().value().stringValue();
+                            break;
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+              String prefix = (ws != null) ? ws : "ws";
+              List<DocChunkDocument> list = new ArrayList<>();
+              for (int i = 0; i < 40; i++) {
+                list.add(
+                    DocChunkDocument.builder()
+                        .id(prefix + "_" + i)
+                        .workspaceId(prefix)
+                        .documentId("doc_" + prefix)
+                        .visibility("PUBLIC")
+                        .content("测试" + i)
+                        .build());
+              }
+              return createSearchHits(list);
+            });
+
+    when(embeddingGateway.embed("保底截断测试")).thenReturn(new float[] {0.1f});
+    when(rerankGateway.getStrategy()).thenReturn(RerankStrategyEnum.CROSS_ENCODER);
+    when(rerankGateway.rerank(any(RerankCommand.class)))
+        .thenAnswer(
+            inv -> {
+              RerankCommand cmd = inv.getArgument(0);
+              List<ScoredDocChunkVO> list = new ArrayList<>();
+              for (int i = 0; i < cmd.candidates().size(); i++) {
+                list.add(ScoredDocChunkVO.of(cmd.candidates().get(i), 0.99 - i * 0.01, i + 1));
+              }
+              return list;
+            });
+
+    List<ScoredDocChunkVO> minResults = service.hybridSearch(cmdMin);
+    // 5 被提升保底为 20
+    assertThat(minResults).hasSize(20);
+
+    // 2. 传入 topK = 100 (> 50) -> 应截断上限为 50
+    HybridSearchCommand cmdMax =
+        new HybridSearchCommand(
+            primaryWsId, "保底截断测试", null, 100, null, null, List.of(), null, 999L, false, weights);
+
+    List<ScoredDocChunkVO> maxResults = service.hybridSearch(cmdMax);
+    // 100 被硬上限截断为 50
+    assertThat(maxResults).hasSize(50);
+  }
 }
+

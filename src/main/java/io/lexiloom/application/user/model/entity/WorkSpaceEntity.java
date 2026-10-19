@@ -56,6 +56,14 @@ public class WorkSpaceEntity extends BaseEntity {
   @Column(nullable = false, length = 20)
   private WorkSpaceAclEnum visibility;
 
+  /** 父工作空间 ID (null 表示顶级空间) */
+  @Column(name = "parent_id")
+  private Long parentId;
+
+  /** 是否允许父空间向下聚合当前子空间的公开文档 (默认开启) */
+  @Column(name = "child_assoc_enabled", nullable = false)
+  private Boolean childAssocEnabled = Boolean.TRUE;
+
   /** 静态工厂：创建新团队 */
   public static WorkSpaceEntity create(
       String name,
@@ -65,6 +73,20 @@ public class WorkSpaceEntity extends BaseEntity {
       Long ownerId,
       Integer maxMembers,
       WorkSpaceAclEnum visibility) {
+    return create(name, code, description, avatarUrl, ownerId, maxMembers, visibility, null, Boolean.TRUE);
+  }
+
+  /** 静态工厂：创建新团队 (支持父工作区与子空间关联配置) */
+  public static WorkSpaceEntity create(
+      String name,
+      String code,
+      String description,
+      String avatarUrl,
+      Long ownerId,
+      Integer maxMembers,
+      WorkSpaceAclEnum visibility,
+      Long parentId,
+      Boolean childAssocEnabled) {
     if (!StringUtils.hasText(name)) {
       throw BusinessException.badRequest("团队名称不能为空");
     }
@@ -82,7 +104,24 @@ public class WorkSpaceEntity extends BaseEntity {
     entity.maxMembers = (maxMembers == null || maxMembers <= 0) ? DEFAULT_MAX_MEMBERS : maxMembers;
     entity.status = WorkSpaceStatusEnum.NORMAL;
     entity.visibility = visibility == null ? WorkSpaceAclEnum.PRIVATE : visibility;
+    entity.parentId = parentId;
+    entity.childAssocEnabled = (childAssocEnabled == null) ? Boolean.TRUE : childAssocEnabled;
     return entity;
+  }
+
+  /** 变更父工作空间 */
+  public void changeParent(Long newParentId) {
+    assertActive();
+    if (newParentId != null && Objects.equals(this.getId(), newParentId)) {
+      throw BusinessException.badRequest("不能将工作空间自身设置为父空间");
+    }
+    this.parentId = newParentId;
+  }
+
+  /** 设置子空间是否允许被父空间聚合 */
+  public void updateChildAssoc(Boolean enabled) {
+    assertActive();
+    this.childAssocEnabled = (enabled == null) ? Boolean.TRUE : enabled;
   }
 
   /** 更新基本信息 */

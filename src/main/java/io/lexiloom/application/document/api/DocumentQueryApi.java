@@ -45,4 +45,30 @@ public interface DocumentQueryApi {
    * @return 资产与统计 DTO
    */
   WorkspaceDocStatsDTO getWorkspaceDocStats(Long workSpaceId);
+
+  /**
+   * 查询目标空间下可被申请关联的文档列表 (仅 PUBLIC 与 INTERNAL，且已审批通过，仅返回名称与概要元数据)
+   *
+   * @param targetWorkspaceId 目标工作空间 ID
+   * @param keyword 可选关键字搜索
+   * @return 可申请关联文档传输对象列表
+   */
+  List<io.lexiloom.application.document.api.dto.LinkableDocumentDTO> listLinkableDocuments(
+      Long targetWorkspaceId, String keyword);
+
+  /**
+   * 查询源工作空间已审批通过的横向关联目标空间与授权文档 ID 映射 (Key: targetWorkspaceId, Value: documentIds)
+   *
+   * @param sourceWorkspaceId 源工作空间 ID
+   * @return 目标空间与授权文档 ID 列表映射
+   */
+  java.util.Map<Long, java.util.List<Long>> getApprovedLinkedWorkspaceDocIds(Long sourceWorkspaceId);
+
+  /**
+   * 查询源工作空间已审批通过的横向关联目标工作空间 ID 列表
+   *
+   * @param sourceWorkspaceId 源工作空间 ID
+   * @return 目标空间 ID 列表
+   */
+  java.util.List<Long> listApprovedLinkedWorkspaceIds(Long sourceWorkspaceId);
 }

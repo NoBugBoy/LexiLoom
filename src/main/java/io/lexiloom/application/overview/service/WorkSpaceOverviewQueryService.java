@@ -1,26 +1,23 @@
-package io.lexiloom.application.user.service;
+package io.lexiloom.application.overview.service;
 
 import cn.hutool.core.util.StrUtil;
-import io.lexiloom.application.ai.config.AiProperties;
-import io.lexiloom.application.ai.repository.DocChunkRepository;
+import io.lexiloom.application.ai.api.AiStatsQueryApi;
 import io.lexiloom.application.document.api.DocumentQueryApi;
 import io.lexiloom.application.document.api.dto.WorkspaceDocStatsDTO;
 import io.lexiloom.application.enums.WorkSpaceAclEnum;
 import io.lexiloom.application.enums.WorkSpaceRoleEnum;
 import io.lexiloom.application.exception.BusinessException;
+import io.lexiloom.application.overview.model.response.WorkSpaceOverviewResponse;
+import io.lexiloom.application.user.api.UserQueryService;
 import io.lexiloom.application.user.api.WorkSpaceMemberQueryService;
-import io.lexiloom.application.user.model.entity.UserEntity;
-import io.lexiloom.application.user.model.entity.WorkSpaceEntity;
-import io.lexiloom.application.user.model.response.WorkSpaceOverviewResponse;
-import io.lexiloom.application.user.repository.UserRepository;
-import io.lexiloom.application.user.repository.WorkSpaceMemberRepository;
-import io.lexiloom.application.user.repository.WorkSpaceRepository;
+import io.lexiloom.application.user.api.WorkSpaceQueryService;
+import io.lexiloom.application.user.api.dto.UserDTO;
+import io.lexiloom.application.user.api.dto.WorkSpaceDTO;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -40,14 +37,13 @@ public class WorkSpaceOverviewQueryService {
 
   private static final String OVERVIEW_CACHE_KEY = "ll:ws:overview:%d";
   private static final long CACHE_TTL_SECONDS = 180L; // 仪表盘缓存 3 分钟
+  private static final int DEFAULT_MAX_MEMBERS = 50;
 
-  private final WorkSpaceRepository workSpaceRepository;
-  private final WorkSpaceMemberRepository workSpaceMemberRepository;
+  private final WorkSpaceQueryService workSpaceQueryService;
   private final WorkSpaceMemberQueryService workSpaceMemberQueryService;
-  private final UserRepository userRepository;
+  private final UserQueryService userQueryService;
   private final DocumentQueryApi documentQueryApi;
-  private final DocChunkRepository docChunkRepository;
-  private final AiProperties aiProperties;
+  private final AiStatsQueryApi aiStatsQueryApi;
   private final StringRedisTemplate redisTemplate;
   private final ObjectMapper objectMapper;
 
@@ -65,12 +61,12 @@ public class WorkSpaceOverviewQueryService {
     }
 
     // 1. 团队存在性与权限拦截
-    WorkSpaceEntity ws =
-        workSpaceRepository
-            .findById(workSpaceId)
+    WorkSpaceDTO ws =
+        workSpaceQueryService
+            .getById(workSpaceId)
             .orElseThrow(() -> BusinessException.badRequest("团队不存在: " + workSpaceId));
 
-    if (ws.getVisibility() != WorkSpaceAclEnum.PUBLIC) {
+    if (ws.visibility() != WorkSpaceAclEnum.PUBLIC) {
       if (currentUserId == null
           || !workSpaceMemberQueryService.isMember(workSpaceId, currentUserId)) {
         throw BusinessException.forbidden("您不是该团队成员，无权访问数据总览");
@@ -93,22 +89,21 @@ public class WorkSpaceOverviewQueryService {
     WorkspaceDocStatsDTO docStats = documentQueryApi.getWorkspaceDocStats(workSpaceId);
 
     // 4. 成员席位与角色分布
-    long currentMembers = workSpaceMemberRepository.countByWorkSpaceId(workSpaceId);
-    int maxMembers =
-        ws.getMaxMembers() != null ? ws.getMaxMembers() : WorkSpaceEntity.DEFAULT_MAX_MEMBERS;
+    long currentMembers = workSpaceMemberQueryService.countMembers(workSpaceId);
+    int maxMembers = ws.maxMembers() != null ? ws.maxMembers() : DEFAULT_MAX_MEMBERS;
     double usagePercentage =
         maxMembers > 0
             ? Math.min(
                 100.0, Math.round(((double) currentMembers / maxMembers * 100) * 10.0) / 10.0)
             : 0.0;
     long ownerCount =
-        workSpaceMemberRepository.countByWorkSpaceIdAndRole(workSpaceId, WorkSpaceRoleEnum.OWNER);
+        workSpaceMemberQueryService.countMembersByRole(workSpaceId, WorkSpaceRoleEnum.OWNER);
     long adminCount =
-        workSpaceMemberRepository.countByWorkSpaceIdAndRole(workSpaceId, WorkSpaceRoleEnum.ADMIN);
+        workSpaceMemberQueryService.countMembersByRole(workSpaceId, WorkSpaceRoleEnum.ADMIN);
     long memberCount =
-        workSpaceMemberRepository.countByWorkSpaceIdAndRole(workSpaceId, WorkSpaceRoleEnum.MEMBER);
+        workSpaceMemberQueryService.countMembersByRole(workSpaceId, WorkSpaceRoleEnum.MEMBER);
     long guestCount =
-        workSpaceMemberRepository.countByWorkSpaceIdAndRole(workSpaceId, WorkSpaceRoleEnum.GUEST);
+        workSpaceMemberQueryService.countMembersByRole(workSpaceId, WorkSpaceRoleEnum.GUEST);
 
     WorkSpaceOverviewResponse.MemberStatsVO memberStatsVO =
         new WorkSpaceOverviewResponse.MemberStatsVO(
@@ -121,20 +116,15 @@ public class WorkSpaceOverviewQueryService {
             guestCount);
 
     // 5. AI 智脑检索指标 (ES 密集向量切片)
-    long totalChunks = 0L;
-    try {
-      totalChunks = docChunkRepository.countByWorkspaceId(String.valueOf(workSpaceId));
-    } catch (Exception e) {
-      log.warn("【WorkSpaceOverview】查询 ES 空间切片数异常: wsId={}, error={}", workSpaceId, e.getMessage());
-    }
-    boolean aiEnabled = aiProperties != null && aiProperties.isEnabled();
+    long totalChunks = aiStatsQueryApi != null ? aiStatsQueryApi.countChunksByWorkspaceId(workSpaceId) : 0L;
+    boolean aiEnabled = aiStatsQueryApi != null && aiStatsQueryApi.isAiEnabled();
     WorkSpaceOverviewResponse.AiStatsVO aiStatsVO =
         new WorkSpaceOverviewResponse.AiStatsVO(totalChunks, aiEnabled);
 
     // 6. 批量补齐作者/用户信息 (昵称、头像)
     Set<Long> userIds = new HashSet<>();
-    if (ws.getOwnerId() != null) {
-      userIds.add(ws.getOwnerId());
+    if (ws.ownerId() != null) {
+      userIds.add(ws.ownerId());
     }
     if (docStats.hotDocuments() != null) {
       docStats
@@ -161,9 +151,7 @@ public class WorkSpaceOverviewQueryService {
               });
     }
 
-    Map<Long, UserEntity> userMap =
-        userRepository.findAllById(userIds).stream()
-            .collect(Collectors.toMap(UserEntity::getId, u -> u, (u1, u2) -> u1));
+    Map<Long, UserDTO> userMap = userQueryService.findUserMapByIds(userIds);
 
     // 7. 组装榜单与动态
     List<WorkSpaceOverviewResponse.HotDocumentVO> hotDocVOs =
@@ -172,12 +160,12 @@ public class WorkSpaceOverviewQueryService {
             : docStats.hotDocuments().stream()
                 .map(
                     d -> {
-                      UserEntity u = userMap.get(d.createBy());
+                      UserDTO u = userMap.get(d.createBy());
                       String authorName =
-                          (u != null && StrUtil.isNotBlank(u.getUserName()))
-                              ? u.getUserName()
+                          (u != null && StrUtil.isNotBlank(u.userName()))
+                              ? u.userName()
                               : "用户 " + d.createBy();
-                      String avatarUrl = u != null ? u.getAvatarUrl() : null;
+                      String avatarUrl = u != null ? u.avatarUrl() : null;
                       return new WorkSpaceOverviewResponse.HotDocumentVO(
                           d.id(),
                           d.title(),
@@ -197,12 +185,12 @@ public class WorkSpaceOverviewQueryService {
             : docStats.topAuthors().stream()
                 .map(
                     a -> {
-                      UserEntity u = userMap.get(a.userId());
+                      UserDTO u = userMap.get(a.userId());
                       String authorName =
-                          (u != null && StrUtil.isNotBlank(u.getUserName()))
-                              ? u.getUserName()
+                          (u != null && StrUtil.isNotBlank(u.userName()))
+                              ? u.userName()
                               : "用户 " + a.userId();
-                      String avatarUrl = u != null ? u.getAvatarUrl() : null;
+                      String avatarUrl = u != null ? u.avatarUrl() : null;
                       return new WorkSpaceOverviewResponse.TopContributorVO(
                           a.userId(), authorName, avatarUrl, a.documentCount(), a.totalWordCount());
                     })
@@ -214,10 +202,10 @@ public class WorkSpaceOverviewQueryService {
             : docStats.recentDocuments().stream()
                 .map(
                     d -> {
-                      UserEntity u = userMap.get(d.createBy());
+                      UserDTO u = userMap.get(d.createBy());
                       String authorName =
-                          (u != null && StrUtil.isNotBlank(u.getUserName()))
-                              ? u.getUserName()
+                          (u != null && StrUtil.isNotBlank(u.userName()))
+                              ? u.userName()
                               : "用户 " + d.createBy();
                       return new WorkSpaceOverviewResponse.RecentDocumentVO(
                           d.id(),
@@ -253,16 +241,16 @@ public class WorkSpaceOverviewQueryService {
 
     WorkSpaceOverviewResponse.WorkSpaceMetaVO metaVO =
         new WorkSpaceOverviewResponse.WorkSpaceMetaVO(
-            ws.getId(),
-            ws.getName(),
-            ws.getCode(),
-            ws.getDescription(),
-            ws.getAvatarUrl(),
-            ws.getOwnerId(),
-            ws.getMaxMembers(),
-            ws.getStatus(),
-            ws.getVisibility(),
-            ws.getCreateTime());
+            ws.id(),
+            ws.name(),
+            ws.code(),
+            ws.description(),
+            ws.avatarUrl(),
+            ws.ownerId(),
+            ws.maxMembers(),
+            ws.status(),
+            ws.visibility(),
+            ws.createTime());
 
     WorkSpaceOverviewResponse.AssetStatsVO assetStatsVO =
         new WorkSpaceOverviewResponse.AssetStatsVO(
