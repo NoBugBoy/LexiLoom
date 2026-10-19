@@ -32,7 +32,7 @@
         <groovy.version>4.0.24</groovy.version>
         <cola-statemachine.version>4.3.2</cola-statemachine.version>
         <elasticsearch.version>8.17.2</elasticsearch.version>
-        <spring-ai.version>1.0.0-M5</spring-ai.version>
+        <spring-ai.version>2.1.0-M1</spring-ai.version>
         <sonar.coverage.exclusions>
             **/model/**,
             **/dto/**,
