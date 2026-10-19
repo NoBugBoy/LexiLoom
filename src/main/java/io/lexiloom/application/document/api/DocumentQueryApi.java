@@ -37,13 +37,6 @@ public interface DocumentQueryApi {
    */
   Optional<DocSourceFileDTO> findSourceFileByDocumentId(Long documentId);
 
-  /**
-   * 查询文档绑定的全部标签名称列表
-   *
-   * @param documentId 文档主键 ID
-   * @return 标签名称不可变列表
-   */
-  List<String> findTagNamesByDocumentId(Long documentId);
 
   /**
    * 聚合查询指定团队工作空间的全部文档与知识资产统计指标（供总览大屏使用）

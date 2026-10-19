@@ -148,6 +148,59 @@ class DocumentQueryServiceTest {
   }
 
   @Test
+  @DisplayName("查阅文档详情：存在来源文件时，将 content 替换为 RustFS 访问地址以供前端原件预览")
+  void testGetByIdWithSourceFileReplacesContentWithRustFsUrl() {
+    DocumentEntity doc =
+        DocumentEntity.createFromImport(1L, 0L, "设计文档", "摘要", "未格式化的解析正文", WorkSpaceAclEnum.INTERNAL);
+    ReflectionTestUtils.setField(doc, "id", 19L);
+    ReflectionTestUtils.setField(doc, "sourceFileId", 300L);
+
+    when(documentRepository.findById(19L)).thenReturn(Optional.of(doc));
+
+    DocumentDTO mockDto =
+        new DocumentDTO(
+            19L,
+            1L,
+            0L,
+            "设计文档",
+            "摘要",
+            "未格式化的解析正文",
+            DocumentStateEnum.APPROVED,
+            WorkSpaceAclEnum.INTERNAL,
+            DocSourceTypeEnum.IMPORT,
+            null,
+            0,
+            "v1.0",
+            null,
+            1,
+            0,
+            10L,
+            LocalDateTime.now(),
+            LocalDateTime.now());
+    when(documentMapper.toDTO(any(DocumentEntity.class))).thenReturn(mockDto);
+
+    DocSourceFileEntity sourceFile =
+        DocSourceFileEntity.create(
+            1L,
+            19L,
+            "设计文档.pdf",
+            2048L,
+            "pdf",
+            "application/pdf",
+            "hash123",
+            "workspaces/1/docs/hash_设计文档.pdf",
+            "http://localhost:9000/lexiloom/workspaces/1/docs/hash_设计文档.pdf");
+    when(docSourceFileRepository.findById(300L)).thenReturn(Optional.of(sourceFile));
+
+    Optional<DocumentDTO> result = queryService.getById(19L, 10L);
+
+    assertThat(result).isPresent();
+    assertThat(result.get().content())
+        .isEqualTo("http://localhost:9000/lexiloom/workspaces/1/docs/hash_设计文档.pdf");
+    assertThat(result.get().fileName()).isEqualTo("设计文档.pdf");
+  }
+
+  @Test
   @DisplayName("阅读量去重：首次阅读（Redis 无记录）→ 原子 SQL incrementReadCount 被调用")
   void testOnDocumentRead_firstRead_incrementsCount() {
     when(stringRedisTemplate.opsForValue()).thenReturn(valueOps);

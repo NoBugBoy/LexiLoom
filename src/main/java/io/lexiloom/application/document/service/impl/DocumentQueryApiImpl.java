@@ -7,15 +7,11 @@ import io.lexiloom.application.document.api.dto.WorkspaceDocStatsDTO;
 import io.lexiloom.application.document.mapper.DocSourceFileMapper;
 import io.lexiloom.application.document.mapper.DocumentMapper;
 import io.lexiloom.application.document.model.entity.DocCategoryEntity;
-import io.lexiloom.application.document.model.entity.DocTagEntity;
-import io.lexiloom.application.document.model.entity.DocTagRelationEntity;
 import io.lexiloom.application.document.model.entity.DocumentEntity;
 import io.lexiloom.application.document.parser.DocParseStatusEnum;
 import io.lexiloom.application.document.repository.DocCategoryRepository;
 import io.lexiloom.application.document.repository.DocCommentRepository;
 import io.lexiloom.application.document.repository.DocSourceFileRepository;
-import io.lexiloom.application.document.repository.DocTagRelationRepository;
-import io.lexiloom.application.document.repository.DocTagRepository;
 import io.lexiloom.application.document.repository.DocumentRepository;
 import io.lexiloom.application.document.statemachine.DocumentStateEnum;
 import java.util.ArrayList;
@@ -43,8 +39,6 @@ public class DocumentQueryApiImpl implements DocumentQueryApi {
 
   private final DocumentRepository documentRepository;
   private final DocSourceFileRepository docSourceFileRepository;
-  private final DocTagRelationRepository docTagRelationRepository;
-  private final DocTagRepository docTagRepository;
   private final DocCategoryRepository docCategoryRepository;
   private final DocCommentRepository docCommentRepository;
   private final DocumentMapper documentMapper;
@@ -84,23 +78,6 @@ public class DocumentQueryApiImpl implements DocumentQueryApi {
         .map(docSourceFileMapper::toDTO);
   }
 
-  @Override
-  public List<String> findTagNamesByDocumentId(Long documentId) {
-    if (documentId == null) {
-      return Collections.emptyList();
-    }
-    try {
-      List<DocTagRelationEntity> relations = docTagRelationRepository.findByDocumentId(documentId);
-      if (relations == null || relations.isEmpty()) {
-        return Collections.emptyList();
-      }
-      List<Long> tagIds = relations.stream().map(DocTagRelationEntity::getTagId).toList();
-      return docTagRepository.findAllById(tagIds).stream().map(DocTagEntity::getName).toList();
-    } catch (Exception e) {
-      log.warn("查询文档标签失败: documentId={}, error={}", documentId, e.getMessage());
-      return Collections.emptyList();
-    }
-  }
 
   @Override
   public WorkspaceDocStatsDTO getWorkspaceDocStats(Long workSpaceId) {

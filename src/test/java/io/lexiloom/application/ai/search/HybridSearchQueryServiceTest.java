@@ -573,4 +573,89 @@ class HybridSearchQueryServiceTest {
     assertThat(results.stream().map(r -> r.chunk().getId()))
         .containsExactly("doc_s16_1", "doc_s16_2");
   }
+
+  @Test
+  @DisplayName("ACL 权限过滤：工作空间管理员进行检索时跳过可见性过滤")
+  void testAdminHybridSearchSkipsAclFilter() {
+    Long wsId = 100L;
+    HybridSearchCommand command =
+        new HybridSearchCommand(wsId, "通用检索", null, 5, null, null, List.of(), null, 999L, true);
+
+    DocChunkDocument doc =
+        DocChunkDocument.builder()
+            .id("doc_admin_1")
+            .workspaceId("100")
+            .documentId("doc_1")
+            .title("机密文件")
+            .content("机密内容")
+            .visibility("PRIVATE")
+            .createBy("123")
+            .build();
+
+    SearchHits<DocChunkDocument> hits = createSearchHits(List.of(doc));
+    when(elasticsearchOperations.search(any(NativeQuery.class), eq(DocChunkDocument.class)))
+        .thenReturn(hits, createSearchHits(List.of()));
+    when(rerankGateway.getStrategy()).thenReturn(RerankStrategyEnum.NONE);
+    when(rerankGateway.rerank(any(RerankCommand.class)))
+        .thenAnswer(inv -> List.of(ScoredDocChunkVO.of(doc, 0.9, 1)));
+
+    List<ScoredDocChunkVO> results = service.hybridSearch(command);
+    assertThat(results).hasSize(1);
+
+    ArgumentCaptor<NativeQuery> queryCaptor = ArgumentCaptor.forClass(NativeQuery.class);
+    verify(elasticsearchOperations, org.mockito.Mockito.atLeastOnce())
+        .search(queryCaptor.capture(), eq(DocChunkDocument.class));
+
+    NativeQuery lexicalQuery = queryCaptor.getAllValues().get(0);
+    var filters = lexicalQuery.getQuery().bool().filter();
+    // 管理员仅有工作区过滤，无 ACL visibility 复合 should 过滤
+    boolean hasAclFilter =
+        filters.stream().anyMatch(f -> f.isBool() && f.bool().minimumShouldMatch() != null);
+    assertThat(hasAclFilter).isFalse();
+  }
+
+  @Test
+  @DisplayName("ACL 权限过滤：普通成员进行检索时自动附加 PUBLIC/INTERNAL/自己PRIVATE/历史缺失字段 复合过滤")
+  void testNonAdminHybridSearchIncludesAclFilter() {
+    Long wsId = 100L;
+    Long userId = 888L;
+    HybridSearchCommand command =
+        new HybridSearchCommand(wsId, "通用检索", null, 5, null, null, List.of(), null, userId, false);
+
+    DocChunkDocument doc =
+        DocChunkDocument.builder()
+            .id("doc_user_1")
+            .workspaceId("100")
+            .documentId("doc_1")
+            .title("公开规范")
+            .content("公开规范内容")
+            .visibility("INTERNAL")
+            .createBy("123")
+            .build();
+
+    SearchHits<DocChunkDocument> hits = createSearchHits(List.of(doc));
+    when(elasticsearchOperations.search(any(NativeQuery.class), eq(DocChunkDocument.class)))
+        .thenReturn(hits, createSearchHits(List.of()));
+    when(rerankGateway.getStrategy()).thenReturn(RerankStrategyEnum.NONE);
+    when(rerankGateway.rerank(any(RerankCommand.class)))
+        .thenAnswer(inv -> List.of(ScoredDocChunkVO.of(doc, 0.9, 1)));
+
+    List<ScoredDocChunkVO> results = service.hybridSearch(command);
+    assertThat(results).hasSize(1);
+
+    ArgumentCaptor<NativeQuery> queryCaptor = ArgumentCaptor.forClass(NativeQuery.class);
+    verify(elasticsearchOperations, org.mockito.Mockito.atLeastOnce())
+        .search(queryCaptor.capture(), eq(DocChunkDocument.class));
+
+    NativeQuery lexicalQuery = queryCaptor.getAllValues().get(0);
+    var filters = lexicalQuery.getQuery().bool().filter();
+    // 普通成员必须包含 ACL visibility 复合 should 过滤 (minimumShouldMatch="1")
+    var aclFilterOpt =
+        filters.stream()
+            .filter(f -> f.isBool() && "1".equals(f.bool().minimumShouldMatch()))
+            .findFirst();
+    assertThat(aclFilterOpt).isPresent();
+    var shouldClauses = aclFilterOpt.get().bool().should();
+    assertThat(shouldClauses).hasSize(3); // 1. PUBLIC/INTERNAL, 2. 自己PRIVATE, 3. 历史无visibility
+  }
 }

@@ -1,7 +1,7 @@
 package io.lexiloom.application.user.service.impl;
 
+import com.querydsl.core.BooleanBuilder;
 import com.querydsl.core.types.Projections;
-import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.core.types.dsl.Expressions;
 import com.querydsl.jpa.impl.JPAQuery;
 import com.querydsl.jpa.impl.JPAQueryFactory;
@@ -38,10 +38,12 @@ public class AdminQueryServiceImpl implements AdminQueryService {
     QAdminEntity qAdmin = QAdminEntity.adminEntity;
     QAdminRoleEntity qAdminRole = QAdminRoleEntity.adminRoleEntity;
 
-    BooleanExpression booleanExpression = null;
-    if (StringUtils.hasText(adminPageRequest.getEmail())) {
-      booleanExpression = qAdmin.email.contains(adminPageRequest.getEmail());
-    }
+    BooleanBuilder bb = new BooleanBuilder();
+
+    Optional.ofNullable(adminPageRequest.getEmail())
+        .filter(StringUtils::hasText)
+        .map(qAdmin.email::contains)
+        .ifPresent(bb::and);
 
     Pageable pageable = adminPageRequest.toPageable();
 
@@ -57,14 +59,13 @@ public class AdminQueryServiceImpl implements AdminQueryService {
             .from(qAdmin)
             .leftJoin(qAdminRole)
             .on(qAdminRole.userId.eq(qAdmin.id))
-            .where(booleanExpression)
+            .where(bb)
             .groupBy(qAdmin.id)
             .limit(pageable.getPageSize())
             .offset(pageable.getOffset())
             .fetch();
 
-    JPAQuery<Long> count =
-        queryFactory.select(qAdmin.id.count()).from(qAdmin).where(booleanExpression);
+    JPAQuery<Long> count = queryFactory.select(qAdmin.id.count()).from(qAdmin).where(bb);
 
     return PageableExecutionUtils.getPage(content, pageable, count::fetchOne);
   }

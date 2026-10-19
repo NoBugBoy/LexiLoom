@@ -18,6 +18,8 @@ import io.lexiloom.application.common.SecurityHolder;
 import io.lexiloom.application.document.api.DocumentQueryApi;
 import io.lexiloom.application.document.api.dto.DocumentDTO;
 import io.lexiloom.application.document.statemachine.DocumentStateEnum;
+import io.lexiloom.application.enums.WorkSpaceAclEnum;
+import io.lexiloom.application.enums.WorkSpaceRoleEnum;
 import io.lexiloom.application.exception.BusinessException;
 import io.lexiloom.application.user.api.WorkSpaceMemberQueryService;
 import jakarta.validation.Valid;
@@ -178,6 +180,7 @@ public class AiChatController {
             .orElseThrow(() -> BusinessException.notFound("文档不存在或已被删除"));
 
     assertCanAccessWorkspace(doc.workSpaceId());
+    assertCanReadDocument(doc, getCurrentUserId(), doc.workSpaceId());
 
     List<DocChunkDocument> chunks =
         docChunkRepository.findByWorkspaceIdAndDocumentIdOrderByChunkIndexAsc(
@@ -237,7 +240,31 @@ public class AiChatController {
       if (!request.workspaceId().equals(doc.workSpaceId())) {
         throw BusinessException.badRequest("指定文档不属于当前工作空间");
       }
+      assertCanReadDocument(doc, getCurrentUserId(), request.workspaceId());
     }
+  }
+
+  private void assertCanReadDocument(DocumentDTO doc, Long userId, Long workspaceId) {
+    if (doc == null) {
+      return;
+    }
+    // 1. 如果是空间管理员或空间拥有者，拥有查看全空间文档权限
+    if (userId != null
+        && workSpaceMemberQueryService != null
+        && workSpaceMemberQueryService.hasRole(workspaceId, userId, WorkSpaceRoleEnum.ADMIN)) {
+      return;
+    }
+    // 2. 兼容历史数据(visibility == null 默认视为 INTERNAL) 与 PUBLIC / INTERNAL 可见性
+    WorkSpaceAclEnum visibility =
+        doc.visibility() != null ? doc.visibility() : WorkSpaceAclEnum.INTERNAL;
+    if (visibility == WorkSpaceAclEnum.PUBLIC || visibility == WorkSpaceAclEnum.INTERNAL) {
+      return;
+    }
+    // 3. PRIVATE 私密文档：仅创建人本人可访问
+    if (visibility == WorkSpaceAclEnum.PRIVATE && userId != null && userId.equals(doc.createBy())) {
+      return;
+    }
+    throw BusinessException.forbidden("您无权访问该私密文档");
   }
 
   private Long getCurrentUserId() {

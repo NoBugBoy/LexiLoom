@@ -15,6 +15,8 @@ import java.util.List;
  * @param documentId 限制检索的特定文档 ID (可选，用于单文档问答)
  * @param tags 标签精准过滤列表 (可选)
  * @param categoryId 文档分类 ID 过滤 (可选)
+ * @param userId 当前发起检索的用户 ID (用于 ACL 私密文档过滤，可选)
+ * @param isAdmin 当前用户是否为工作空间管理员或以上 (管理员可查看空间内所有私密文档)
  */
 public record HybridSearchCommand(
     Long workspaceId,
@@ -24,7 +26,9 @@ public record HybridSearchCommand(
     Double minScore,
     Long documentId,
     List<String> tags,
-    Long categoryId) {
+    Long categoryId,
+    Long userId,
+    boolean isAdmin) {
 
   public HybridSearchCommand {
     if (workspaceId == null) {
@@ -36,6 +40,29 @@ public record HybridSearchCommand(
     query = query.trim();
     topK = topK > 0 ? topK : 5;
     tags = tags != null ? List.copyOf(tags) : List.of();
+  }
+
+  /** 兼容旧版 8 参数构造函数 (默认 userId=null, isAdmin=false) */
+  public HybridSearchCommand(
+      Long workspaceId,
+      String query,
+      float[] queryVector,
+      int topK,
+      Double minScore,
+      Long documentId,
+      List<String> tags,
+      Long categoryId) {
+    this(
+        workspaceId,
+        query,
+        queryVector,
+        topK,
+        minScore,
+        documentId,
+        tags,
+        categoryId,
+        null,
+        false);
   }
 
   public static HybridSearchCommand of(Long workspaceId, String query, int topK) {

@@ -2,25 +2,18 @@ package io.lexiloom.application.document.search;
 
 import io.lexiloom.application.document.mapper.DocSearchMapper;
 import io.lexiloom.application.document.model.entity.DocSourceFileEntity;
-import io.lexiloom.application.document.model.entity.DocTagEntity;
-import io.lexiloom.application.document.model.entity.DocTagRelationEntity;
 import io.lexiloom.application.document.model.entity.DocumentEntity;
 import io.lexiloom.application.document.model.event.DocumentDeletedEvent;
 import io.lexiloom.application.document.model.event.DocumentUpdatedEvent;
 import io.lexiloom.application.document.repository.DocSourceFileRepository;
-import io.lexiloom.application.document.repository.DocTagRelationRepository;
-import io.lexiloom.application.document.repository.DocTagRepository;
 import io.lexiloom.application.document.repository.DocumentRepository;
 import io.lexiloom.application.document.statemachine.DocumentStateEnum;
 import io.lexiloom.application.document.statemachine.DocumentStateTransitionEvent;
 import java.util.Collections;
-import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Async;
+import org.springframework.modulith.events.ApplicationModuleListener;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.event.TransactionPhase;
-import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
  * Elasticsearch 索引同步异步事件监听器
@@ -39,13 +32,10 @@ public class DocumentSearchSyncListener {
 
   private final DocumentRepository documentRepository;
   private final DocSourceFileRepository docSourceFileRepository;
-  private final DocTagRelationRepository docTagRelationRepository;
-  private final DocTagRepository docTagRepository;
   private final DocSearchRepository docSearchRepository;
   private final DocSearchMapper docSearchMapper;
 
-  @Async
-  @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+  @ApplicationModuleListener
   public void onDocumentStateTransition(DocumentStateTransitionEvent event) {
     if (event == null || event.documentId() == null || event.targetState() == null) {
       return;
@@ -71,8 +61,7 @@ public class DocumentSearchSyncListener {
    *
    * @param event 文档删除事件
    */
-  @Async
-  @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+  @ApplicationModuleListener
   public void onDocumentDeleted(DocumentDeletedEvent event) {
     if (event == null || event.documentId() == null) {
       return;
@@ -86,8 +75,7 @@ public class DocumentSearchSyncListener {
    *
    * @param event 文档更新事件
    */
-  @Async
-  @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+  @ApplicationModuleListener
   public void onDocumentUpdated(DocumentUpdatedEvent event) {
     if (event == null || event.documentId() == null) {
       return;
@@ -129,20 +117,20 @@ public class DocumentSearchSyncListener {
               .orElse(null);
 
       // 3. 查询文档关联标签名 (可选)
-      List<String> tags = resolveTagNames(documentId);
+      //      List<String> tags = resolveTagNames(documentId);
 
       // 4. 映射为 ES 检索文档实体
-      DocSearchDocument searchDoc = docSearchMapper.toSearchDoc(doc, sourceFile, tags);
+      DocSearchDocument searchDoc =
+          docSearchMapper.toSearchDoc(doc, sourceFile, Collections.emptyList());
 
       // 5. 保存至 ES
       docSearchRepository.save(searchDoc);
 
       log.info(
-          "成功同步文档至 Elasticsearch 索引: documentId={}, title={}, hasRawText={}, tagsCount={}",
+          "成功同步文档至 Elasticsearch 索引: documentId={}, title={}, hasRawText={}",
           documentId,
           doc.getTitle(),
-          sourceFile != null && sourceFile.getRawText() != null,
-          tags.size());
+          sourceFile != null && sourceFile.getRawText() != null);
     } catch (Exception ex) {
       log.error("Elasticsearch 同步文档索引异常: documentId={}, error={}", documentId, ex.getMessage(), ex);
     }
@@ -160,20 +148,6 @@ public class DocumentSearchSyncListener {
       log.info("成功从 Elasticsearch 索引中移除文档: documentId={}", documentId);
     } catch (Exception ex) {
       log.error("Elasticsearch 移除文档索引异常: documentId={}, error={}", documentId, ex.getMessage(), ex);
-    }
-  }
-
-  private List<String> resolveTagNames(Long documentId) {
-    try {
-      List<DocTagRelationEntity> relations = docTagRelationRepository.findByDocumentId(documentId);
-      if (relations == null || relations.isEmpty()) {
-        return Collections.emptyList();
-      }
-      List<Long> tagIds = relations.stream().map(DocTagRelationEntity::getTagId).toList();
-      return docTagRepository.findAllById(tagIds).stream().map(DocTagEntity::getName).toList();
-    } catch (Exception ex) {
-      log.warn("解析文档标签异常，降级为空标签列表: documentId={}, error={}", documentId, ex.getMessage());
-      return Collections.emptyList();
     }
   }
 }

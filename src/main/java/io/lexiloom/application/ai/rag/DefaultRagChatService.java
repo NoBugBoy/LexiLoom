@@ -18,12 +18,15 @@ import io.lexiloom.application.ai.search.HybridSearchQueryService;
 import io.lexiloom.application.common.ErrorCode;
 import io.lexiloom.application.common.LoginUserAuthentication;
 import io.lexiloom.application.common.SecurityHolder;
+import io.lexiloom.application.enums.WorkSpaceRoleEnum;
 import io.lexiloom.application.exception.BusinessException;
+import io.lexiloom.application.user.api.WorkSpaceMemberQueryService;
 import java.io.IOException;
 import java.util.List;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Primary;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -35,7 +38,6 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @Slf4j
 @Service
 @Primary
-@RequiredArgsConstructor
 public class DefaultRagChatService implements RagChatService {
 
   private final HybridSearchQueryService hybridSearchQueryService;
@@ -44,6 +46,42 @@ public class DefaultRagChatService implements RagChatService {
   private final LlmGateway llmGateway;
   private final ConversationSessionService conversationSessionService;
   private final AiProperties aiProperties;
+  private final WorkSpaceMemberQueryService workSpaceMemberQueryService;
+
+  @Autowired
+  public DefaultRagChatService(
+      HybridSearchQueryService hybridSearchQueryService,
+      CitationBuilder citationBuilder,
+      RagPromptTemplate ragPromptTemplate,
+      LlmGateway llmGateway,
+      ConversationSessionService conversationSessionService,
+      AiProperties aiProperties,
+      @Nullable WorkSpaceMemberQueryService workSpaceMemberQueryService) {
+    this.hybridSearchQueryService = hybridSearchQueryService;
+    this.citationBuilder = citationBuilder;
+    this.ragPromptTemplate = ragPromptTemplate;
+    this.llmGateway = llmGateway;
+    this.conversationSessionService = conversationSessionService;
+    this.aiProperties = aiProperties;
+    this.workSpaceMemberQueryService = workSpaceMemberQueryService;
+  }
+
+  public DefaultRagChatService(
+      HybridSearchQueryService hybridSearchQueryService,
+      CitationBuilder citationBuilder,
+      RagPromptTemplate ragPromptTemplate,
+      LlmGateway llmGateway,
+      ConversationSessionService conversationSessionService,
+      AiProperties aiProperties) {
+    this(
+        hybridSearchQueryService,
+        citationBuilder,
+        ragPromptTemplate,
+        llmGateway,
+        conversationSessionService,
+        aiProperties,
+        null);
+  }
 
   @Override
   public AiChatResponse chat(AiChatRequest request) {
@@ -203,6 +241,14 @@ public class DefaultRagChatService implements RagChatService {
     int topK = aiProperties.getRag().getTopK();
     double minScore = aiProperties.getRag().getSimilarityThreshold();
 
+    Long currentUserId =
+        SecurityHolder.getLoginUser().map(LoginUserAuthentication::userId).orElse(null);
+    boolean isAdmin =
+        currentUserId != null
+            && workSpaceMemberQueryService != null
+            && workSpaceMemberQueryService.hasRole(
+                request.workspaceId(), currentUserId, WorkSpaceRoleEnum.ADMIN);
+
     HybridSearchCommand searchCommand =
         new HybridSearchCommand(
             request.workspaceId(),
@@ -212,7 +258,9 @@ public class DefaultRagChatService implements RagChatService {
             minScore,
             request.documentId(),
             List.of(),
-            null);
+            null,
+            currentUserId,
+            isAdmin);
 
     List<ScoredDocChunkVO> scoredChunks = hybridSearchQueryService.hybridSearch(searchCommand);
     return citationBuilder.buildCitations(scoredChunks);

@@ -88,7 +88,6 @@ class DocVectorSyncListenerTest {
     DocumentDTO doc = createSampleDoc(docId, DocumentStateEnum.APPROVED);
     when(documentQueryApi.findDocumentById(docId)).thenReturn(Optional.of(doc));
     when(documentQueryApi.findSourceFileById(500L)).thenReturn(Optional.empty());
-    when(documentQueryApi.findTagNamesByDocumentId(docId)).thenReturn(List.of("技术", "架构"));
 
     EnrichedDocChunk chunk1 =
         EnrichedDocChunk.of(
@@ -140,7 +139,9 @@ class DocVectorSyncListenerTest {
     assertThat(savedChunk.getContentVector()).isEqualTo(dummyVector);
     assertThat(savedChunk.getPage()).isEqualTo(1);
     assertThat(savedChunk.getBbox()).containsExactly(10f, 20f, 30f, 40f);
-    assertThat(savedChunk.getTags()).containsExactly("技术", "架构");
+    assertThat(savedChunk.getTags()).isNullOrEmpty();
+    assertThat(savedChunk.getVisibility()).isEqualTo("INTERNAL");
+    assertThat(savedChunk.getCreateBy()).isEqualTo("1");
   }
 
   @Test

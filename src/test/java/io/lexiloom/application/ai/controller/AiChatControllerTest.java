@@ -23,6 +23,8 @@ import io.lexiloom.application.common.SecurityHolder;
 import io.lexiloom.application.document.api.DocumentQueryApi;
 import io.lexiloom.application.document.api.dto.DocumentDTO;
 import io.lexiloom.application.document.statemachine.DocumentStateEnum;
+import io.lexiloom.application.enums.WorkSpaceAclEnum;
+import io.lexiloom.application.enums.WorkSpaceRoleEnum;
 import io.lexiloom.application.exception.BusinessException;
 import io.lexiloom.application.user.api.WorkSpaceMemberQueryService;
 import java.util.List;
@@ -361,5 +363,129 @@ class AiChatControllerTest {
     controller.deleteSession("s1");
 
     verify(conversationSessionService).deleteSession("s1", 100L);
+  }
+
+  @Test
+  @DisplayName("单文档问答权限：非创建者且非管理员访问 PRIVATE 文档被拦截")
+  void testChatSingleDocumentPrivateDeniedForNonAuthorNonAdmin() {
+    SecurityHolder.setAuthentication(100L); // 当前用户 100
+    when(workSpaceMemberQueryService.isMember(1L, 100L)).thenReturn(true);
+    when(workSpaceMemberQueryService.hasRole(1L, 100L, WorkSpaceRoleEnum.ADMIN)).thenReturn(false);
+
+    DocumentDTO privateDoc =
+        new DocumentDTO(
+            88L,
+            1L,
+            null,
+            "绝密文档",
+            null,
+            null,
+            DocumentStateEnum.APPROVED,
+            null,
+            WorkSpaceAclEnum.PRIVATE,
+            null,
+            null,
+            null,
+            1,
+            "v1",
+            1,
+            1,
+            null,
+            0,
+            0,
+            200L, // 创建者是 200，不是当前用户 100
+            null,
+            null);
+    when(documentQueryApi.findDocumentById(88L)).thenReturn(Optional.of(privateDoc));
+
+    AiChatRequest request = new AiChatRequest("提问绝密内容", 1L, null, false, 88L);
+
+    assertThatThrownBy(() -> controller.chat(request))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("您无权访问该私密文档");
+  }
+
+  @Test
+  @DisplayName("单文档问答权限：文档创建者本人可正常与 PRIVATE 文档对话")
+  void testChatSingleDocumentPrivateAllowedForAuthor() {
+    SecurityHolder.setAuthentication(200L); // 当前用户 200（作者本人）
+    when(workSpaceMemberQueryService.isMember(1L, 200L)).thenReturn(true);
+    when(workSpaceMemberQueryService.hasRole(1L, 200L, WorkSpaceRoleEnum.ADMIN)).thenReturn(false);
+
+    DocumentDTO privateDoc =
+        new DocumentDTO(
+            88L,
+            1L,
+            null,
+            "绝密文档",
+            null,
+            null,
+            DocumentStateEnum.APPROVED,
+            null,
+            WorkSpaceAclEnum.PRIVATE,
+            null,
+            null,
+            null,
+            1,
+            "v1",
+            1,
+            1,
+            null,
+            0,
+            0,
+            200L, // 创建者是 200
+            null,
+            null);
+    when(documentQueryApi.findDocumentById(88L)).thenReturn(Optional.of(privateDoc));
+    AiChatResponse expectedResp = AiChatResponse.of("回复", null, List.of(), 50L);
+    when(ragChatService.chat(any(AiChatRequest.class))).thenReturn(expectedResp);
+
+    AiChatRequest request = new AiChatRequest("提问自己的绝密文档", 1L, null, false, 88L);
+    AiChatResponse response = controller.chat(request);
+
+    assertThat(response).isNotNull();
+    verify(ragChatService).chat(request);
+  }
+
+  @Test
+  @DisplayName("单文档问答权限：空间管理员可访问空间内任意成员的 PRIVATE 文档")
+  void testChatSingleDocumentPrivateAllowedForAdmin() {
+    SecurityHolder.setAuthentication(999L); // 当前用户 999 (ADMIN)
+    when(workSpaceMemberQueryService.isMember(1L, 999L)).thenReturn(true);
+    when(workSpaceMemberQueryService.hasRole(1L, 999L, WorkSpaceRoleEnum.ADMIN)).thenReturn(true);
+
+    DocumentDTO privateDoc =
+        new DocumentDTO(
+            88L,
+            1L,
+            null,
+            "绝密文档",
+            null,
+            null,
+            DocumentStateEnum.APPROVED,
+            null,
+            WorkSpaceAclEnum.PRIVATE,
+            null,
+            null,
+            null,
+            1,
+            "v1",
+            1,
+            1,
+            null,
+            0,
+            0,
+            200L, // 创建者是 200
+            null,
+            null);
+    when(documentQueryApi.findDocumentById(88L)).thenReturn(Optional.of(privateDoc));
+    AiChatResponse expectedResp = AiChatResponse.of("管理员回复", null, List.of(), 50L);
+    when(ragChatService.chat(any(AiChatRequest.class))).thenReturn(expectedResp);
+
+    AiChatRequest request = new AiChatRequest("管理员审计提问", 1L, null, false, 88L);
+    AiChatResponse response = controller.chat(request);
+
+    assertThat(response).isNotNull();
+    verify(ragChatService).chat(request);
   }
 }

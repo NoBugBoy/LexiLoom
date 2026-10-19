@@ -108,6 +108,14 @@ public class DocChunkDocument {
   @Field(type = FieldType.Keyword)
   private String categoryId;
 
+  /** 文档公开范围 (PUBLIC / INTERNAL / PRIVATE，用于 RAG 检索权限过滤) */
+  @Field(type = FieldType.Keyword)
+  private String visibility;
+
+  /** 文档创建者 ID (用于 PRIVATE 文档仅创建者及管理员可见) */
+  @Field(type = FieldType.Keyword)
+  private String createBy;
+
   /** 更新入库时间 */
   @Field(
       type = FieldType.Date,

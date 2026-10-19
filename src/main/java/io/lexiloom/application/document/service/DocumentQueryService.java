@@ -2,6 +2,7 @@ package io.lexiloom.application.document.service;
 
 import cn.hutool.core.util.StrUtil;
 import io.lexiloom.application.common.ErrorCode;
+import io.lexiloom.application.common.storage.FileStorageGateway;
 import io.lexiloom.application.document.acl.DocAccessControlService;
 import io.lexiloom.application.document.api.dto.DocParseStatusDTO;
 import io.lexiloom.application.document.api.dto.DocumentDTO;
@@ -19,13 +20,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.data.domain.Page;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.lang.Nullable;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,7 +35,6 @@ import org.springframework.transaction.annotation.Transactional;
 /** 文档核心查询服务 (CQRS - Query Side) 聚合文档详情拉取、异步阅读量统计、动态条件分页与 ACL 读权限过滤 */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class DocumentQueryService {
 
   /** Redis Key 模板：阅读量去重，24h 内同一用户访问同一文档只计一次。ll:doc:read:{docId}:{userId} */
@@ -48,6 +49,42 @@ public class DocumentQueryService {
   private final DocumentMapper documentMapper;
   private final ApplicationEventPublisher eventPublisher;
   private final StringRedisTemplate stringRedisTemplate;
+  private final FileStorageGateway fileStorageGateway;
+
+  @Autowired
+  public DocumentQueryService(
+      DocumentRepository documentRepository,
+      DocSourceFileRepository docSourceFileRepository,
+      DocAccessControlService docAccessControlService,
+      DocumentMapper documentMapper,
+      ApplicationEventPublisher eventPublisher,
+      StringRedisTemplate stringRedisTemplate,
+      @Nullable @Autowired(required = false) FileStorageGateway fileStorageGateway) {
+    this.documentRepository = documentRepository;
+    this.docSourceFileRepository = docSourceFileRepository;
+    this.docAccessControlService = docAccessControlService;
+    this.documentMapper = documentMapper;
+    this.eventPublisher = eventPublisher;
+    this.stringRedisTemplate = stringRedisTemplate;
+    this.fileStorageGateway = fileStorageGateway;
+  }
+
+  public DocumentQueryService(
+      DocumentRepository documentRepository,
+      DocSourceFileRepository docSourceFileRepository,
+      DocAccessControlService docAccessControlService,
+      DocumentMapper documentMapper,
+      ApplicationEventPublisher eventPublisher,
+      StringRedisTemplate stringRedisTemplate) {
+    this(
+        documentRepository,
+        docSourceFileRepository,
+        docAccessControlService,
+        documentMapper,
+        eventPublisher,
+        stringRedisTemplate,
+        null);
+  }
 
   /** 查询文档解析状态（轻量级，不累计阅读量，供前端异步轮询使用） */
   @Transactional(readOnly = true)
@@ -86,14 +123,28 @@ public class DocumentQueryService {
     eventPublisher.publishEvent(new DocumentReadEvent(id, userId));
 
     DocumentDTO dto = documentMapper.toDTO(doc);
-    if ((dto.fileName() == null || dto.fileName().equals(doc.getTitle()))
-        && doc.getSourceFileId() != null) {
-      String realFileName =
-          docSourceFileRepository
-              .findById(doc.getSourceFileId())
-              .map(DocSourceFileEntity::getOriginalFileName)
-              .orElse(dto.fileName());
-      if (realFileName != null && !realFileName.equals(dto.fileName())) {
+    if (doc.getSourceFileId() != null) {
+      DocSourceFileEntity sourceFile =
+          docSourceFileRepository.findById(doc.getSourceFileId()).orElse(null);
+      if (sourceFile != null) {
+        String realFileName =
+            (dto.fileName() == null || dto.fileName().equals(doc.getTitle()))
+                    && StrUtil.isNotBlank(sourceFile.getOriginalFileName())
+                ? sourceFile.getOriginalFileName()
+                : dto.fileName();
+
+        // 获取 RustFS 中的文件访问地址：优先使用 sourceFile.getStorageUrl()，若为空则通过 FileStorageGateway 转换
+        // storagePath
+        String rustFsUrl =
+            StrUtil.isNotBlank(sourceFile.getStorageUrl())
+                ? sourceFile.getStorageUrl()
+                : (fileStorageGateway != null && StrUtil.isNotBlank(sourceFile.getStoragePath())
+                    ? fileStorageGateway.getUrl(sourceFile.getStoragePath())
+                    : null);
+
+        // 如果存在来源文件 RustFS 存储地址，将 content 替换为 RustFS 访问地址供前端直接预览原件；若无则保留原正文
+        String effectiveContent = StrUtil.isNotBlank(rustFsUrl) ? rustFsUrl : dto.content();
+
         dto =
             new DocumentDTO(
                 dto.id(),
@@ -101,7 +152,7 @@ public class DocumentQueryService {
                 dto.categoryId(),
                 dto.title(),
                 dto.summary(),
-                dto.content(),
+                effectiveContent,
                 dto.status(),
                 dto.parseStatus(),
                 dto.visibility(),
@@ -180,10 +231,7 @@ public class DocumentQueryService {
           // 4. 标题与摘要模糊关键词搜索
           if (StrUtil.isNotBlank(request.keyword())) {
             String kw = "%" + request.keyword().trim().toLowerCase() + "%";
-            predicates.add(
-                cb.or(
-                    cb.like(cb.lower(root.get("title")), kw),
-                    cb.like(cb.lower(root.get("summary")), kw)));
+            predicates.add(cb.like(cb.lower(root.get("title")), kw));
           }
 
           return cb.and(predicates.toArray(new Predicate[0]));

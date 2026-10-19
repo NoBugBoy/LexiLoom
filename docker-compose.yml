@@ -7,7 +7,7 @@
 #   docker compose down -v        # 停止并清空所有数据
 #   docker compose logs -f <svc>  # 跟踪某个服务日志
 
-name: lexiloom-dev
+name: knowflow-dev
 
 services:
 

@@ -13,15 +13,14 @@ import io.lexiloom.application.document.model.event.DocumentDeletedEvent;
 import io.lexiloom.application.document.model.event.DocumentUpdatedEvent;
 import io.lexiloom.application.document.statemachine.DocumentStateEnum;
 import io.lexiloom.application.document.statemachine.DocumentStateTransitionEvent;
+import io.lexiloom.application.enums.WorkSpaceAclEnum;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Async;
+import org.springframework.modulith.events.ApplicationModuleListener;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.event.TransactionPhase;
-import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
  * 异步切块与向量入库监听器 (DocVectorSyncListener)
@@ -45,8 +44,7 @@ public class DocVectorSyncListener {
   private final DocChunkRepository docChunkRepository;
 
   /** 监听状态机流转事件：驱动向量索引上线与下线 */
-  @Async
-  @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+  @ApplicationModuleListener
   public void onDocumentStateTransition(DocumentStateTransitionEvent event) {
     if (event == null || event.documentId() == null || event.targetState() == null) {
       return;
@@ -83,8 +81,7 @@ public class DocVectorSyncListener {
   }
 
   /** 监听文档物理删除事件：安全清理切片索引 */
-  @Async
-  @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+  @ApplicationModuleListener
   public void onDocumentDeleted(DocumentDeletedEvent event) {
     if (event == null || event.documentId() == null) {
       return;
@@ -99,8 +96,7 @@ public class DocVectorSyncListener {
   }
 
   /** 监听文档内容更新事件：已发布文档重新计算向量并同步索引 */
-  @Async
-  @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+  @ApplicationModuleListener
   public void onDocumentUpdated(DocumentUpdatedEvent event) {
     if (event == null || event.documentId() == null) {
       return;
@@ -148,17 +144,14 @@ public class DocVectorSyncListener {
       sourceFile = documentQueryApi.findSourceFileByDocumentId(documentId).orElse(null);
     }
 
-    // 3. 查询文档标签
-    List<String> tags = documentQueryApi.findTagNamesByDocumentId(documentId);
-
-    // 4. 执行 DeepDoc 上下文帽子组装 (原子段落严格 1:1，绝无滑动窗口与 Overlap)
+    // 3. 执行 DeepDoc 上下文帽子组装 (原子段落严格 1:1，绝无滑动窗口与 Overlap)
     List<EnrichedDocChunk> enrichedChunks = deepDocContextEnricher.enrich(doc, sourceFile);
     if (enrichedChunks.isEmpty()) {
       log.warn("【DocVectorSyncListener】文档内容为空或未提取到有效段落，跳过切片入库: docId={}", documentId);
       return;
     }
 
-    // 5. 批量调用 Spring AI EmbeddingGateway 计算向量 (单批 16 条，保守满足各大模型如千问 batch <= 20 限制)
+    // 4. 批量调用 Spring AI EmbeddingGateway 计算向量 (单批 16 条，保守满足各大模型如千问 batch <= 20 限制)
     List<String> textsToEmbed =
         enrichedChunks.stream().map(EnrichedDocChunk::enrichedText).toList();
     List<float[]> vectors = new ArrayList<>(textsToEmbed.size());
@@ -168,11 +161,11 @@ public class DocVectorSyncListener {
       vectors.addAll(embeddingGateway.embedBatch(textsToEmbed.subList(i, end)));
     }
 
-    // 5.1 向量结果强校验：条数与维度必须严格对齐，否则宁可快速失败回滚文档状态，
+    // 4.1 向量结果强校验：条数与维度必须严格对齐，否则宁可快速失败回滚文档状态，
     //     也不能用零向量兜底把错位/残缺向量写进索引 (零向量会让 kNN 相似度彻底失真)
     validateVectors(textsToEmbed.size(), vectors);
 
-    // 6. 构造 Elasticsearch 切块实体列表
+    // 5. 构造 Elasticsearch 切块实体列表
     List<DocChunkDocument> chunkDocuments = new ArrayList<>(enrichedChunks.size());
     String wsIdStr = String.valueOf(doc.workSpaceId());
     String docIdStr = String.valueOf(doc.id());
@@ -197,8 +190,12 @@ public class DocVectorSyncListener {
               .bbox(chunk.bbox())
               .chunkType(chunk.chunkType())
               .anchor(chunk.anchor())
-              .tags(tags)
               .categoryId(doc.categoryId() != null ? String.valueOf(doc.categoryId()) : null)
+              .visibility(
+                  doc.visibility() != null
+                      ? doc.visibility().name()
+                      : WorkSpaceAclEnum.INTERNAL.name())
+              .createBy(doc.createBy() != null ? String.valueOf(doc.createBy()) : null)
               .updateTime(LocalDateTime.now())
               .build();
 

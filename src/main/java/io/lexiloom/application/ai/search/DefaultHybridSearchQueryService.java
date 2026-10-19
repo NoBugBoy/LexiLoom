@@ -465,6 +465,9 @@ public class DefaultHybridSearchQueryService implements HybridSearchQueryService
                       b.filter(f -> f.terms(ts -> ts.field("tags").terms(t -> t.value(tagValues))));
                     }
 
+                    // Filter 5: 文档可见性与租户细粒度 ACL 过滤
+                    applyAclFilter(b, command);
+
                     return b;
                   }));
 
@@ -542,6 +545,9 @@ public class DefaultHybridSearchQueryService implements HybridSearchQueryService
                                         bf.terms(
                                             ts -> ts.field("tags").terms(t -> t.value(tagValues))));
                               }
+
+                              // Filter 5: 文档可见性与租户细粒度 ACL 过滤
+                              applyAclFilter(b, command);
 
                               return b;
                             }));
@@ -716,6 +722,80 @@ public class DefaultHybridSearchQueryService implements HybridSearchQueryService
         finalResults.size());
 
     return finalResults;
+  }
+
+  /**
+   * 文档可见性与租户细粒度 ACL 过滤 (非管理员用户限制访问私密文档)
+   *
+   * <p>规则：
+   * <ul>
+   *   <li>若当前用户为空间管理员 (command.isAdmin() == true)，跳过 ACL 过滤，允许查阅空间内全部切片；</li>
+   *   <li>若为普通成员/访客，限制切片满足下列任一条件 (should + minimumShouldMatch=1)：
+   *     <ol>
+   *       <li>visibility 为 PUBLIC 或 INTERNAL；</li>
+   *       <li>visibility 为 PRIVATE 且 createBy 等于当前登录用户 ID；</li>
+   *       <li>历史切片向后兼容：切片缺少 visibility 字段 (must_not exists)，视为空间成员默认可读。</li>
+   *     </ol>
+   *   </li>
+   * </ul>
+   */
+  private void applyAclFilter(
+      co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery.Builder b,
+      HybridSearchCommand command) {
+    if (command.isAdmin()) {
+      return;
+    }
+
+    b.filter(
+        af ->
+            af.bool(
+                ab -> {
+                  // 1. PUBLIC 或 INTERNAL 可见
+                  ab.should(
+                      s ->
+                          s.terms(
+                              ts ->
+                                  ts.field("visibility")
+                                      .terms(
+                                          t ->
+                                              t.value(
+                                                  List.of(
+                                                      FieldValue.of("PUBLIC"),
+                                                      FieldValue.of("INTERNAL"))))));
+
+                  // 2. 自己创建的 PRIVATE 文档
+                  if (command.userId() != null) {
+                    ab.should(
+                        s ->
+                            s.bool(
+                                pb ->
+                                    pb.filter(
+                                            pf ->
+                                                pf.term(
+                                                    t ->
+                                                        t.field("visibility")
+                                                            .value("PRIVATE")))
+                                        .filter(
+                                            pf ->
+                                                pf.term(
+                                                    t ->
+                                                        t.field("createBy")
+                                                            .value(String.valueOf(command.userId()))))));
+                  }
+
+                  // 3. 兼容历史数据：若切片未落库 visibility 字段，则默认允许工作区成员访问
+                  ab.should(
+                      s ->
+                          s.bool(
+                              hb ->
+                                  hb.mustNot(
+                                      mn ->
+                                          mn.exists(
+                                              e -> e.field("visibility")))));
+
+                  ab.minimumShouldMatch("1");
+                  return ab;
+                }));
   }
 
   private int resolveVectorTopK(int totalTopK) {
