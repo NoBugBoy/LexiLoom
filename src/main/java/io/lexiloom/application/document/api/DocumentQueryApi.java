@@ -71,4 +71,20 @@ public interface DocumentQueryApi {
    * @return 目标空间 ID 列表
    */
   java.util.List<Long> listApprovedLinkedWorkspaceIds(Long sourceWorkspaceId);
+
+  /**
+   * 统计指定工作空间下的文档总数
+   *
+   * @param workSpaceId 工作空间 ID
+   * @return 文档总数
+   */
+  long countDocumentsByWorkspaceId(Long workSpaceId);
+
+  /**
+   * 批量根据分类 ID 查询对应的分类名称映射
+   *
+   * @param categoryIds 分类 ID 集合
+   * @return 分类 ID 与名称映射表
+   */
+  java.util.Map<Long, String> getCategoryNames(java.util.Collection<Long> categoryIds);
 }

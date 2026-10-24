@@ -15,6 +15,7 @@ import io.lexiloom.application.exception.BusinessException;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -63,9 +64,10 @@ public class DocumentController {
 
   /** 删除文档 */
   @DeleteMapping("/{id}")
-  public void delete(@PathVariable("id") Long id) {
+  public ResponseEntity<Void> delete(@PathVariable("id") Long id) {
     Long userId = SecurityHolder.getUserId();
     documentCommandService.delete(id, userId);
+    return ResponseEntity.noContent().build();
   }
 
   /** 动态多条件分页检索文档 */
@@ -100,8 +102,9 @@ public class DocumentController {
 
   /** 针对解析失败或超时的导入文档重新发起解析 */
   @PostMapping("/{id}/retry-parse")
-  public void retryParse(@PathVariable("id") Long id) {
+  public ResponseEntity<Void> retryParse(@PathVariable("id") Long id) {
     Long userId = SecurityHolder.getUserId();
     documentCommandService.retryParse(id, userId);
+    return ResponseEntity.ok().build();
   }
 }

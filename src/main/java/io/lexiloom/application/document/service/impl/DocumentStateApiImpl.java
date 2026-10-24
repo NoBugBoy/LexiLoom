@@ -60,4 +60,12 @@ public class DocumentStateApiImpl implements DocumentStateApi {
         new DocumentStateTransitionEvent(
             documentId, fromState, targetState, null, 0L, reason, LocalDateTime.now()));
   }
+
+  @Override
+  @Transactional
+  public void recordEmbeddingTokens(Long documentId, int tokens) {
+    if (documentId != null && tokens > 0) {
+      documentRepository.incrementEmbeddingTokens(documentId, tokens);
+    }
+  }
 }

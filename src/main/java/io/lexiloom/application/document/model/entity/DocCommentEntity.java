@@ -27,31 +27,31 @@ import lombok.NoArgsConstructor;
 public class DocCommentEntity extends BaseEntity {
 
   /** 所属团队空间 ID */
-  @Column(name = "work_space_id", nullable = false)
+  @Column(name = "work_space_id", comment = "所属团队空间ID", nullable = false)
   private Long workSpaceId;
 
   /** 关联的主文档 ID */
-  @Column(name = "document_id", nullable = false)
+  @Column(name = "document_id", comment = "关联的主文档ID", nullable = false)
   private Long documentId;
 
   /** 评论发表者用户 ID */
-  @Column(name = "user_id", nullable = false)
+  @Column(name = "user_id", comment = "评论发表者用户ID", nullable = false)
   private Long userId;
 
   /** 父评论 ID (0L 为根评论) */
-  @Column(name = "parent_id", nullable = false)
+  @Column(name = "parent_id", comment = "父评论ID(0为根评论)", nullable = false)
   private Long parentId;
 
   /** 被回复人用户 ID (若是对特定成员的楼中楼回复) */
-  @Column(name = "reply_to_user_id")
+  @Column(name = "reply_to_user_id", comment = "被回复人用户ID")
   private Long replyToUserId;
 
   /** 评论正文内容 */
-  @Column(columnDefinition = "TEXT", nullable = false)
+  @Column(comment = "评论正文内容", columnDefinition = "TEXT", nullable = false)
   private String content;
 
   /** 评论点赞数 */
-  @Column(name = "like_count", nullable = false)
+  @Column(name = "like_count", comment = "评论点赞数", nullable = false)
   private Integer likeCount;
 
   /** 静态工厂：创建根评论 */

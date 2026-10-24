@@ -31,8 +31,6 @@ class RagPromptTemplateTest {
         .contains("严守参考资料")
         .contains("杜绝幻觉捏造")
         .contains("根据当前知识库参考资料，未找到相关内容，无法为您解答")
-        .contains("精准角标溯源")
-        .contains("[1]")
         .contains("企业级 AI 智能知识助手");
   }
 

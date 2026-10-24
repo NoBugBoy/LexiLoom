@@ -1,5 +1,7 @@
 package io.lexiloom.application.ai.gateway.llm;
 
+import org.springframework.ai.chat.metadata.Usage;
+
 /**
  * LLM 流式输出事件回调接口 (Reactive Stream Listener)
  *
@@ -21,8 +23,17 @@ public interface LlmStreamCallback {
    */
   void onMessage(String deltaMessage);
 
-  /** 生成全部完成回调 */
+  /** 生成全部完成回调 (历史默认无参方法) */
   void onComplete();
+
+  /**
+   * 生成全部完成回调（携带真实 Token 消耗元数据）
+   *
+   * @param usage 模型服务商返回的真实 Token 使用统计
+   */
+  default void onComplete(Usage usage) {
+    onComplete();
+  }
 
   /**
    * 发生异常回调

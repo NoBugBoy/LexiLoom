@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.lexiloom.application.ai.config.AiProperties;
 import io.lexiloom.application.ai.enums.RerankStrategyEnum;
 import io.lexiloom.application.ai.model.search.DocChunkDocument;
+import io.lexiloom.application.ai.trace.RagTraceHolder;
+import io.lexiloom.application.ai.trace.model.RagTraceContext;
 import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -58,7 +60,7 @@ public class CrossEncoderRerankAdapter implements RerankGateway {
               .connectTimeout(Duration.ofSeconds(5))
               .build();
       JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(httpClient);
-      factory.setReadTimeout(Duration.ofSeconds(15));
+      factory.setReadTimeout(Duration.ofSeconds(60));
       this.restClient = RestClient.builder().requestFactory(factory).build();
     }
   }
@@ -97,7 +99,8 @@ public class CrossEncoderRerankAdapter implements RerankGateway {
     return aiProperties != null
         && aiProperties.getRerank() != null
         && aiProperties.getRerank().isEnabled()
-        && aiProperties.getRerank().getStrategy() == RerankStrategyEnum.CROSS_ENCODER;
+        && (aiProperties.getRerank().getStrategy() == RerankStrategyEnum.CROSS_ENCODER
+            || aiProperties.getRerank().getStrategy() == RerankStrategyEnum.NONE);
   }
 
   @Override
@@ -209,6 +212,22 @@ public class CrossEncoderRerankAdapter implements RerankGateway {
   private List<ScoredDocChunkVO> parseRerankResponse(
       String responseBody, List<DocChunkDocument> candidates, int topK) throws Exception {
     JsonNode root = objectMapper.readTree(responseBody);
+
+    // 提取模型服务商真实返回的 Token 消耗 (非估算)
+    JsonNode usageNode = root.get("usage");
+    if (usageNode != null && !usageNode.isNull()) {
+      long totalTokens = usageNode.path("total_tokens").asLong(0L);
+      if (totalTokens > 0) {
+        RagTraceContext traceContext = RagTraceHolder.get();
+        if (traceContext != null) {
+          traceContext.recordRerankTokens(totalTokens);
+        }
+        log.info(
+            "【CrossEncoderRerankAdapter】DashScope Rerank 实际消耗 Token=[total_tokens={}]",
+            totalTokens);
+      }
+    }
+
     JsonNode resultsNode = null;
     if (root.has("output") && root.get("output").has("results")) {
       resultsNode = root.get("output").get("results");

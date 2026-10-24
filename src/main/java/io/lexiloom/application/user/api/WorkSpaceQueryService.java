@@ -27,4 +27,10 @@ public interface WorkSpaceQueryService {
 
   /** 批量获取工作空间名称映射 (Key: workspaceId, Value: name) */
   java.util.Map<Long, String> getWorkspaceNames(java.util.Collection<Long> workspaceIds);
+
+  /** 查询系统中所有工作空间公开列表 (跨模块安全) */
+  List<WorkSpaceDTO> listAllWorkspaces();
+
+  /** 查询指定用户加入的所有工作空间公开列表 (跨模块安全) */
+  List<WorkSpaceDTO> listMyWorkspaceDTOs(Long userId);
 }

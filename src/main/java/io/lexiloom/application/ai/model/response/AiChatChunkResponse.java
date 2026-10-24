@@ -16,7 +16,7 @@ import java.util.List;
  * </ul>
  */
 public record AiChatChunkResponse(
-    String type, String delta, List<CitationVO> citations, String sessionId) {
+    String type, String delta, List<CitationVO> citations, String sessionId, String traceId) {
 
   public static final String TYPE_THINKING = "THINKING";
   public static final String TYPE_MESSAGE = "MESSAGE";
@@ -27,31 +27,45 @@ public record AiChatChunkResponse(
     citations = (citations == null) ? List.of() : List.copyOf(citations);
   }
 
+  public AiChatChunkResponse(
+      String type, String delta, List<CitationVO> citations, String sessionId) {
+    this(type, delta, citations, sessionId, null);
+  }
+
   public AiChatChunkResponse(String type, String delta, List<CitationVO> citations) {
-    this(type, delta, citations, null);
+    this(type, delta, citations, null, null);
   }
 
   public static AiChatChunkResponse message(String delta) {
-    return new AiChatChunkResponse(TYPE_MESSAGE, delta, List.of(), null);
+    return new AiChatChunkResponse(TYPE_MESSAGE, delta, List.of(), null, null);
   }
 
   public static AiChatChunkResponse thinking(String delta) {
-    return new AiChatChunkResponse(TYPE_THINKING, delta, List.of(), null);
+    return new AiChatChunkResponse(TYPE_THINKING, delta, List.of(), null, null);
   }
 
   public static AiChatChunkResponse citation(List<CitationVO> citations) {
-    return new AiChatChunkResponse(TYPE_CITATION, null, citations, null);
+    return new AiChatChunkResponse(TYPE_CITATION, null, citations, null, null);
   }
 
   public static AiChatChunkResponse citation(List<CitationVO> citations, String sessionId) {
-    return new AiChatChunkResponse(TYPE_CITATION, null, citations, sessionId);
+    return new AiChatChunkResponse(TYPE_CITATION, null, citations, sessionId, null);
+  }
+
+  public static AiChatChunkResponse citation(
+      List<CitationVO> citations, String sessionId, String traceId) {
+    return new AiChatChunkResponse(TYPE_CITATION, null, citations, sessionId, traceId);
   }
 
   public static AiChatChunkResponse done() {
-    return new AiChatChunkResponse(TYPE_DONE, null, List.of(), null);
+    return new AiChatChunkResponse(TYPE_DONE, null, List.of(), null, null);
   }
 
   public static AiChatChunkResponse done(String sessionId) {
-    return new AiChatChunkResponse(TYPE_DONE, null, List.of(), sessionId);
+    return new AiChatChunkResponse(TYPE_DONE, null, List.of(), sessionId, null);
+  }
+
+  public static AiChatChunkResponse done(String sessionId, String traceId) {
+    return new AiChatChunkResponse(TYPE_DONE, null, List.of(), sessionId, traceId);
   }
 }

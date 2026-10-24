@@ -28,6 +28,22 @@ public class RedisConfig {
     return template;
   }
 
+  @Bean
+  @ConditionalOnMissingBean(name = "redisTemplate")
+  public RedisTemplate<String, Object> redisTemplate(
+      RedisConnectionFactory connectionFactory, ObjectMapper objectMapper) {
+    RedisTemplate<String, Object> template = new RedisTemplate<>();
+    template.setConnectionFactory(connectionFactory);
+    template.setKeySerializer(new StringRedisSerializer());
+    JacksonJsonRedisSerializer<Object> serializer =
+        new JacksonJsonRedisSerializer<>(objectMapper, Object.class);
+    template.setValueSerializer(serializer);
+    template.setHashKeySerializer(new StringRedisSerializer());
+    template.setHashValueSerializer(serializer);
+    template.afterPropertiesSet();
+    return template;
+  }
+
   /** 注册兼容旧版 Jackson 2 的 ObjectMapper Bean，供依赖 com.fasterxml.jackson 的组件与第三方库透明使用 */
   @Bean
   @ConditionalOnMissingBean(com.fasterxml.jackson.databind.ObjectMapper.class)

@@ -72,6 +72,24 @@ class HybridSearchQueryServiceTest {
     return hits;
   }
 
+  @SuppressWarnings("unchecked")
+  private SearchHits<DocChunkDocument> createSearchHitsWithScores(
+      List<DocChunkDocument> docs, List<Float> scores) {
+    SearchHits<DocChunkDocument> hits = mock(SearchHits.class);
+    List<SearchHit<DocChunkDocument>> hitList = new ArrayList<>();
+    for (int i = 0; i < docs.size(); i++) {
+      DocChunkDocument doc = docs.get(i);
+      Float score = (scores != null && i < scores.size()) ? scores.get(i) : 1.0f;
+      SearchHit<DocChunkDocument> hit = mock(SearchHit.class);
+      when(hit.getContent()).thenReturn(doc);
+      org.mockito.Mockito.lenient().when(hit.getScore()).thenReturn(score);
+      hitList.add(hit);
+    }
+    org.mockito.Mockito.lenient().when(hits.isEmpty()).thenReturn(docs.isEmpty());
+    org.mockito.Mockito.lenient().when(hits.getSearchHits()).thenReturn(hitList);
+    return hits;
+  }
+
   @Test
   @DisplayName("参数校验：workspaceId 为空或关键词为空时抛出业务异常")
   void testParameterValidation() {
@@ -139,14 +157,13 @@ class HybridSearchQueryServiceTest {
     List<NativeQuery> queries = queryCaptor.getAllValues();
     assertThat(queries).hasSize(2);
 
-    // 路径 1：词法检索采用 best_fields + tie_breaker，正文权重最高、文档级冗余字段降权，
-    // 防止关键词命中文档标题时同文档全部切片 BM25 并列刷屏
+    // 路径 1：词法检索采用 most_fields + tie_breaker，正文权重最高、标题与章节导航加权、模板前缀降权
     var multiMatch = queries.get(0).getQuery().bool().must().getFirst().multiMatch();
     assertThat(multiMatch).isNotNull();
-    assertThat(multiMatch.tieBreaker()).isEqualTo(0.5);
+    assertThat(multiMatch.tieBreaker()).isEqualTo(0.3);
     assertThat(multiMatch.minimumShouldMatch()).isNull();
     assertThat(multiMatch.fields())
-        .containsExactly("content^3", "contextPrefix^2.5", "title^1", "headerPath^1.5");
+        .containsExactly("content^4", "title^3", "headerPath^2", "contextPrefix^0.5");
 
     // 路径 2：向量检索使用 kNN 命中 content_vector
     assertThat(queries.get(1).getKnnSearches()).hasSize(1);
@@ -575,7 +592,7 @@ class HybridSearchQueryServiceTest {
     assertThat(multiMatch.query()).isEqualTo("S16 数据库表 表名 表注释");
     assertThat(multiMatch.minimumShouldMatch()).isNull();
     assertThat(multiMatch.fields())
-        .containsExactly("content^3", "contextPrefix^2.5", "title^1", "headerPath^1.5");
+        .containsExactly("content^4", "title^3", "headerPath^2", "contextPrefix^0.5");
 
     // 校验召回结果正常返回，未被误杀
     assertThat(results).hasSize(2);
@@ -1023,5 +1040,247 @@ class HybridSearchQueryServiceTest {
     List<ScoredDocChunkVO> maxResults = service.hybridSearch(cmdMax);
     // 100 被硬上限截断为 50
     assertThat(maxResults).hasSize(50);
+  }
+
+  @Test
+  @DisplayName("验证 cleanLexicalQuery 增强自然语言提问降噪：剥离口语化动词、复杂语气助词与格式虚词")
+  void testCleanLexicalQueryEnhanced() {
+    Long wsId = 100L;
+    String rawConversationalQuery = "麻烦帮我分析一下库存系统的扣减流程，能否详细说明？";
+
+    DocChunkDocument doc =
+        DocChunkDocument.builder()
+            .id("doc_stock_1")
+            .workspaceId("100")
+            .documentId("doc_1")
+            .title("库存管理设计")
+            .content("库存扣减流程核心在于乐观锁与幂等校验")
+            .build();
+
+    SearchHits<DocChunkDocument> hits1 = createSearchHits(List.of(doc));
+    SearchHits<DocChunkDocument> hits2 = createSearchHits(List.of());
+
+    when(elasticsearchOperations.search(any(NativeQuery.class), eq(DocChunkDocument.class)))
+        .thenReturn(hits1, hits2);
+
+    when(embeddingGateway.embed(any())).thenReturn(new float[] {0.1f});
+    when(rerankGateway.getStrategy()).thenReturn(RerankStrategyEnum.NONE);
+
+    HybridSearchCommand command = HybridSearchCommand.of(wsId, rawConversationalQuery, 5);
+    service.hybridSearch(command);
+
+    ArgumentCaptor<NativeQuery> captor = ArgumentCaptor.forClass(NativeQuery.class);
+    verify(elasticsearchOperations, org.mockito.Mockito.atLeastOnce())
+        .search(captor.capture(), eq(DocChunkDocument.class));
+
+    NativeQuery captured = captor.getAllValues().get(0);
+    var multiMatch = captured.getQuery().bool().must().getFirst().multiMatch();
+    assertThat(multiMatch.query()).doesNotContain("麻烦");
+    assertThat(multiMatch.query()).doesNotContain("帮我");
+    assertThat(multiMatch.query()).doesNotContain("分析一下");
+    assertThat(multiMatch.query()).doesNotContain("能否");
+    assertThat(multiMatch.query()).doesNotContain("详细说明");
+    assertThat(multiMatch.query()).contains("库存系统");
+    assertThat(multiMatch.query()).contains("扣减流程");
+  }
+
+  @Test
+  @DisplayName("验证 ES 原生单请求双路混合检索：单个 NativeQuery 同时包含 query 与 knnSearches，单次调用 ES")
+  void testNativeHybridSearchSingleRequest() {
+    aiProperties.getRag().setNativeHybridSearch(true);
+    try {
+      Long wsId = 100L;
+      float[] vector = new float[] {0.1f, 0.2f, 0.3f};
+      HybridSearchCommand command = HybridSearchCommand.of(wsId, "分布式系统存储", vector, 5);
+
+      DocChunkDocument doc =
+          DocChunkDocument.builder()
+              .id("doc_native_1")
+              .workspaceId("100")
+              .documentId("doc_1")
+              .title("分布式存储设计")
+              .content("分布式存储设计要点")
+              .contentVector(vector)
+              .build();
+
+      SearchHits<DocChunkDocument> hits = createSearchHits(List.of(doc));
+      when(elasticsearchOperations.search(any(NativeQuery.class), eq(DocChunkDocument.class)))
+          .thenReturn(hits);
+
+      List<ScoredDocChunkVO> results = service.hybridSearch(command);
+
+      // 验证仅执行了 1 次 ES 请求 (单次 RTT)
+      ArgumentCaptor<NativeQuery> captor = ArgumentCaptor.forClass(NativeQuery.class);
+      verify(elasticsearchOperations, org.mockito.Mockito.times(1))
+          .search(captor.capture(), eq(DocChunkDocument.class));
+
+      NativeQuery captured = captor.getValue();
+      // 验证同一个请求中同时包含了词法检索 query 和向量检索 knnSearches
+      assertThat(captured.getQuery()).isNotNull();
+      assertThat(captured.getKnnSearches()).hasSize(1);
+      assertThat(captured.getKnnSearches().getFirst().field()).isEqualTo("content_vector");
+
+      assertThat(results).hasSize(1);
+      assertThat(results.getFirst().chunk().getId()).isEqualTo("doc_native_1");
+    } finally {
+      aiProperties.getRag().setNativeHybridSearch(false);
+    }
+  }
+
+  @Test
+  @DisplayName("验证 HybridSearchCommand.nativeHybridSearch 参数优先于全局配置控制检索模式")
+  void testCommandOverrideNativeHybridSearchPreference() {
+    Long wsId = 100L;
+    float[] vector = new float[] {0.1f, 0.2f, 0.3f};
+
+    DocChunkDocument doc =
+        DocChunkDocument.builder()
+            .id("doc_override_1")
+            .workspaceId("100")
+            .documentId("doc_1")
+            .title("动态控制检索")
+            .content("动态控制检索内容")
+            .contentVector(vector)
+            .build();
+
+    SearchHits<DocChunkDocument> hits = createSearchHits(List.of(doc));
+
+    // 场景 1: 全局为 false，但 Command 指定 nativeHybridSearch = true -> 强制走 ES 原生单请求检索
+    aiProperties.getRag().setNativeHybridSearch(false);
+    when(elasticsearchOperations.search(any(NativeQuery.class), eq(DocChunkDocument.class)))
+        .thenReturn(hits);
+
+    HybridSearchCommand commandTrue =
+        new HybridSearchCommand(
+            wsId,
+            "动态原生检索",
+            vector,
+            5,
+            null,
+            null,
+            List.of(),
+            null,
+            null,
+            false,
+            java.util.Map.of(),
+            true);
+
+    List<ScoredDocChunkVO> resultsTrue = service.hybridSearch(commandTrue);
+    assertThat(resultsTrue).isNotEmpty();
+
+    ArgumentCaptor<NativeQuery> captor = ArgumentCaptor.forClass(NativeQuery.class);
+    verify(elasticsearchOperations, org.mockito.Mockito.times(1))
+        .search(captor.capture(), eq(DocChunkDocument.class));
+    assertThat(captor.getValue().getQuery()).isNotNull();
+    assertThat(captor.getValue().getKnnSearches()).hasSize(1);
+
+    org.mockito.Mockito.reset(elasticsearchOperations);
+
+    // 场景 2: 全局为 true，但 Command 指定 nativeHybridSearch = false -> 走传统两路检索 (分别调用 lexical 与 vector)
+    aiProperties.getRag().setNativeHybridSearch(true);
+    when(elasticsearchOperations.search(any(NativeQuery.class), eq(DocChunkDocument.class)))
+        .thenReturn(hits, hits);
+    when(rerankGateway.getStrategy()).thenReturn(RerankStrategyEnum.NONE);
+    when(rerankGateway.rerank(any(RerankCommand.class)))
+        .thenAnswer(inv -> List.of(ScoredDocChunkVO.of(doc, 0.9, 1)));
+
+    HybridSearchCommand commandFalse =
+        new HybridSearchCommand(
+            wsId,
+            "动态分路检索",
+            vector,
+            5,
+            null,
+            null,
+            List.of(),
+            null,
+            null,
+            false,
+            java.util.Map.of(),
+            false);
+
+    List<ScoredDocChunkVO> resultsFalse = service.hybridSearch(commandFalse);
+    assertThat(resultsFalse).isNotEmpty();
+
+    // 验证调用了 2 次 (词法 1 次 + 向量 1 次)
+    verify(elasticsearchOperations, org.mockito.Mockito.times(2))
+        .search(any(NativeQuery.class), eq(DocChunkDocument.class));
+
+    aiProperties.getRag().setNativeHybridSearch(false);
+  }
+
+  @Test
+  @DisplayName("优化 8 验证：BM25 归一化得分保护低余弦相似度切片，精准关键词命中不被 0.30 阈值误杀")
+  void testBm25ScoreNormalizationProtectsLowCosineCandidate() {
+    Long wsId = 100L;
+    float[] queryVector = new float[] {1.0f, 0.0f, 0.0f};
+
+    // 向量路切片：余弦相似度 0.99，但词法不匹配
+    DocChunkDocument knnDoc =
+        DocChunkDocument.builder()
+            .id("doc_knn_1")
+            .workspaceId("100")
+            .documentId("doc_1")
+            .title("向量匹配文档")
+            .content("语义相似内容")
+            .contentVector(new float[] {1.0f, 0.0f, 0.0f})
+            .build();
+
+    // BM25 路切片：精准关键词匹配 (错误码/表名)，但与 query 的向量余弦仅 0.10 (低于阈值 0.30)
+    DocChunkDocument bm25Doc =
+        DocChunkDocument.builder()
+            .id("doc_bm25_1")
+            .workspaceId("100")
+            .documentId("doc_2")
+            .title("错误码速查手册")
+            .content("系统错误码 ERR_404_NOT_FOUND 处理指南")
+            .contentVector(new float[] {0.1f, 0.9f, 0.0f}) // 余弦相似度仅约 0.11
+            .build();
+
+    SearchHits<DocChunkDocument> bm25Hits =
+        createSearchHitsWithScores(List.of(bm25Doc), List.of(25.0f));
+    SearchHits<DocChunkDocument> knnHits =
+        createSearchHitsWithScores(List.of(knnDoc), List.of(0.95f));
+
+    when(elasticsearchOperations.search(any(NativeQuery.class), eq(DocChunkDocument.class)))
+        .thenReturn(bm25Hits, knnHits);
+
+    when(rerankGateway.getStrategy()).thenReturn(RerankStrategyEnum.NONE);
+    when(rerankGateway.rerank(any(RerankCommand.class)))
+        .thenAnswer(
+            inv -> {
+              RerankCommand cmd = inv.getArgument(0);
+              return cmd.candidates().stream().map(c -> ScoredDocChunkVO.of(c, 0.0, 1)).toList();
+            });
+
+    HybridSearchCommand command =
+        new HybridSearchCommand(
+            wsId,
+            "ERR_404_NOT_FOUND",
+            queryVector,
+            5,
+            0.30,
+            null,
+            List.of(),
+            null,
+            null,
+            false,
+            java.util.Map.of(),
+            false);
+
+    List<ScoredDocChunkVO> results = service.hybridSearch(command);
+
+    // 验证：bm25Doc 即使向量余弦 < 0.30，依然因为 BM25 归一化得分 (>= 0.40) 保底入围！
+    assertThat(results).hasSize(2);
+    assertThat(results.stream().map(r -> r.chunk().getId())).contains("doc_bm25_1", "doc_knn_1");
+
+    ScoredDocChunkVO bm25Result =
+        results.stream()
+            .filter(r -> "doc_bm25_1".equals(r.chunk().getId()))
+            .findFirst()
+            .orElseThrow();
+    assertThat(bm25Result.recallSource()).isEqualTo("BM25");
+    // 归一化后得分应显著高于阈值 0.30
+    assertThat(bm25Result.score()).isGreaterThanOrEqualTo(0.40);
   }
 }

@@ -8,6 +8,7 @@ import io.lexiloom.application.document.model.request.DocCommentCreateRequest;
 import jakarta.validation.constraints.NotNull;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -56,17 +57,19 @@ public class DocCommentController {
 
   /** 删除评论 */
   @DeleteMapping("/{commentId}")
-  public void deleteComment(
+  public ResponseEntity<Void> deleteComment(
       @PathVariable("docId") Long docId, @PathVariable("commentId") Long commentId) {
     Long userId = SecurityHolder.getUserId();
     docCommentService.deleteComment(commentId, userId);
+    return ResponseEntity.noContent().build();
   }
 
   /** 点赞评论 */
   @PostMapping("/{commentId}/like")
-  public void likeComment(
+  public ResponseEntity<Void> likeComment(
       @PathVariable("docId") Long docId, @PathVariable("commentId") Long commentId) {
     Long userId = SecurityHolder.getUserId();
     docCommentService.likeComment(commentId, userId);
+    return ResponseEntity.ok().build();
   }
 }

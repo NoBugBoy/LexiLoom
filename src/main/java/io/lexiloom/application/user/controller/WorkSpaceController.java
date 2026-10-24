@@ -13,6 +13,7 @@ import jakarta.validation.constraints.NotNull;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -75,46 +76,53 @@ public class WorkSpaceController {
 
   /** 修改团队基本信息 */
   @PutMapping("/{id}")
-  public void update(
+  public ResponseEntity<Void> update(
       @PathVariable("id") Long id, @Validated @RequestBody WorkSpaceUpdateRequest request) {
     workSpaceCommandService.update(id, request);
+    return ResponseEntity.noContent().build();
   }
 
   /** 调整团队成员上限 */
   @PutMapping("/{id}/max-members")
-  public void updateMaxMembers(
+  public ResponseEntity<Void> updateMaxMembers(
       @PathVariable("id") Long id, @Validated @RequestBody UpdateMaxMembersRequest request) {
     workSpaceCommandService.updateMaxMembers(id, request.maxMembers());
+    return ResponseEntity.noContent().build();
   }
 
   /** 冻结团队 */
   @PutMapping("/{id}/freeze")
-  public void freeze(@PathVariable("id") Long id) {
+  public ResponseEntity<Void> freeze(@PathVariable("id") Long id) {
     workSpaceCommandService.freeze(id);
+    return ResponseEntity.noContent().build();
   }
 
   /** 激活/恢复团队 */
   @PutMapping("/{id}/activate")
-  public void activate(@PathVariable("id") Long id) {
+  public ResponseEntity<Void> activate(@PathVariable("id") Long id) {
     workSpaceCommandService.activate(id);
+    return ResponseEntity.noContent().build();
   }
 
   /** 解散团队 */
   @PutMapping("/{id}/disband")
-  public void disband(@PathVariable("id") Long id) {
+  public ResponseEntity<Void> disband(@PathVariable("id") Long id) {
     workSpaceCommandService.disband(id);
+    return ResponseEntity.noContent().build();
   }
 
   /** 转让团队所有权 */
   @PutMapping("/{id}/transfer-owner")
-  public void transferOwner(
+  public ResponseEntity<Void> transferOwner(
       @PathVariable("id") Long id, @Validated @RequestBody TransferOwnerRequest request) {
     workSpaceCommandService.transferOwnership(id, request.newOwnerId());
+    return ResponseEntity.noContent().build();
   }
 
   /** 删除团队 */
   @DeleteMapping("/{id}")
-  public void delete(@PathVariable("id") Long id) {
+  public ResponseEntity<Void> delete(@PathVariable("id") Long id) {
     workSpaceCommandService.delete(id);
+    return ResponseEntity.noContent().build();
   }
 }

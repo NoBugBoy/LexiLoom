@@ -241,6 +241,67 @@ class RerankGatewayTest {
   }
 
   @Test
+  @DisplayName("CrossEncoderRerankAdapter：当返回 usage 时在 RagTrace 作用域内真实记录 Token 消耗")
+  void testCrossEncoderRerankAdapter_RecordsUsageToRagTrace() {
+    properties.getRerank().setApiKey("sk-mock-dashscope-key");
+    org.springframework.web.client.RestClient restClient =
+        org.mockito.Mockito.mock(org.springframework.web.client.RestClient.class);
+    org.springframework.web.client.RestClient.RequestBodyUriSpec uriSpec =
+        org.mockito.Mockito.mock(
+            org.springframework.web.client.RestClient.RequestBodyUriSpec.class,
+            org.mockito.Mockito.RETURNS_SELF);
+    org.springframework.web.client.RestClient.RequestBodySpec bodySpec =
+        org.mockito.Mockito.mock(
+            org.springframework.web.client.RestClient.RequestBodySpec.class,
+            org.mockito.Mockito.RETURNS_SELF);
+    org.springframework.web.client.RestClient.ResponseSpec responseSpec =
+        org.mockito.Mockito.mock(org.springframework.web.client.RestClient.ResponseSpec.class);
+
+    org.mockito.Mockito.when(restClient.post()).thenReturn(uriSpec);
+    org.mockito.Mockito.when(uriSpec.uri(org.mockito.ArgumentMatchers.anyString()))
+        .thenReturn(bodySpec);
+    org.mockito.Mockito.when(bodySpec.retrieve()).thenReturn(responseSpec);
+
+    String mockResponseBody =
+        """
+        {
+          "output": {
+            "results": [
+              {
+                "index": 0,
+                "relevance_score": 0.95
+              }
+            ]
+          },
+          "usage": {
+            "total_tokens": 158
+          }
+        }
+        """;
+    org.mockito.Mockito.when(responseSpec.body(String.class)).thenReturn(mockResponseBody);
+
+    CrossEncoderRerankAdapter adapter = new CrossEncoderRerankAdapter(properties, restClient, null);
+
+    DocChunkDocument c1 = createChunk("doc-1", "标题1", "正文内容1");
+    RerankCommand command = RerankCommand.of("测试提问", List.of(c1), 1);
+
+    io.lexiloom.application.ai.trace.model.RagTraceContext context =
+        new io.lexiloom.application.ai.trace.model.RagTraceContext(
+            "trace-rerank", "sess-1", 1L, 1L, "测试提问");
+
+    ScopedValue.where(io.lexiloom.application.ai.trace.RagTraceHolder.CURRENT, context)
+        .run(
+            () -> {
+              List<ScoredDocChunkVO> results = adapter.rerank(command);
+              assertThat(results).hasSize(1);
+              assertThat(results.get(0).score()).isEqualTo(0.95);
+            });
+
+    assertThat(context.getRerankTokens()).isEqualTo(158);
+    assertThat(context.getTotalTokens()).isEqualTo(158);
+  }
+
+  @Test
   @DisplayName("CrossEncoderRerankAdapter：远程接口异常时抛出包装异常")
   void testCrossEncoderRerankAdapter_RemoteDashScopeError_Throws() {
     properties.getRerank().setApiKey("sk-mock-dashscope-key");
@@ -293,6 +354,25 @@ class RerankGatewayTest {
   void testDefaultGatewayRoutesToCrossEncoder() {
     properties.getRerank().setEnabled(true);
     properties.getRerank().setStrategy(RerankStrategyEnum.CROSS_ENCODER);
+
+    assertThat(gateway.isEnabled()).isTrue();
+    assertThat(gateway.getStrategy()).isEqualTo(RerankStrategyEnum.CROSS_ENCODER);
+  }
+
+  @Test
+  @DisplayName("DefaultRerankGateway 路由：当 enabled=true 且未显式指定 strategy 时，默认启用 CROSS_ENCODER")
+  void testDefaultGatewayDefaultStrategyWhenEnabled() {
+    properties.getRerank().setEnabled(true);
+
+    assertThat(gateway.isEnabled()).isTrue();
+    assertThat(gateway.getStrategy()).isEqualTo(RerankStrategyEnum.CROSS_ENCODER);
+  }
+
+  @Test
+  @DisplayName("DefaultRerankGateway 路由：当 enabled=true 且 strategy 配置为 NONE 时，自动升级为 CROSS_ENCODER")
+  void testDefaultGatewayUpgradesNoneToCrossEncoderWhenEnabled() {
+    properties.getRerank().setEnabled(true);
+    properties.getRerank().setStrategy(RerankStrategyEnum.NONE);
 
     assertThat(gateway.isEnabled()).isTrue();
     assertThat(gateway.getStrategy()).isEqualTo(RerankStrategyEnum.CROSS_ENCODER);

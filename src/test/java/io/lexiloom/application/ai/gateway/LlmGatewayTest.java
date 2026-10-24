@@ -130,4 +130,115 @@ class LlmGatewayTest {
     assertThat(messages).contains("这是回答正文");
     assertThat(completed.get()).isTrue();
   }
+
+  @Test
+  @DisplayName("DeepSeekLlmAdapter 同步调用返回 usage 时正确封装至 AiChatResponse 并沉淀至 RagTraceContext")
+  void testDeepSeekLlmAdapterSyncWithUsage() {
+    Generation generation = new Generation(new AssistantMessage("回答内容"));
+    org.springframework.ai.chat.metadata.Usage mockUsage =
+        new org.springframework.ai.chat.metadata.DefaultUsage(150L, 50L, 200L);
+    org.springframework.ai.chat.metadata.ChatResponseMetadata metadata =
+        org.springframework.ai.chat.metadata.ChatResponseMetadata.builder()
+            .withUsage(mockUsage)
+            .build();
+    ChatResponse chatResponse = new ChatResponse(List.of(generation), metadata);
+    when(deepSeekChatModel.call(any(Prompt.class))).thenReturn(chatResponse);
+
+    io.lexiloom.application.ai.trace.model.RagTraceContext context =
+        new io.lexiloom.application.ai.trace.model.RagTraceContext(
+            "trace-llm", "sess-1", 1L, 1L, "测试问题");
+
+    ScopedValue.where(io.lexiloom.application.ai.trace.RagTraceHolder.CURRENT, context)
+        .run(
+            () -> {
+              AiChatResponse response = deepSeekAdapter.chat(LlmChatCommand.of("测试问题"));
+              assertThat(response.content()).isEqualTo("回答内容");
+              assertThat(response.promptTokens()).isEqualTo(150);
+              assertThat(response.completionTokens()).isEqualTo(50);
+              assertThat(response.totalTokens()).isEqualTo(200);
+            });
+
+    assertThat(context.getPromptTokens()).isEqualTo(150);
+    assertThat(context.getCompletionTokens()).isEqualTo(50);
+    assertThat(context.getTotalTokens()).isEqualTo(200);
+  }
+
+  @Test
+  @DisplayName("DeepSeekLlmAdapter 流式调用包含 usage 时正确通知 onComplete(usage) 并沉淀至 RagTraceContext")
+  void testDeepSeekLlmAdapterStreamWithUsage() {
+    Generation g = new Generation(new AssistantMessage("流式回答"));
+    org.springframework.ai.chat.metadata.Usage mockUsage =
+        new org.springframework.ai.chat.metadata.DefaultUsage(80L, 20L, 100L);
+    org.springframework.ai.chat.metadata.ChatResponseMetadata metadata =
+        org.springframework.ai.chat.metadata.ChatResponseMetadata.builder()
+            .withUsage(mockUsage)
+            .build();
+    when(deepSeekChatModel.stream(any(Prompt.class)))
+        .thenReturn(Flux.just(new ChatResponse(List.of(g), metadata)));
+
+    io.lexiloom.application.ai.trace.model.RagTraceContext context =
+        new io.lexiloom.application.ai.trace.model.RagTraceContext(
+            "trace-llm-stream", "sess-1", 1L, 1L, "流式测试");
+
+    java.util.concurrent.atomic.AtomicReference<org.springframework.ai.chat.metadata.Usage>
+        callbackUsage = new java.util.concurrent.atomic.AtomicReference<>(null);
+
+    ScopedValue.where(io.lexiloom.application.ai.trace.RagTraceHolder.CURRENT, context)
+        .run(
+            () -> {
+              deepSeekAdapter.streamChat(
+                  LlmChatCommand.of("流式测试"),
+                  new LlmStreamCallback() {
+                    @Override
+                    public void onThinking(String deltaThinking) {}
+
+                    @Override
+                    public void onMessage(String deltaMessage) {}
+
+                    @Override
+                    public void onComplete() {}
+
+                    @Override
+                    public void onComplete(org.springframework.ai.chat.metadata.Usage usage) {
+                      callbackUsage.set(usage);
+                    }
+
+                    @Override
+                    public void onError(Throwable throwable) {}
+                  });
+            });
+
+    assertThat(callbackUsage.get()).isNotNull();
+    assertThat(callbackUsage.get().getPromptTokens()).isEqualTo(80L);
+    assertThat(callbackUsage.get().getGenerationTokens()).isEqualTo(20L);
+    assertThat(context.getPromptTokens()).isEqualTo(80);
+    assertThat(context.getCompletionTokens()).isEqualTo(20);
+    assertThat(context.getTotalTokens()).isEqualTo(100);
+  }
+
+  @Test
+  @DisplayName("DefaultLlmGateway BYOK 动态路由：全局配置 DEEPSEEK 但凭证指定 QWEN 时动态路由至 Qwen")
+  void testRoutesToQwenWhenByokConfigured() {
+    properties.setModelProvider(LlmModelProviderEnum.DEEPSEEK);
+
+    io.lexiloom.application.common.security.OpenApiPrincipal principal =
+        new io.lexiloom.application.common.security.OpenApiPrincipal(
+            1L, 100L, "BYOK-Key", "chat:completion", null, "QWEN", "sk-user-qwen-key");
+    io.lexiloom.application.common.SecurityHolder.setAuthentication(
+        100L, List.of(), "lx_live_123", principal);
+
+    try {
+      Generation generation = new Generation(new AssistantMessage("Qwen BYOK 回复"));
+      ChatResponse chatResponse = new ChatResponse(List.of(generation));
+      when(qwenChatModel.call(any(Prompt.class))).thenReturn(chatResponse);
+
+      LlmChatCommand command = LlmChatCommand.of("你好");
+      AiChatResponse response = gateway.chat(command);
+
+      assertThat(response.content()).isEqualTo("Qwen BYOK 回复");
+      assertThat(gateway.getProvider()).isEqualTo(LlmModelProviderEnum.QWEN);
+    } finally {
+      org.springframework.security.core.context.SecurityContextHolder.clearContext();
+    }
+  }
 }

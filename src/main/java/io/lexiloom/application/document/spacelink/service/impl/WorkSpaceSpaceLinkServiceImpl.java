@@ -95,8 +95,7 @@ public class WorkSpaceSpaceLinkServiceImpl implements WorkSpaceSpaceLinkService 
             sourceWorkspaceId, targetWorkspaceId);
 
     WorkSpaceSpaceLinkEntity linkToSave;
-    if (existingOpt.isPresent()) {
-      WorkSpaceSpaceLinkEntity existing = existingOpt.get();
+    if (existingOpt.orElse(null) instanceof WorkSpaceSpaceLinkEntity existing) {
       if (existing.getStatus() == SpaceLinkStatusEnum.APPROVED) {
         throw BusinessException.badRequest("与目标空间的关联已审批生效，无需重复申请");
       }

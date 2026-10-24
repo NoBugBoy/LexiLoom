@@ -19,6 +19,12 @@ import io.lexiloom.application.ai.model.vo.DocChunkVO;
 import io.lexiloom.application.ai.rag.ConversationSessionService;
 import io.lexiloom.application.ai.rag.RagChatService;
 import io.lexiloom.application.ai.repository.DocChunkRepository;
+import io.lexiloom.application.ai.service.AiAccessSecurityValidator;
+import io.lexiloom.application.ai.trace.RagTracePersistenceService;
+import io.lexiloom.application.ai.trace.entity.RagTraceDetailEntity;
+import io.lexiloom.application.ai.trace.entity.RagTraceEntity;
+import io.lexiloom.application.ai.trace.model.RagFeedbackRequest;
+import io.lexiloom.application.ai.trace.model.RagTracePageRequest;
 import io.lexiloom.application.common.SecurityHolder;
 import io.lexiloom.application.document.api.DocumentQueryApi;
 import io.lexiloom.application.document.api.dto.DocumentDTO;
@@ -27,6 +33,7 @@ import io.lexiloom.application.enums.WorkSpaceAclEnum;
 import io.lexiloom.application.enums.WorkSpaceRoleEnum;
 import io.lexiloom.application.exception.BusinessException;
 import io.lexiloom.application.user.api.WorkSpaceMemberQueryService;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
@@ -36,6 +43,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -48,6 +59,8 @@ class AiChatControllerTest {
   @Mock private DocChunkRepository docChunkRepository;
   @Mock private DocVectorSyncListener docVectorSyncListener;
   @Mock private WorkSpaceMemberQueryService workSpaceMemberQueryService;
+  @Mock private RagTracePersistenceService ragTracePersistenceService;
+  @Mock private io.lexiloom.application.ai.service.AiStatsQueryService aiStatsQueryService;
 
   private AiChatController controller;
 
@@ -60,7 +73,9 @@ class AiChatControllerTest {
             documentQueryApi,
             docChunkRepository,
             docVectorSyncListener,
-            workSpaceMemberQueryService);
+            new AiAccessSecurityValidator(workSpaceMemberQueryService),
+            ragTracePersistenceService,
+            aiStatsQueryService);
   }
 
   @AfterEach
@@ -360,7 +375,8 @@ class AiChatControllerTest {
     SecurityHolder.setAuthentication(100L);
     when(conversationSessionService.sessionExists("s1")).thenReturn(true);
 
-    controller.deleteSession("s1");
+    ResponseEntity<Void> response = controller.deleteSession("s1");
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
 
     verify(conversationSessionService).deleteSession("s1", 100L);
   }
@@ -487,5 +503,102 @@ class AiChatControllerTest {
 
     assertThat(response).isNotNull();
     verify(ragChatService).chat(request);
+  }
+
+  @Test
+  @DisplayName("验证 POST /api/ai/traces/{traceId}/feedback 反馈接口正常委派并返回 204")
+  void testRecordFeedbackEndpoint() {
+    SecurityHolder.setAuthentication(123L);
+    RagFeedbackRequest feedbackRequest =
+        new RagFeedbackRequest(1, List.of("HELPFUL", "ACCURATE"), "回答非常清晰详实");
+
+    ResponseEntity<Void> response = controller.recordFeedback("trace-abc-123", feedbackRequest);
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+    verify(ragTracePersistenceService).recordFeedback("trace-abc-123", feedbackRequest, 123L);
+  }
+
+  @Test
+  @DisplayName("验证 GET /api/ai/traces 观测链路分页查询")
+  void testPageTracesEndpoint() {
+    RagTracePageRequest pageRequest = new RagTracePageRequest();
+    pageRequest.setWorkspaceId(1L);
+    pageRequest.setPageNum(1);
+    pageRequest.setPageSize(10);
+
+    RagTraceEntity trace =
+        RagTraceEntity.create(
+            "trace-01", "s1", 1L, 100L, "问题", "model", "NONE", 1, 1, 0, 1L, 2L, 0L, 10L, 13L);
+    when(ragTracePersistenceService.pageTraces(pageRequest))
+        .thenReturn(new PageImpl<>(List.of(trace)));
+
+    Page<RagTraceEntity> result = controller.pageTraces(pageRequest);
+
+    assertThat(result.getContent()).hasSize(1);
+    assertThat(result.getContent().get(0).getTraceId()).isEqualTo("trace-01");
+  }
+
+  @Test
+  @DisplayName("验证 GET /api/ai/traces/{traceId} 观测链路明细查询")
+  void testGetTraceDetailEndpoint() {
+    RagTraceDetailEntity detail = RagTraceDetailEntity.create("trace-01", "[]", "[]", "回答正文");
+    when(ragTracePersistenceService.getDetailByTraceId("trace-01")).thenReturn(Optional.of(detail));
+
+    RagTraceDetailEntity result = controller.getTraceDetail("trace-01");
+
+    assertThat(result).isNotNull();
+    assertThat(result.getTraceId()).isEqualTo("trace-01");
+    assertThat(result.getAnswerContent()).isEqualTo("回答正文");
+  }
+
+  @Test
+  @DisplayName("验证 GET /api/ai/token-stats 统计最近7天 Token 消耗正常返回")
+  void testGetTokenUsageStatsSuccess() {
+    LocalDateTime now = LocalDateTime.now();
+    LocalDateTime startTime = now.minusDays(7);
+    io.lexiloom.application.ai.model.response.TokenUsageStatsResponse.TokenUsageSummaryVO summary =
+        new io.lexiloom.application.ai.model.response.TokenUsageStatsResponse.TokenUsageSummaryVO(
+            15000L, 5000L, 7000L, 2000L, 1000L, 12L);
+    io.lexiloom.application.ai.model.response.TokenUsageStatsResponse.ModelTokenUsageVO modelVo =
+        new io.lexiloom.application.ai.model.response.TokenUsageStatsResponse.ModelTokenUsageVO(
+            "qwen-plus", 15000L, 5000L, 7000L, 2000L, 1000L, 12L, 100.0);
+    io.lexiloom.application.ai.model.response.TokenUsageStatsResponse.DailyModelTokenVO
+        dailyModelVo =
+            new io.lexiloom.application.ai.model.response.TokenUsageStatsResponse.DailyModelTokenVO(
+                "qwen-plus", 2000L, 700L, 1300L, 0L, 0L, 2L);
+    io.lexiloom.application.ai.model.response.TokenUsageStatsResponse.DailyTokenUsageVO dailyVo =
+        new io.lexiloom.application.ai.model.response.TokenUsageStatsResponse.DailyTokenUsageVO(
+            "2026-10-21", 2000L, 700L, 1300L, 0L, 0L, 2L, List.of(dailyModelVo));
+    io.lexiloom.application.ai.model.response.TokenUsageStatsResponse mockResponse =
+        new io.lexiloom.application.ai.model.response.TokenUsageStatsResponse(
+            7, startTime, now, 10L, summary, List.of(modelVo), List.of(dailyVo));
+
+    when(aiStatsQueryService.getTokenUsageStatsResponse(10L, 7)).thenReturn(mockResponse);
+
+    io.lexiloom.application.ai.model.response.TokenUsageStatsResponse response =
+        controller.getTokenUsageStats(10L, 7);
+
+    assertThat(response).isNotNull();
+    assertThat(response.days()).isEqualTo(7);
+    assertThat(response.total().totalTokens()).isEqualTo(15000L);
+    assertThat(response.total().promptTokens()).isEqualTo(5000L);
+    assertThat(response.total().completionTokens()).isEqualTo(7000L);
+    assertThat(response.modelBreakdown()).hasSize(1);
+    assertThat(response.modelBreakdown().get(0).modelName()).isEqualTo("qwen-plus");
+    assertThat(response.modelBreakdown().get(0).percentage()).isEqualTo(100.0);
+    assertThat(response.dailyStats()).hasSize(1);
+    assertThat(response.dailyStats().get(0).date()).isEqualTo("2026-10-21");
+    assertThat(response.dailyStats().get(0).totalTokens()).isEqualTo(2000L);
+  }
+
+  @Test
+  @DisplayName("验证 GET /api/ai/token-stats 无权限访问工作空间时抛出 Forbidden 异常")
+  void testGetTokenUsageStatsForbidden() {
+    SecurityHolder.setAuthentication(999L);
+    when(workSpaceMemberQueryService.isMember(20L, 999L)).thenReturn(false);
+
+    assertThatThrownBy(() -> controller.getTokenUsageStats(20L, 7))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("您不是该工作空间成员");
   }
 }

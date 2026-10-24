@@ -63,6 +63,13 @@ public record DocParseResult(
         errorMessage);
   }
 
+  public static DocParseResult queued(DocParserEngineEnum engineUsed, Map<String, Object> metadata) {
+    java.util.Map<String, Object> meta =
+        new java.util.HashMap<>(metadata != null ? metadata : Collections.emptyMap());
+    return new DocParseResult(
+        null, null, null, DocParseStatusEnum.QUEUED, engineUsed, false, meta, null);
+  }
+
   public static DocParseResult asyncProcessing(
       DocParserEngineEnum engineUsed, String batchId, String taskId, Map<String, Object> metadata) {
     java.util.Map<String, Object> meta =
@@ -87,5 +94,9 @@ public record DocParseResult(
 
   public boolean isAsyncProcessing() {
     return this.status == DocParseStatusEnum.ASYNC_PROCESSING;
+  }
+
+  public boolean isQueued() {
+    return this.status == DocParseStatusEnum.QUEUED;
   }
 }

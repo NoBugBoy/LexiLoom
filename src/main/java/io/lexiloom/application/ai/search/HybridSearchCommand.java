@@ -18,6 +18,9 @@ import java.util.Map;
  * @param categoryId 文档分类 ID 过滤 (可选)
  * @param userId 当前发起检索的用户 ID (用于 ACL 私密文档过滤，可选)
  * @param isAdmin 当前用户是否为工作空间管理员或以上 (管理员可查看空间内所有私密文档)
+ * @param weights 多工作空间检索权重分配 (可选，key=workspaceId, value=权重)
+ * @param nativeHybridSearch 是否启用 ES 原生单请求双路混合检索。{@code true} 强制开启（配额隔离失效）； {@code false}
+ *     强制走应用层配额隔离策略；{@code null} 跟随全局配置。
  */
 public record HybridSearchCommand(
     Long workspaceId,
@@ -30,7 +33,8 @@ public record HybridSearchCommand(
     Long categoryId,
     Long userId,
     boolean isAdmin,
-    Map<Long, Integer> weights) {
+    Map<Long, Integer> weights,
+    Boolean nativeHybridSearch) {
 
   public HybridSearchCommand {
     if (workspaceId == null) {
@@ -45,7 +49,35 @@ public record HybridSearchCommand(
     weights = weights != null ? Map.copyOf(weights) : java.util.Collections.emptyMap();
   }
 
-  /** 兼容 10 参数构造器 (默认 weights 为空) */
+  /** 兼容 11 参数构造器 (默认 nativeHybridSearch=null，跟随全局配置) */
+  public HybridSearchCommand(
+      Long workspaceId,
+      String query,
+      float[] queryVector,
+      int topK,
+      Double minScore,
+      Long documentId,
+      List<String> tags,
+      Long categoryId,
+      Long userId,
+      boolean isAdmin,
+      Map<Long, Integer> weights) {
+    this(
+        workspaceId,
+        query,
+        queryVector,
+        topK,
+        minScore,
+        documentId,
+        tags,
+        categoryId,
+        userId,
+        isAdmin,
+        weights,
+        null);
+  }
+
+  /** 兼容 10 参数构造器 (默认 weights 为空, nativeHybridSearch=null) */
   public HybridSearchCommand(
       Long workspaceId,
       String query,
@@ -68,10 +100,11 @@ public record HybridSearchCommand(
         categoryId,
         userId,
         isAdmin,
-        java.util.Collections.emptyMap());
+        java.util.Collections.emptyMap(),
+        null);
   }
 
-  /** 兼容旧版 8 参数构造函数 (默认 userId=null, isAdmin=false, weights 为空) */
+  /** 兼容旧版 8 参数构造函数 (默认 userId=null, isAdmin=false, weights 为空, nativeHybridSearch=null) */
   public HybridSearchCommand(
       Long workspaceId,
       String query,
@@ -92,7 +125,8 @@ public record HybridSearchCommand(
         categoryId,
         null,
         false,
-        java.util.Collections.emptyMap());
+        java.util.Collections.emptyMap(),
+        null);
   }
 
   public static HybridSearchCommand of(Long workspaceId, String query, int topK) {

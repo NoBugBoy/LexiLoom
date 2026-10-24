@@ -3,6 +3,8 @@ package io.lexiloom.application.ai.gateway.llm;
 import cn.hutool.core.util.StrUtil;
 import io.lexiloom.application.ai.enums.LlmModelProviderEnum;
 import io.lexiloom.application.ai.model.response.AiChatResponse;
+import io.lexiloom.application.ai.trace.RagTraceHolder;
+import io.lexiloom.application.ai.trace.model.RagTraceContext;
 import io.lexiloom.application.common.ErrorCode;
 import io.lexiloom.application.exception.BusinessException;
 import java.util.ArrayList;
@@ -83,7 +85,21 @@ public abstract class SpringAiChatModelAdapter implements LlmGateway {
           (response != null && response.getMetadata() != null)
               ? response.getMetadata().getUsage()
               : null;
+      Integer promptTokens = null;
+      Integer completionTokens = null;
+      Integer totalTokens = null;
+
       if (usage != null) {
+        promptTokens = usage.getPromptTokens() != null ? usage.getPromptTokens().intValue() : null;
+        completionTokens =
+            usage.getGenerationTokens() != null ? usage.getGenerationTokens().intValue() : null;
+        totalTokens = usage.getTotalTokens() != null ? usage.getTotalTokens().intValue() : null;
+
+        RagTraceContext traceContext = RagTraceHolder.get();
+        if (traceContext != null) {
+          traceContext.recordLlmTokens(usage.getPromptTokens(), usage.getGenerationTokens());
+        }
+
         log.info(
             "【LlmGateway】同步对话完成: provider={}, 耗时={}ms, 回复字符数={}, Token消耗=[prompt={}, completion={},"
                 + " total={}]",
@@ -101,7 +117,16 @@ public abstract class SpringAiChatModelAdapter implements LlmGateway {
             content.length());
       }
 
-      return AiChatResponse.of(content, thinking, List.of(), latency);
+      return AiChatResponse.of(
+          content,
+          thinking,
+          List.of(),
+          latency,
+          null,
+          null,
+          promptTokens,
+          completionTokens,
+          totalTokens);
     } catch (Exception e) {
       log.error("【SpringAiChatModelAdapter】调用模型 [{}] 异常: {}", provider, e.getMessage(), e);
       throw new BusinessException(ErrorCode.Ai.LLM_API_ERROR, "大模型对话调用异常: " + e.getMessage());
@@ -163,6 +188,10 @@ public abstract class SpringAiChatModelAdapter implements LlmGateway {
             long latency = System.currentTimeMillis() - start;
             Usage usage = streamUsageRef.get();
             if (usage != null) {
+              RagTraceContext traceContext = RagTraceHolder.get();
+              if (traceContext != null) {
+                traceContext.recordLlmTokens(usage.getPromptTokens(), usage.getGenerationTokens());
+              }
               log.info(
                   "【LlmGateway】流式对话完成: provider={}, 耗时={}ms, Token消耗=[prompt={}, completion={},"
                       + " total={}]",
@@ -175,7 +204,7 @@ public abstract class SpringAiChatModelAdapter implements LlmGateway {
               log.info(
                   "【LlmGateway】流式对话完成: provider={}, 耗时={}ms (未返回 Token 消耗)", provider, latency);
             }
-            callback.onComplete();
+            callback.onComplete(usage);
           });
     } catch (Exception e) {
       log.error("【SpringAiChatModelAdapter】发起模型流式调用 [{}] 异常: {}", provider, e.getMessage(), e);

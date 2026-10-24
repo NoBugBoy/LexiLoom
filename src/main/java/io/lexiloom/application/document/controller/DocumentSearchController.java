@@ -12,11 +12,14 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -37,13 +40,24 @@ public class DocumentSearchController {
   private final SearchHistoryService searchHistoryService;
 
   /**
-   * 全文搜索接口：基于 Elasticsearch 提供多字段高亮全文检索与组合过滤
+   * 全文搜索接口 (GET 形式)：基于 Elasticsearch 提供多字段高亮全文检索与组合过滤
    *
    * @param request 搜索请求参数 (含关键词、工作区ID、分类、标签、排序、分页)
    * @return 高亮搜索分页结果
    */
   @GetMapping
   public DocumentSearchResponse search(@Valid @ModelAttribute DocumentSearchRequest request) {
+    return documentSearchQueryService.search(request);
+  }
+
+  /**
+   * 全文搜索接口 (POST 形式)：方便以 JSON Body 提交多空间复杂 weights 权重映射配置
+   *
+   * @param request 搜索请求参数 (含关键词、工作区ID、多空间权重分配等)
+   * @return 高亮搜索分页结果
+   */
+  @PostMapping
+  public DocumentSearchResponse searchPost(@Valid @RequestBody DocumentSearchRequest request) {
     return documentSearchQueryService.search(request);
   }
 
@@ -83,7 +97,7 @@ public class DocumentSearchController {
    * @param keyword 待删除关键词 (可选)
    */
   @DeleteMapping("/history")
-  public void deleteHistory(
+  public ResponseEntity<Void> deleteHistory(
       @RequestParam(value = "workspaceId", required = false) Long workspaceId,
       @RequestParam(value = "keyword", required = false) String keyword) {
     Long userId = SecurityHolder.getUserId();
@@ -92,6 +106,7 @@ public class DocumentSearchController {
     } else {
       searchHistoryService.clear(userId, workspaceId);
     }
+    return ResponseEntity.noContent().build();
   }
 
   /**
@@ -101,10 +116,11 @@ public class DocumentSearchController {
    * @param workspaceId 工作区ID (可选)
    */
   @DeleteMapping("/history/{keyword}")
-  public void deleteHistoryPath(
+  public ResponseEntity<Void> deleteHistoryPath(
       @PathVariable("keyword") String keyword,
       @RequestParam(value = "workspaceId", required = false) Long workspaceId) {
     Long userId = SecurityHolder.getUserId();
     searchHistoryService.delete(userId, workspaceId, keyword);
+    return ResponseEntity.noContent().build();
   }
 }

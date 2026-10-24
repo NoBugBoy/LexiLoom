@@ -27,27 +27,27 @@ import lombok.NoArgsConstructor;
 public class DocCategoryEntity extends BaseEntity {
 
   /** 所属团队空间 ID */
-  @Column(name = "work_space_id", nullable = false)
+  @Column(name = "work_space_id", comment = "所属团队空间ID", nullable = false)
   private Long workSpaceId;
 
   /** 父分类 ID (0 表示顶级分类) */
-  @Column(name = "parent_id", nullable = false)
+  @Column(name = "parent_id", comment = "父分类ID(0为顶级分类)", nullable = false)
   private Long parentId;
 
   /** 分类名称 */
-  @Column(nullable = false, length = 100)
+  @Column(comment = "分类名称", nullable = false, length = 100)
   private String name;
 
   /** 同级展示排序权重 (升序) */
-  @Column(name = "sort_order", nullable = false)
+  @Column(name = "sort_order", comment = "同级展示排序权重", nullable = false)
   private Integer sortOrder;
 
   /** 树深度层级 (1 为根节点层) */
-  @Column(nullable = false)
+  @Column(comment = "树深度层级(1为根节点)", nullable = false)
   private Integer level;
 
   /** 物化路径 (例如 /0/ 或 /0/1/5/，方便前缀匹配秒查整棵子树) */
-  @Column(nullable = false, length = 500)
+  @Column(comment = "物化路径(如/0/1/5/)", nullable = false, length = 500)
   private String path;
 
   /** 静态工厂：创建分类节点 */

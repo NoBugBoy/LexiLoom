@@ -1,5 +1,7 @@
 package io.lexiloom.application.overview.model.response;
 
+import cn.hutool.core.date.DatePattern;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import io.lexiloom.application.document.statemachine.DocumentStateEnum;
 import io.lexiloom.application.enums.WorkSpaceAclEnum;
 import io.lexiloom.application.enums.WorkSpaceStatusEnum;
@@ -39,7 +41,7 @@ public record WorkSpaceOverviewResponse(
       Integer maxMembers,
       WorkSpaceStatusEnum status,
       WorkSpaceAclEnum visibility,
-      LocalDateTime createTime) {}
+      @JsonFormat(pattern = DatePattern.NORM_DATETIME_PATTERN) LocalDateTime createTime) {}
 
   public record AssetStatsVO(
       long totalDocuments,
@@ -81,7 +83,7 @@ public record WorkSpaceOverviewResponse(
       Long createBy,
       String authorName,
       String authorAvatar,
-      LocalDateTime updateTime) {}
+      @JsonFormat(pattern = DatePattern.NORM_DATETIME_PATTERN) LocalDateTime updateTime) {}
 
   public record TopContributorVO(
       Long userId, String userName, String avatarUrl, long documentCount, long totalWordCount) {}
@@ -94,5 +96,5 @@ public record WorkSpaceOverviewResponse(
       DocumentStateEnum status,
       Long createBy,
       String authorName,
-      LocalDateTime updateTime) {}
+      @JsonFormat(pattern = DatePattern.NORM_DATETIME_PATTERN) LocalDateTime updateTime) {}
 }

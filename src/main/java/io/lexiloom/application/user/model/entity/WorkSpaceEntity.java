@@ -25,43 +25,45 @@ public class WorkSpaceEntity extends BaseEntity {
   public static final int DEFAULT_MAX_MEMBERS = 50;
 
   /** 团队名称 (例如: 核心研发部) */
-  @Column(nullable = false, length = 100)
+  @Column(comment = "团队名称", nullable = false, length = 100)
   private String name;
 
   /** 团队简介 */
-  @Column(length = 500)
+  @Column(comment = "团队简介", length = 500)
   private String description;
 
   /** 团队英文唯一标识/路径别名 (例如: tech-core, 用于 lexiloom.io/team/tech-core) */
-  @Column(nullable = false, unique = true, length = 50)
+  @Column(comment = "团队英文唯一标识", nullable = false, unique = true, length = 50)
   private String code;
 
   /** 团队 Logo/头像 URL */
+  @Column(name = "avatar_url", comment = "团队Logo/头像URL", length = 500)
   private String avatarUrl;
 
   /** 团队所有者/创建者用户ID */
-  @Column(nullable = false)
+  @Column(name = "owner_id", comment = "团队所有者/创建者用户ID", nullable = false)
   private Long ownerId;
 
   /** 团队人数上限 (配额防滥用) */
-  @Column(nullable = false)
+  @Column(name = "max_members", comment = "团队人数上限", nullable = false)
   private Integer maxMembers;
 
+  /** 团队生命周期状态 */
   @Enumerated(EnumType.STRING)
-  @Column(nullable = false, length = 20)
+  @Column(comment = "团队状态(NORMAL/FROZEN/DISBANDED)", nullable = false, length = 20)
   private WorkSpaceStatusEnum status;
 
   /** 团队公开性 */
   @Enumerated(EnumType.STRING)
-  @Column(nullable = false, length = 20)
+  @Column(comment = "团队可见性(PUBLIC/INTERNAL/PRIVATE)", nullable = false, length = 20)
   private WorkSpaceAclEnum visibility;
 
   /** 父工作空间 ID (null 表示顶级空间) */
-  @Column(name = "parent_id")
+  @Column(name = "parent_id", comment = "父工作空间ID(null为顶级空间)")
   private Long parentId;
 
   /** 是否允许父空间向下聚合当前子空间的公开文档 (默认开启) */
-  @Column(name = "child_assoc_enabled", nullable = false)
+  @Column(name = "child_assoc_enabled", comment = "是否允许父空间向下聚合子空间公开文档", nullable = false)
   private Boolean childAssocEnabled = Boolean.TRUE;
 
   /** 静态工厂：创建新团队 */

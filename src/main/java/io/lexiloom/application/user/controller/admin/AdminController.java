@@ -8,6 +8,7 @@ import io.lexiloom.application.user.service.AdminCommandService;
 import io.lexiloom.application.user.usecase.admin.SendAdminRegisterEmailUseCase;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -38,8 +39,9 @@ public class AdminController {
    * @param request 管理员创建参数
    */
   @PostMapping("/create")
-  public void create(@Validated @RequestBody AdminCreateRequest request) {
+  public ResponseEntity<Void> create(@Validated @RequestBody AdminCreateRequest request) {
     sendAdminRegisterEmailUseCase.execute(request);
+    return ResponseEntity.ok().build();
   }
 
   /**
@@ -48,7 +50,8 @@ public class AdminController {
    * @param request 含旧密码与新密码的重置参数
    */
   @PostMapping("/reset/password")
-  public void resetPassword(@Validated @RequestBody ResetPasswordRequest request) {
+  public ResponseEntity<Void> resetPassword(@Validated @RequestBody ResetPasswordRequest request) {
     adminCommandService.resetPassword(request.password(), request.newPassword());
+    return ResponseEntity.ok().build();
   }
 }

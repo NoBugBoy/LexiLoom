@@ -11,14 +11,21 @@ trigger: always_on
 
 1. 项目为JDK25 + SpringBoot4.x + SpringSecurity + Spring Modulith + Spring Data Jpa 为基础模块开发
 2. 使用CQRS架构，并引入了部分领域驱动设计思想，如充血模型，防腐层等概念
-3. 所有涉及到Entity、dto、request、response等实体转换，强制使用Mapstruct,特殊是大部分属性来源和目标都是一致的情况下
+3. 所有涉及到Entity、dto、request、response等实体转换，强制使用MapStruct转换,特殊是大部分属性来源和目标都是一致的情况下
 4. 如果该record仅在当前类范围内使用，可以定义在类中
 5. 非纯CRUD，涉及多模块，或业务逻辑较多的情况，对应的service和usecase要补充mock单元测试,仅覆盖sonar.coverage包之外即可
-6. 非必要禁止自己实现工具方法，优先使用spring、hutools提供的工具类
+6. 非必要禁止自己实现工具方法，优先使用Spring、HuTools提供的工具类
 7. 简单实体，可以不强制分为Query和Command service
 8. **AI 与 RAG 智能中枢核心生态规范**：AI 库必须使用 **Spring AI** (`org.springframework.ai`) 进行统一构建与模型交互，大模型对话与文本向量化必须基于
    Spring AI 官方标准抽象（如 `ChatModel`, `StreamingChatModel`, `ChatClient`, `EmbeddingModel`），严禁手写裸 HTTP
    请求或引入零散第三方未受管 SDK。
+9. 优先使用QueryDsl查询，Entity必须继承BaseEntity,Repository必须继承BaseRepository,page请求对象必须继承BasePageRequest,
+   Controller无响应值必须返回ResponseEntity并配置合理的http status
+10. 禁止定义线程池和使用ThreadLocal，必须使用虚拟线程和ScopeValue,禁止同步锁，优先使用juc包的锁，可以使用结构化并发，不强制使用@Async
+11. service核心方法加注释，Entity字段必须加备注,时间类型务必使用LocalDateTime,如果是VO类，需要加yyyy-MM-dd HH:mm:
+    ss的格式化Jackson注解,防止返回的时间带'T'
+12. 多用switch,和instance of record等新特性，减少if else
+13. 任何涉及调用第三方AI接口，必须统一使用OpenAI Compatible / Responses API 形式，如对方文档不支持，则提示用户
 
 ## 2. 语言新特性与编程范式
 
@@ -27,6 +34,8 @@ trigger: always_on
 - **空安全与 Optional**：禁止滥用 `null`；对于可能为空的返回值一律使用 `Optional<T>`，禁止将 `Optional` 用作方法参数或字段属性。
 - **集合不可变性**：只读集合使用 `List.of()`, `Set.of()`, `Map.of()`；防御性拷贝优先使用 `Collections.unmodifiableList()`。
 - **参数校验** `jakarta.validation`（`@Valid`, `@Validated`, `@NotNull`, `@NotBlank` 等）在 Controller 层截断非法入参。
+- **善用新API** 优先使用更加精简的高版本JDK方法，例如`Math.clamp(requestedTopK, minTopK, maxTopK)`,而不是
+  `Math.max(minTopK, Math.min(requestedTopK, maxTopK))`
 
 ## 3. 并发与数据库事务
 
@@ -57,11 +66,13 @@ trigger: always_on
 
 ### 1. 坏味道诊断（Bad Smells）
 
-- **万能上帝类（God Service）**：动辄上千行的 `XxxServiceImpl`，充斥着各种逻辑。
+- **万能上帝类（God Service）**：动辄上千行的 `XxxServiceImpl`，充斥着各种逻辑，同时单文件尽量不要超过500行,100~300行最佳。
 - **贫血数据包（Anemic POJO）**：实体只有属性，逻辑全部散落在 Service 中通过 `get/set` 拼凑。
 - **长过程事务脚本**：一个方法从头到尾完成“参数校验 -> 调DB -> 算价格 -> 改状态 -> 调远程接口 -> 发消息”。
 - **深层嵌套与箭头型代码**：超过 3 层的 `if-else` 或循环。
 - **禁止虚假修复**：任何的逻辑或者问题修复都不允许通过写死在代码中某些内容来强行修复某个指定或固定的问题，要针对问题的本身进行修复
+- **禁止Optional.get ()**: 严禁直接调用 Optional.get ()，若为空会抛出 NoSuchElementException。推荐使用 orElseThrow ()
+  、map/ifPresent 或Java 21+模式匹配解包。
 
 ### 2. 改造步骤与重构手法
 

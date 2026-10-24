@@ -15,8 +15,8 @@ spring:
       url: redis://localhost:6379
   jpa:
     hibernate:
-    # 量产阶段使用 flyway，关闭 ddl-auto 改为 validate
-    #      ddl-auto: update
+      # 量产阶段使用 flyway，关闭 ddl-auto 改为 validate
+      ddl-auto: update
     show-sql: false
     properties:
       hibernate:
@@ -86,7 +86,7 @@ lexiloom:
     base-url: ${AI_BASE_URL:https://maas.qianwenaiapi.com/compatible-mode/v1}
     chat-model: ${AI_CHAT_MODEL:qwen3.8-flash}
     reasoning-model: ${AI_REASONING_MODEL:qwen3.8-flash}
-    chunk-index-name: ${AI_CHUNK_INDEX:lexiloom_chunk_index}
+    chunk-index-name: ${AI_CHUNK_INDEX:lexiloom_chunk_index_v2}
     auto-create-index: true
     embedding:
       # 可选值: DASHSCOPE | OPENAI_COMPATIBLE

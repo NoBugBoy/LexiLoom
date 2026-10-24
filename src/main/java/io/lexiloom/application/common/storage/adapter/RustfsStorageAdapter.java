@@ -18,6 +18,7 @@ import java.io.File;
 import java.io.InputStream;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.concurrent.locks.ReentrantLock;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -30,6 +31,7 @@ public class RustfsStorageAdapter implements FileStorageGateway {
   private final MinioClient minioClient;
   private final LocalStorageAdapter localFallback;
   private static final String RUSTFS_LOCAL_DATA = "rustfs-data";
+  private final ReentrantLock bucketLock = new ReentrantLock();
   private volatile boolean bucketChecked = false;
 
   public RustfsStorageAdapter(RustfsStorageProperties properties) {
@@ -204,7 +206,8 @@ public class RustfsStorageAdapter implements FileStorageGateway {
 
   private void ensureBucketExists() {
     if (!bucketChecked && minioClient != null) {
-      synchronized (this) {
+      bucketLock.lock();
+      try {
         if (!bucketChecked) {
           try {
             boolean exists =
@@ -221,6 +224,8 @@ public class RustfsStorageAdapter implements FileStorageGateway {
             throw BusinessException.badRequest("连接 rustfs 存储桶失败: " + e.getMessage());
           }
         }
+      } finally {
+        bucketLock.unlock();
       }
     }
   }

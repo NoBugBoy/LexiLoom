@@ -94,6 +94,31 @@ public record DocumentImportResult(
         Map.of("error", errorMessage != null ? errorMessage : ""));
   }
 
+  public static DocumentImportResult queued(
+      Long documentId,
+      Long sourceFileId,
+      String title,
+      String originalFileName,
+      String storagePath,
+      String storageUrl,
+      DocParserEngineEnum engineUsed,
+      boolean instantUpload,
+      String placeholderContent,
+      Map<String, Object> metadata) {
+    return new DocumentImportResult(
+        documentId,
+        sourceFileId,
+        title,
+        originalFileName,
+        storagePath,
+        storageUrl,
+        DocParseStatusEnum.QUEUED,
+        engineUsed,
+        instantUpload,
+        placeholderContent,
+        metadata);
+  }
+
   public static DocumentImportResult asyncProcessing(
       Long documentId,
       Long sourceFileId,
@@ -122,11 +147,16 @@ public record DocumentImportResult(
   public boolean isSuccess() {
     return this.parseStatus == DocParseStatusEnum.SUCCESS
         || this.parseStatus == DocParseStatusEnum.PREVIEW_ONLY
-        || this.parseStatus == DocParseStatusEnum.ASYNC_PROCESSING;
+        || this.parseStatus == DocParseStatusEnum.ASYNC_PROCESSING
+        || this.parseStatus == DocParseStatusEnum.QUEUED;
   }
 
   public boolean isAsyncProcessing() {
     return this.parseStatus == DocParseStatusEnum.ASYNC_PROCESSING;
+  }
+
+  public boolean isQueued() {
+    return this.parseStatus == DocParseStatusEnum.QUEUED;
   }
 
   public String suggestedTitle() {

@@ -9,6 +9,7 @@ import io.lexiloom.application.document.spacelink.service.WorkSpaceSpaceLinkServ
 import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -39,7 +40,7 @@ public class WorkSpaceSpaceLinkController {
 
   /** 目标工作区审批 SpaceLink 关联申请 (强制要求填写说明为什么同意或为什么驳回) */
   @PostMapping("/{targetWorkspaceId}/space-links/{linkId}/approval")
-  public void approve(
+  public ResponseEntity<Void> approve(
       @PathVariable("targetWorkspaceId") Long targetWorkspaceId,
       @PathVariable("linkId") Long linkId,
       @Valid @RequestBody SpaceLinkApprovalRequest request) {
@@ -48,6 +49,7 @@ public class WorkSpaceSpaceLinkController {
     } else {
       workSpaceSpaceLinkService.reject(targetWorkspaceId, linkId, request.comment());
     }
+    return ResponseEntity.ok().build();
   }
 
   /** 查询目标工作区下可供申请关联的文档列表 (仅 PUBLIC 与 INTERNAL，且已审批通过，仅返回名称与元数据) */

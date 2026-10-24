@@ -15,6 +15,7 @@ import io.lexiloom.application.document.model.request.DeepDocParseCallbackReques
 import io.lexiloom.application.document.parser.DocParserEngineEnum;
 import io.lexiloom.application.document.parser.engine.DeepDocDocParserEngine;
 import io.lexiloom.application.document.pipeline.DocumentImportTransactionalService;
+import io.lexiloom.application.document.queue.DocParseQueueService;
 import io.lexiloom.application.document.repository.DocumentRepository;
 import io.lexiloom.application.enums.WorkSpaceAclEnum;
 import io.lexiloom.application.exception.BusinessException;
@@ -33,6 +34,7 @@ class DocParseCallbackServiceTest {
   private DocumentImportTransactionalService transactionalService;
   private DeepDocDocParserEngine deepDocParserEngine;
   private ApplicationEventPublisher eventPublisher;
+  private DocParseQueueService docParseQueueService;
   private DocParseCallbackService service;
 
   @BeforeEach
@@ -41,9 +43,14 @@ class DocParseCallbackServiceTest {
     transactionalService = mock(DocumentImportTransactionalService.class);
     deepDocParserEngine = mock(DeepDocDocParserEngine.class);
     eventPublisher = mock(ApplicationEventPublisher.class);
+    docParseQueueService = mock(DocParseQueueService.class);
     service =
         new DocParseCallbackService(
-            documentRepository, transactionalService, deepDocParserEngine, eventPublisher);
+            documentRepository,
+            transactionalService,
+            deepDocParserEngine,
+            eventPublisher,
+            docParseQueueService);
   }
 
   @Test
@@ -137,6 +144,7 @@ class DocParseCallbackServiceTest {
     service.handleCallback(request);
 
     verify(transactionalService).failAsyncParse(100L, 50L, "PDF 格式损坏无法解析");
+    verify(docParseQueueService).onParseCompleted(100L);
     verify(transactionalService, never())
         .completeAsyncParse(any(), any(), any(), any(), any(), any(), any());
     verify(eventPublisher, never()).publishEvent(any());
@@ -193,5 +201,6 @@ class DocParseCallbackServiceTest {
             eq(DocParserEngineEnum.DEEPDOC),
             any());
     verify(eventPublisher).publishEvent(any(DocumentUpdatedEvent.class));
+    verify(docParseQueueService).onParseCompleted(100L);
   }
 }

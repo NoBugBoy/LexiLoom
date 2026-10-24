@@ -109,4 +109,29 @@ public class WorkSpaceQueryServiceImpl implements WorkSpaceQueryService {
             java.util.stream.Collectors.toMap(
                 WorkSpaceEntity::getId, WorkSpaceEntity::getName, (a, b) -> a));
   }
+
+  @Override
+  public List<WorkSpaceDTO> listAllWorkspaces() {
+    return workSpaceRepository.findAll().stream().map(workSpaceMapper::toDTO).toList();
+  }
+
+  @Override
+  public List<WorkSpaceDTO> listMyWorkspaceDTOs(Long userId) {
+    if (userId == null) {
+      return List.of();
+    }
+    List<Long> workSpaceIds =
+        workSpaceMemberRepository.findByUserId(userId).stream()
+            .map(WorkSpaceMemberEntity::getWorkSpaceId)
+            .distinct()
+            .toList();
+
+    if (workSpaceIds.isEmpty()) {
+      return List.of();
+    }
+
+    return workSpaceRepository.findAllById(workSpaceIds).stream()
+        .map(workSpaceMapper::toDTO)
+        .toList();
+  }
 }

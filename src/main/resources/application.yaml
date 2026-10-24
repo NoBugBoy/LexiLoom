@@ -38,8 +38,8 @@ lexiloom:
       model: ${AI_EMBEDDING_MODEL:qwen3.7-text-embedding-flash}
       dimension: 1024
     rerank:
-      enabled: false
-      strategy: NONE
+      enabled: ${AI_RERANK_ENABLED:false}
+      strategy: ${AI_RERANK_STRATEGY:CROSS_ENCODER}
       provider: DASHSCOPE
       api-key: ${AI_RERANK_API_KEY:${DASHSCOPE_API_KEY:}}
       base-url: ${AI_RERANK_BASE_URL:https://maas.qianwenaiapi.com/api/v1/services/rerank/text-rerank/text-rerank}

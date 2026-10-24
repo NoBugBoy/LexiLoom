@@ -38,56 +38,60 @@ public class ApprovalRecordEntity extends BaseEntity {
 
   /** 审批业务类型 */
   @Enumerated(EnumType.STRING)
-  @Column(name = "approval_type", nullable = false, length = 32)
+  @Column(
+      name = "approval_type",
+      comment = "审批业务类型(DOCUMENT_PUBLISH/SPACE_LINK/DOC_ACCESS)",
+      nullable = false,
+      length = 32)
   private ApprovalTypeEnum approvalType;
 
   /** 业务主键 ID (例如 documentId 或 spaceLinkId) */
-  @Column(name = "biz_id", nullable = false)
+  @Column(name = "biz_id", comment = "业务主键ID(documentId或spaceLinkId)", nullable = false)
   private Long bizId;
 
   /** 发起方/所属工作空间 ID */
-  @Column(name = "workspace_id", nullable = false)
+  @Column(name = "workspace_id", comment = "发起方/所属工作空间ID", nullable = false)
   private Long workspaceId;
 
   /** 目标工作空间 ID (跨空间关联时为目标审核空间，内部审批可为空或本空间) */
-  @Column(name = "target_workspace_id")
+  @Column(name = "target_workspace_id", comment = "目标工作空间ID")
   private Long targetWorkspaceId;
 
   /** 申请人用户 ID */
-  @Column(name = "applicant_id", nullable = false)
+  @Column(name = "applicant_id", comment = "申请人用户ID", nullable = false)
   private Long applicantId;
 
   /** 申请人姓名 */
-  @Column(name = "applicant_name", length = 100)
+  @Column(name = "applicant_name", comment = "申请人姓名", length = 100)
   private String applicantName;
 
   /** 申请理由或背景描述 */
-  @Column(name = "apply_reason", length = 500)
+  @Column(name = "apply_reason", comment = "申请理由或背景描述", length = 500)
   private String applyReason;
 
   /** 当前审批状态 */
   @Enumerated(EnumType.STRING)
-  @Column(nullable = false, length = 20)
+  @Column(comment = "当前审批状态(PENDING/APPROVED/REJECTED)", nullable = false, length = 20)
   private ApprovalStatusEnum status;
 
   /** 实际审批人用户 ID */
-  @Column(name = "approver_id")
+  @Column(name = "approver_id", comment = "实际审批人用户ID")
   private Long approverId;
 
   /** 实际审批人姓名 */
-  @Column(name = "approver_name", length = 100)
+  @Column(name = "approver_name", comment = "实际审批人姓名", length = 100)
   private String approverName;
 
   /** 审批决策意见（强制说明：为什么同意 / 为什么驳回） */
-  @Column(name = "approval_comment", length = 500)
+  @Column(name = "approval_comment", comment = "审批决策意见说明", length = 500)
   private String approvalComment;
 
   /** 审批完成时间 */
-  @Column(name = "approval_time")
+  @Column(name = "approval_time", comment = "审批完成时间")
   private LocalDateTime approvalTime;
 
   /** 扩展元数据 (JSON 字符串：如跨空间关联申请时选中的 documentIds 清单等) */
-  @Column(name = "extra_data", columnDefinition = "TEXT")
+  @Column(name = "extra_data", comment = "扩展元数据JSON", columnDefinition = "TEXT")
   private String extraData;
 
   /** 静态工厂：创建空间关联与文档授权审批单 */

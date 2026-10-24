@@ -4,14 +4,54 @@
     "number_of_replicas": 0
   },
   "analysis": {
+    "filter": {
+      "cn_stop": {
+        "type": "stop",
+        "stopwords": [
+          "的", "了", "在", "是", "我", "有", "和", "就",
+          "不", "人", "都", "一", "一个", "上", "也", "很",
+          "到", "说", "要", "去", "你", "会", "着", "没有",
+          "看", "好", "自己", "这", "系统", "进行", "相关", "对于",
+          "通过", "实现", "需要", "情况", "方式", "这个", "那个", "可以",
+          "以及", "与", "等", "被", "将", "其", "及", "各", "或"
+        ]
+      },
+      "cn_synonym": {
+        "type": "synonym_graph",
+        "synonyms": [
+          "文档, 文件, 资料",
+          "用户, 账号, 账户",
+          "检索, 搜索, 查找, 查询",
+          "配置, 设定, 设置",
+          "接口, api",
+          "空间, 工作空间, 工作区, workspace",
+          "模型, 大模型, llm",
+          "权限, acl"
+        ]
+      }
+    },
     "analyzer": {
       "ik_max_word": {
         "type": "custom",
-        "tokenizer": "ik_max_word"
+        "tokenizer": "ik_max_word",
+        "filter": [
+          "cn_stop"
+        ]
       },
       "ik_smart": {
         "type": "custom",
-        "tokenizer": "ik_smart"
+        "tokenizer": "ik_smart",
+        "filter": [
+          "cn_stop"
+        ]
+      },
+      "ik_smart_synonym": {
+        "type": "custom",
+        "tokenizer": "ik_smart",
+        "filter": [
+          "cn_stop",
+          "cn_synonym"
+        ]
       }
     }
   }

@@ -28,39 +28,39 @@ import lombok.NoArgsConstructor;
 public class DocVersionEntity extends BaseEntity {
 
   /** 所属团队空间 ID */
-  @Column(name = "work_space_id", nullable = false)
+  @Column(name = "work_space_id", comment = "所属团队空间ID", nullable = false)
   private Long workSpaceId;
 
   /** 关联的主文档 ID */
-  @Column(name = "document_id", nullable = false)
+  @Column(name = "document_id", comment = "关联的主文档ID", nullable = false)
   private Long documentId;
 
   /** 版本序号 (1, 2, 3...) */
-  @Column(name = "version_number", nullable = false)
+  @Column(name = "version_number", comment = "版本序号(1,2,3...)", nullable = false)
   private Integer versionNumber;
 
   /** 语义化版本标签 (如 v1.0, v1.1) */
-  @Column(name = "version_tag", nullable = false, length = 50)
+  @Column(name = "version_tag", comment = "语义化版本标签(如v1.0)", nullable = false, length = 50)
   private String versionTag;
 
   /** 快照标题 */
-  @Column(nullable = false, length = 200)
+  @Column(comment = "快照标题", nullable = false, length = 200)
   private String title;
 
   /** 快照 Markdown 正文完整内容 */
-  @Column(columnDefinition = "TEXT", nullable = false)
+  @Column(comment = "快照Markdown正文内容", columnDefinition = "TEXT", nullable = false)
   private String content;
 
   /** 版本发布说明 / 变更日志 */
-  @Column(name = "change_summary", length = 500)
+  @Column(name = "change_summary", comment = "版本发布说明/变更日志", length = 500)
   private String changeSummary;
 
   /** 发布人用户 ID */
-  @Column(name = "publisher_id", nullable = false)
+  @Column(name = "publisher_id", comment = "发布人用户ID", nullable = false)
   private Long publisherId;
 
   /** 快照字数 */
-  @Column(name = "word_count", nullable = false)
+  @Column(name = "word_count", comment = "快照字数", nullable = false)
   private Integer wordCount;
 
   /** 静态工厂：创建不可变历史版本快照 */

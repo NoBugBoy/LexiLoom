@@ -5,6 +5,8 @@ import io.lexiloom.application.ai.chunk.EnrichedDocChunk;
 import io.lexiloom.application.ai.gateway.embedding.EmbeddingGateway;
 import io.lexiloom.application.ai.model.search.DocChunkDocument;
 import io.lexiloom.application.ai.repository.DocChunkRepository;
+import io.lexiloom.application.ai.trace.RagTraceHolder;
+import io.lexiloom.application.ai.trace.model.RagTraceContext;
 import io.lexiloom.application.document.api.DocumentQueryApi;
 import io.lexiloom.application.document.api.DocumentStateApi;
 import io.lexiloom.application.document.api.dto.DocSourceFileDTO;
@@ -118,6 +120,12 @@ public class DocVectorSyncListener {
    * @param documentId 文档主键 ID
    */
   public void syncDocumentChunks(Long documentId) {
+    RagTraceContext traceContext = new RagTraceContext(null, null, null, null, null);
+    ScopedValue.where(RagTraceHolder.CURRENT, traceContext)
+        .run(() -> syncDocumentChunksWithUsage(documentId, traceContext));
+  }
+
+  private void syncDocumentChunksWithUsage(Long documentId, RagTraceContext traceContext) {
     long startTime = System.currentTimeMillis();
 
     // 1. 查询文档详情
@@ -156,9 +164,16 @@ public class DocVectorSyncListener {
         enrichedChunks.stream().map(EnrichedDocChunk::enrichedText).toList();
     List<float[]> vectors = new ArrayList<>(textsToEmbed.size());
     int embedBatchSize = 16;
-    for (int i = 0; i < textsToEmbed.size(); i += embedBatchSize) {
-      int end = Math.min(i + embedBatchSize, textsToEmbed.size());
-      vectors.addAll(embeddingGateway.embedBatch(textsToEmbed.subList(i, end)));
+    try {
+      for (int i = 0; i < textsToEmbed.size(); i += embedBatchSize) {
+        int end = Math.min(i + embedBatchSize, textsToEmbed.size());
+        vectors.addAll(embeddingGateway.embedBatch(textsToEmbed.subList(i, end)));
+      }
+    } finally {
+      // 即使后续分批调用失败，也必须保留此前已成功调用并产生的实际 Token 消耗。
+      if (traceContext.getEmbeddingTokens() > 0) {
+        documentStateApi.recordEmbeddingTokens(documentId, traceContext.getEmbeddingTokens());
+      }
     }
 
     // 4.1 向量结果强校验：条数与维度必须严格对齐，否则宁可快速失败回滚文档状态，

@@ -148,28 +148,37 @@ public class DocumentImportTransactionalService {
     String fallbackTitle = StrUtil.subBefore(fileName, ".", true);
     String docTitle = StrUtil.isNotBlank(fallbackTitle) ? fallbackTitle : fileName;
 
-    if (parseResult.isAsyncProcessing()) {
-      // 异步解析处理中（后台排队解析）
+    if (parseResult.isQueued() || parseResult.isAsyncProcessing()) {
+      DocParseStatusEnum initialStatus =
+          parseResult.isQueued() ? DocParseStatusEnum.QUEUED : DocParseStatusEnum.ASYNC_PROCESSING;
       String placeholderContent =
-          """
-          > ⏳ **[AI 智能提炼解析中]**
-          > 正在由云端大模型进行排版分析与内容提取，请稍候刷新查看最新正文。
-          """;
+          parseResult.isQueued()
+              ? """
+              > ⏳ **[AI 智能提炼排队中]**
+              > 文档已进入解析队列，等待调度解析，请稍候刷新查看最新进展。
+              """
+              : """
+              > ⏳ **[AI 智能提炼解析中]**
+              > 正在由云端大模型进行排版分析与内容提取，请稍候刷新查看最新正文。
+              """;
 
       DocumentEntity doc =
           DocumentEntity.createFromImport(
               command.workSpaceId(),
               command.categoryId(),
               docTitle,
-              "导入自外部文件: " + fileName + " (AI智能解析中)",
+              fileName,
               placeholderContent,
               sourceFileId,
               fileName,
               command.visibility(),
-              DocParseStatusEnum.ASYNC_PROCESSING);
+              initialStatus);
 
       DocumentEntity savedDoc = documentRepository.save(doc);
       sourceFile.bindDocument(savedDoc.getId());
+      if (initialStatus == DocParseStatusEnum.QUEUED) {
+        sourceFile.markQueued();
+      }
       docSourceFileRepository.save(sourceFile);
 
       if (approvalApi != null) {
@@ -277,7 +286,7 @@ public class DocumentImportTransactionalService {
       // 纯文本类 (Markdown/TXT) 与办公文档类 (Word/DOCX) -> 100% 自由编辑
       String rawMarkdown = StrUtil.blankToDefault(parseResult.markdownContent(), "");
       String markdownContent = DocumentContentCleaner.cleanEmbeddedImages(rawMarkdown);
-      String summary = "导入自外部文件: " + fileName;
+      String summary = fileName;
 
       DocumentEntity doc =
           DocumentEntity.createFromImport(
@@ -379,15 +388,22 @@ public class DocumentImportTransactionalService {
     int nextVersion =
         (existingDoc.getCurrentVersion() != null ? existingDoc.getCurrentVersion() : 1) + 1;
     String nextVersionTag = "v" + nextVersion + ".0";
-    String summary = "升级导入外部文件: " + fileName + " (" + nextVersionTag + ")";
+    String summary = fileName;
     DocumentStateEnum oldStatus = existingDoc.getStatus();
 
-    if (parseResult.isAsyncProcessing()) {
+    if (parseResult.isQueued() || parseResult.isAsyncProcessing()) {
+      DocParseStatusEnum initialStatus =
+          parseResult.isQueued() ? DocParseStatusEnum.QUEUED : DocParseStatusEnum.ASYNC_PROCESSING;
       String placeholderContent =
-          """
-          > ⏳ **[AI 智能提炼解析中]**
-          > 正在由云端大模型进行排版分析与内容提取，请稍候刷新查看最新正文。
-          """;
+          parseResult.isQueued()
+              ? """
+              > ⏳ **[AI 智能提炼排队中]**
+              > 文档已进入解析队列，等待调度解析，请稍候刷新查看最新进展。
+              """
+              : """
+              > ⏳ **[AI 智能提炼解析中]**
+              > 正在由云端大模型进行排版分析与内容提取，请稍候刷新查看最新正文。
+              """;
       existingDoc.upgradeToNewVersion(
           nextVersion,
           nextVersionTag,
@@ -396,7 +412,13 @@ public class DocumentImportTransactionalService {
           placeholderContent,
           sourceFileId,
           fileName);
-      existingDoc.markAsyncProcessing();
+      if (initialStatus == DocParseStatusEnum.QUEUED) {
+        existingDoc.markQueued();
+        sourceFile.markQueued();
+      } else {
+        existingDoc.markAsyncProcessing();
+        sourceFile.markAsyncProcessing();
+      }
       DocumentEntity savedDoc = documentRepository.save(existingDoc);
       sourceFile.bindDocument(savedDoc.getId());
       docSourceFileRepository.save(sourceFile);
@@ -619,5 +641,29 @@ public class DocumentImportTransactionalService {
         documentId,
         sourceFileId,
         errorMessage);
+  }
+
+  /** 独立小事务：标记文档状态由排队进入 DeepDoc 处理中 */
+  @Transactional(propagation = Propagation.REQUIRES_NEW)
+  public void markProcessing(Long documentId, Long sourceFileId) {
+    if (documentId != null) {
+      documentRepository
+          .findById(documentId)
+          .ifPresent(
+              doc -> {
+                doc.markAsyncProcessing();
+                documentRepository.save(doc);
+              });
+    }
+    if (sourceFileId != null) {
+      docSourceFileRepository
+          .findById(sourceFileId)
+          .ifPresent(
+              sourceFile -> {
+                sourceFile.markAsyncProcessing();
+                docSourceFileRepository.save(sourceFile);
+              });
+    }
+    log.info("【DocumentImportPipeline】文档状态已由排队转为异步解析中: docId={}, sourceFileId={}", documentId, sourceFileId);
   }
 }

@@ -1,8 +1,10 @@
 package io.lexiloom.application.ai.gateway.llm;
 
+import cn.hutool.core.util.StrUtil;
 import io.lexiloom.application.ai.config.AiProperties;
 import io.lexiloom.application.ai.enums.LlmModelProviderEnum;
 import io.lexiloom.application.ai.model.response.AiChatResponse;
+import io.lexiloom.application.common.SecurityHolder;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -50,8 +52,23 @@ public class DefaultLlmGateway implements LlmGateway {
   }
 
   private LlmGateway selectAdapter() {
-    LlmModelProviderEnum targetProvider =
-        aiProperties != null ? aiProperties.getModelProvider() : null;
+    LlmModelProviderEnum targetProvider = null;
+
+    // 1. 优先读取当前安全上下文中的 OpenAPI BYOK 配置 (用户自带模型厂商)
+    var openApiPrincipal = SecurityHolder.getOpenApiPrincipal().orElse(null);
+    if (openApiPrincipal != null && StrUtil.isNotBlank(openApiPrincipal.llmProvider())) {
+      String p = openApiPrincipal.llmProvider().trim().toUpperCase();
+      if ("QWEN".equals(p)) {
+        targetProvider = LlmModelProviderEnum.QWEN;
+      } else if ("DEEPSEEK".equals(p)) {
+        targetProvider = LlmModelProviderEnum.DEEPSEEK;
+      }
+    }
+
+    // 2. 若未配置则回退使用全局配置默认模型
+    if (targetProvider == null) {
+      targetProvider = aiProperties != null ? aiProperties.getModelProvider() : null;
+    }
     if (targetProvider == null) {
       targetProvider = LlmModelProviderEnum.DEEPSEEK;
     }

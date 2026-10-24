@@ -10,6 +10,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -45,7 +46,8 @@ public class ApprovalController {
 
   /** 统一处理审批单操作 (通过或驳回) */
   @PostMapping("/action")
-  public void handleApprovalAction(@Valid @RequestBody ApprovalActionRequest request) {
+  public ResponseEntity<Void> handleApprovalAction(
+      @Valid @RequestBody ApprovalActionRequest request) {
     Long approverId = SecurityHolder.getUserId();
     String approverName = SecurityHolder.getUsername().orElse(null);
 
@@ -58,5 +60,6 @@ public class ApprovalController {
     } else {
       throw BusinessException.badRequest("不支持的审批动作: " + request.action());
     }
+    return ResponseEntity.ok().build();
   }
 }

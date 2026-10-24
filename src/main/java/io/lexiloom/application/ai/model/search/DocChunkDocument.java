@@ -7,10 +7,13 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Transient;
 import org.springframework.data.elasticsearch.annotations.DateFormat;
 import org.springframework.data.elasticsearch.annotations.Document;
 import org.springframework.data.elasticsearch.annotations.Field;
 import org.springframework.data.elasticsearch.annotations.FieldType;
+import org.springframework.data.elasticsearch.annotations.InnerField;
+import org.springframework.data.elasticsearch.annotations.MultiField;
 import org.springframework.data.elasticsearch.annotations.Setting;
 
 /**
@@ -53,7 +56,10 @@ public class DocChunkDocument {
   private String title;
 
   /** 章节层级面包屑导航路径 (如 "技术架构 / 存储设计 / 向量索引") */
-  @Field(type = FieldType.Keyword)
+  @MultiField(
+      mainField =
+          @Field(type = FieldType.Text, analyzer = "ik_max_word", searchAnalyzer = "ik_smart"),
+      otherFields = {@InnerField(suffix = "keyword", type = FieldType.Keyword)})
   private String headerPath;
 
   /**
@@ -61,7 +67,7 @@ public class DocChunkDocument {
    *
    * <p>严格保持 DeepDoc YOLO + KMeans 识别的天然物理边界，不含任何滑动窗口拼接与重叠文本。
    */
-  @Field(type = FieldType.Text, analyzer = "ik_max_word", searchAnalyzer = "ik_smart")
+  @Field(type = FieldType.Text, analyzer = "ik_max_word", searchAnalyzer = "ik_smart_synonym")
   private String content;
 
   /**
@@ -121,6 +127,9 @@ public class DocChunkDocument {
       type = FieldType.Date,
       format = {DateFormat.date_hour_minute_second, DateFormat.epoch_millis})
   private LocalDateTime updateTime;
+
+  /** 运行时检索原始得分 (Transient，不持久化到 Elasticsearch 索引中) 用于多路混合检索时保存 ES 原生 BM25 打分、向量打分或融合分数 */
+  @Transient private Float rawScore;
 
   /** 生成标准切块主键 */
   public static String generateId(Object documentId, Integer chunkIndex) {

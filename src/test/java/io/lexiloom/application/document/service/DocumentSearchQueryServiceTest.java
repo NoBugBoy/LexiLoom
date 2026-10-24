@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.lexiloom.application.common.SecurityHolder;
+import io.lexiloom.application.document.api.DocumentQueryApi;
 import io.lexiloom.application.document.search.DocSearchDocument;
 import io.lexiloom.application.document.search.dto.DocSearchItemVO;
 import io.lexiloom.application.document.search.dto.DocSearchSortBy;
@@ -17,6 +18,7 @@ import io.lexiloom.application.document.search.dto.DocumentSearchRequest;
 import io.lexiloom.application.document.search.dto.DocumentSearchResponse;
 import io.lexiloom.application.document.service.impl.DocumentSearchQueryServiceImpl;
 import io.lexiloom.application.exception.BusinessException;
+import io.lexiloom.application.user.api.WorkSpaceQueryService;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +43,8 @@ class DocumentSearchQueryServiceTest {
 
   @Mock private ElasticsearchOperations elasticsearchOperations;
   @Mock private SearchHistoryService searchHistoryService;
+  @Mock private WorkSpaceQueryService workSpaceQueryService;
+  @Mock private DocumentQueryApi documentQueryApi;
 
   @InjectMocks private DocumentSearchQueryServiceImpl searchQueryService;
 
@@ -219,6 +223,116 @@ class DocumentSearchQueryServiceTest {
         .isInstanceOf(BusinessException.class)
         .extracting("code")
         .isEqualTo("BAD_REQUEST");
+  }
+
+  @Test
+  @DisplayName("跨空间检索：开启 includeLinked 默认适配 80/20 权重与打分 Boost 映射，并安全隔离子空间及 SpaceLink")
+  void testSearch_MultiWorkspace_DefaultWeightsAndBoost() {
+    Long primaryId = 1L;
+    Long childId = 2L;
+    Long linkedId = 3L;
+
+    when(workSpaceQueryService.listChildWorkspaceIds(primaryId)).thenReturn(List.of(childId));
+    when(documentQueryApi.getApprovedLinkedWorkspaceDocIds(primaryId))
+        .thenReturn(Map.of(linkedId, List.of(301L, 302L)));
+    when(workSpaceQueryService.getWorkspaceNames(any()))
+        .thenReturn(
+            Map.of(
+                primaryId, "主研发部",
+                childId, "前端小组",
+                linkedId, "基础架构组"));
+
+    DocSearchDocument doc1 =
+        DocSearchDocument.builder()
+            .id("101")
+            .workspaceId(String.valueOf(primaryId))
+            .title("主空间文档")
+            .summary("摘要1")
+            .build();
+    DocSearchDocument doc2 =
+        DocSearchDocument.builder()
+            .id("301")
+            .workspaceId(String.valueOf(linkedId))
+            .title("跨空间关联文档")
+            .summary("摘要2")
+            .build();
+
+    SearchHit<DocSearchDocument> hit1 = mockHit("101", doc1, Map.of());
+    SearchHit<DocSearchDocument> hit2 = mockHit("301", doc2, Map.of());
+    SearchHits<DocSearchDocument> searchHits = mockSearchHits(2L, List.of(hit1, hit2));
+
+    ArgumentCaptor<NativeQuery> queryCaptor = ArgumentCaptor.forClass(NativeQuery.class);
+    when(elasticsearchOperations.search(queryCaptor.capture(), eq(DocSearchDocument.class)))
+        .thenReturn(searchHits);
+
+    DocumentSearchRequest request =
+        new DocumentSearchRequest(
+            "微服务", primaryId, null, null, 1, 20, DocSearchSortBy.RELEVANCE, true, null);
+
+    DocumentSearchResponse response = searchQueryService.search(request);
+
+    assertThat(response.total()).isEqualTo(2L);
+    assertThat(response.items()).hasSize(2);
+
+    DocSearchItemVO item1 = response.items().get(0);
+    assertThat(item1.workspaceId()).isEqualTo(primaryId);
+    assertThat(item1.workspaceName()).isEqualTo("主研发部");
+    assertThat(item1.relationType()).isEqualTo("PRIMARY");
+
+    DocSearchItemVO item2 = response.items().get(1);
+    assertThat(item2.workspaceId()).isEqualTo(linkedId);
+    assertThat(item2.workspaceName()).isEqualTo("基础架构组");
+    assertThat(item2.relationType()).isEqualTo("SPACE_LINK");
+
+    // 验证 ES NativeQuery 包含复合 filter 及 should boost
+    NativeQuery captured = queryCaptor.getValue();
+    assertThat(captured).isNotNull();
+  }
+
+  @Test
+  @DisplayName("跨空间检索：自定义 weights 显式按比例计算 Boost 打分加权")
+  void testSearch_MultiWorkspace_CustomWeightsAndBoost() {
+    Long primaryId = 1L;
+    Long linkedId = 3L;
+
+    when(workSpaceQueryService.listChildWorkspaceIds(primaryId)).thenReturn(List.of());
+    when(documentQueryApi.getApprovedLinkedWorkspaceDocIds(primaryId))
+        .thenReturn(Map.of(linkedId, List.of(301L)));
+    when(workSpaceQueryService.getWorkspaceNames(any()))
+        .thenReturn(Map.of(primaryId, "主空间", linkedId, "关联空间"));
+
+    DocSearchDocument doc =
+        DocSearchDocument.builder()
+            .id("301")
+            .workspaceId(String.valueOf(linkedId))
+            .title("关联空间文档")
+            .summary("摘要")
+            .build();
+
+    SearchHit<DocSearchDocument> hit = mockHit("301", doc, Map.of());
+    SearchHits<DocSearchDocument> searchHits = mockSearchHits(1L, List.of(hit));
+
+    when(elasticsearchOperations.search(any(NativeQuery.class), eq(DocSearchDocument.class)))
+        .thenReturn(searchHits);
+
+    // 传入自定义权重：主空间 60，关联空间 40
+    DocumentSearchRequest request =
+        new DocumentSearchRequest(
+            "DDD",
+            primaryId,
+            null,
+            null,
+            1,
+            20,
+            DocSearchSortBy.RELEVANCE,
+            true,
+            Map.of(primaryId, 60, linkedId, 40));
+
+    DocumentSearchResponse response = searchQueryService.search(request);
+
+    assertThat(response.total()).isEqualTo(1L);
+    assertThat(response.items().getFirst().workspaceId()).isEqualTo(linkedId);
+    assertThat(response.items().getFirst().relationType()).isEqualTo("SPACE_LINK");
   }
 
   @Test

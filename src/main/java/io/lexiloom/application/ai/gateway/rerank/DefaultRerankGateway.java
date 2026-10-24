@@ -55,7 +55,12 @@ public class DefaultRerankGateway implements RerankGateway {
     RerankStrategyEnum targetStrategy =
         (aiProperties != null && aiProperties.getRerank() != null)
             ? aiProperties.getRerank().getStrategy()
-            : RerankStrategyEnum.NONE;
+            : RerankStrategyEnum.CROSS_ENCODER;
+
+    // 当明确开启 enabled=true 且 strategy 为 NONE 时，默认自动采用 CROSS_ENCODER 深度重排
+    if (targetStrategy == RerankStrategyEnum.NONE) {
+      targetStrategy = RerankStrategyEnum.CROSS_ENCODER;
+    }
 
     if (targetStrategy == null) {
       targetStrategy = RerankStrategyEnum.NONE;

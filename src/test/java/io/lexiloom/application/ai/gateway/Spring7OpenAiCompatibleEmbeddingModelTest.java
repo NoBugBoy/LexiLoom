@@ -144,4 +144,57 @@ class Spring7OpenAiCompatibleEmbeddingModelTest {
     assertThat(results).hasSize(1);
     assertThat(results.get(0)).containsExactly(0.35f, 0.75f);
   }
+
+  @Test
+  @DisplayName("当处于 RagTrace 作用域时，真实 Token 自动沉淀至 RagTraceContext")
+  void shouldRecordTokensToRagTraceContext() throws Exception {
+    org.springframework.web.client.RestClient restClient =
+        org.mockito.Mockito.mock(org.springframework.web.client.RestClient.class);
+    org.springframework.web.client.RestClient.RequestBodyUriSpec uriSpec =
+        org.mockito.Mockito.mock(
+            org.springframework.web.client.RestClient.RequestBodyUriSpec.class,
+            org.mockito.Mockito.RETURNS_SELF);
+    org.springframework.web.client.RestClient.RequestBodySpec bodySpec =
+        org.mockito.Mockito.mock(
+            org.springframework.web.client.RestClient.RequestBodySpec.class,
+            org.mockito.Mockito.RETURNS_SELF);
+    org.springframework.web.client.RestClient.ResponseSpec responseSpec =
+        org.mockito.Mockito.mock(org.springframework.web.client.RestClient.ResponseSpec.class);
+
+    org.mockito.Mockito.when(restClient.post()).thenReturn(uriSpec);
+    org.mockito.Mockito.when(uriSpec.uri(org.mockito.ArgumentMatchers.anyString()))
+        .thenReturn(bodySpec);
+    org.mockito.Mockito.when(bodySpec.retrieve()).thenReturn(responseSpec);
+
+    String jsonWithUsage =
+        """
+        {
+          "data": [{"index": 0, "embedding": [0.35, 0.75]}],
+          "usage": {
+            "prompt_tokens": 42,
+            "total_tokens": 42
+          }
+        }
+        """;
+    org.mockito.Mockito.when(responseSpec.body(String.class)).thenReturn(jsonWithUsage);
+
+    Spring7OpenAiCompatibleEmbeddingModel model =
+        new Spring7OpenAiCompatibleEmbeddingModel(
+            "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "test-key",
+            "text-embedding-v3",
+            2,
+            restClient,
+            new tools.jackson.databind.ObjectMapper());
+
+    io.lexiloom.application.ai.trace.model.RagTraceContext context =
+        new io.lexiloom.application.ai.trace.model.RagTraceContext(
+            "trace-emb", "sess-1", 1L, 1L, "测试问题");
+
+    ScopedValue.where(io.lexiloom.application.ai.trace.RagTraceHolder.CURRENT, context)
+        .run(() -> model.embed(List.of("测试文本")));
+
+    assertThat(context.getEmbeddingTokens()).isEqualTo(42);
+    assertThat(context.getTotalTokens()).isEqualTo(42);
+  }
 }

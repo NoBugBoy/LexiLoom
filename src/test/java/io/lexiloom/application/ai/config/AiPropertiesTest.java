@@ -32,10 +32,10 @@ class AiPropertiesTest {
     assertThat(properties.getEmbedding().getModel()).isEqualTo("qwen3.7-text-embedding-flash");
     assertThat(properties.getEmbedding().getDimension()).isEqualTo(1024);
 
-    // 重排默认值 (默认关闭)
+    // 重排默认值 (默认关闭，启用时默认策略为 CROSS_ENCODER)
     assertThat(properties.getRerank()).isNotNull();
     assertThat(properties.getRerank().isEnabled()).isFalse();
-    assertThat(properties.getRerank().getStrategy()).isEqualTo(RerankStrategyEnum.NONE);
+    assertThat(properties.getRerank().getStrategy()).isEqualTo(RerankStrategyEnum.CROSS_ENCODER);
     assertThat(properties.getRerank().getProvider()).isEqualTo(RerankProviderEnum.DASHSCOPE);
     assertThat(properties.getRerank().getModel()).isEqualTo("qwen3.7-text-rerank");
     assertThat(properties.getRerank().getTopK()).isEqualTo(12);

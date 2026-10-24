@@ -11,6 +11,7 @@ import io.lexiloom.application.user.service.WorkSpaceMemberCommandService;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -64,23 +65,26 @@ public class WorkSpaceMemberController {
 
   /** 修改成员角色 */
   @PutMapping("/{userId}/role")
-  public void updateRole(
+  public ResponseEntity<Void> updateRole(
       @PathVariable("workSpaceId") Long workSpaceId,
       @PathVariable("userId") Long userId,
       @Validated @RequestBody WorkSpaceMemberRoleUpdateRequest request) {
     workSpaceMemberCommandService.updateMemberRole(workSpaceId, userId, request.role());
+    return ResponseEntity.noContent().build();
   }
 
   /** 移除团队成员 */
   @DeleteMapping("/{userId}")
-  public void removeMember(
+  public ResponseEntity<Void> removeMember(
       @PathVariable("workSpaceId") Long workSpaceId, @PathVariable("userId") Long userId) {
     workSpaceMemberCommandService.removeMember(workSpaceId, userId);
+    return ResponseEntity.noContent().build();
   }
 
   /** 当前用户主动退出团队 */
   @PostMapping("/leave")
-  public void leave(@PathVariable("workSpaceId") Long workSpaceId) {
+  public ResponseEntity<Void> leave(@PathVariable("workSpaceId") Long workSpaceId) {
     workSpaceMemberCommandService.leaveWorkSpace(workSpaceId);
+    return ResponseEntity.noContent().build();
   }
 }

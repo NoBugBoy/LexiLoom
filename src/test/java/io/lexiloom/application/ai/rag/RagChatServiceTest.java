@@ -215,4 +215,30 @@ class RagChatServiceTest {
 
     verify(sseEmitter).completeWithError(simulatedException);
   }
+
+  @Test
+  @DisplayName("验证 AiChatRequest 中的 nativeHybridSearch 参数正确透传给 HybridSearchCommand")
+  void testNativeHybridSearchParameterPropagation() {
+    AiChatRequest request =
+        new AiChatRequest(
+            "测试原生混合检索", 10L, "sess_1", false, null, 10, java.util.Collections.emptyMap(), true);
+
+    when(sessionService.sessionExists("sess_1")).thenReturn(true);
+    when(sessionService.getHistory("sess_1")).thenReturn(List.of());
+
+    org.mockito.ArgumentCaptor<HybridSearchCommand> captor =
+        org.mockito.ArgumentCaptor.forClass(HybridSearchCommand.class);
+    when(hybridSearchQueryService.hybridSearch(captor.capture())).thenReturn(List.of());
+    when(citationBuilder.buildCitations(any())).thenReturn(List.of());
+
+    LlmChatCommand chatCommand = LlmChatCommand.of("prompt");
+    when(ragPromptTemplate.buildChatCommand(any(), any(), any(), eq(false)))
+        .thenReturn(chatCommand);
+    when(llmGateway.chat(chatCommand)).thenReturn(AiChatResponse.of("测试回答", null, List.of(), 50L));
+
+    ragChatService.chat(request);
+
+    HybridSearchCommand capturedCommand = captor.getValue();
+    org.assertj.core.api.Assertions.assertThat(capturedCommand.nativeHybridSearch()).isTrue();
+  }
 }

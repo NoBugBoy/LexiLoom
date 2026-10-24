@@ -15,6 +15,10 @@ import io.lexiloom.application.ai.model.vo.ConversationSessionVO;
 import io.lexiloom.application.ai.search.CitationBuilder;
 import io.lexiloom.application.ai.search.HybridSearchCommand;
 import io.lexiloom.application.ai.search.HybridSearchQueryService;
+import io.lexiloom.application.ai.trace.RagTraceHolder;
+import io.lexiloom.application.ai.trace.RagTracePersistenceService;
+import io.lexiloom.application.ai.trace.RagTraceable;
+import io.lexiloom.application.ai.trace.model.RagTraceContext;
 import io.lexiloom.application.common.ErrorCode;
 import io.lexiloom.application.common.LoginUserAuthentication;
 import io.lexiloom.application.common.SecurityHolder;
@@ -24,6 +28,7 @@ import io.lexiloom.application.user.api.WorkSpaceMemberQueryService;
 import java.io.IOException;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Primary;
 import org.springframework.lang.Nullable;
@@ -40,15 +45,56 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @Primary
 public class DefaultRagChatService implements RagChatService {
 
-  private final HybridSearchQueryService hybridSearchQueryService;
+  private final KnowledgeRetrievalQueryService knowledgeRetrievalQueryService;
   private final CitationBuilder citationBuilder;
   private final RagPromptTemplate ragPromptTemplate;
   private final LlmGateway llmGateway;
   private final ConversationSessionService conversationSessionService;
   private final AiProperties aiProperties;
   private final WorkSpaceMemberQueryService workSpaceMemberQueryService;
+  private final RagTracePersistenceService ragTracePersistenceService;
 
   @Autowired
+  public DefaultRagChatService(
+      KnowledgeRetrievalQueryService knowledgeRetrievalQueryService,
+      CitationBuilder citationBuilder,
+      RagPromptTemplate ragPromptTemplate,
+      LlmGateway llmGateway,
+      ConversationSessionService conversationSessionService,
+      AiProperties aiProperties,
+      @Nullable WorkSpaceMemberQueryService workSpaceMemberQueryService,
+      @Nullable RagTracePersistenceService ragTracePersistenceService) {
+    this.knowledgeRetrievalQueryService = knowledgeRetrievalQueryService;
+    this.citationBuilder = citationBuilder;
+    this.ragPromptTemplate = ragPromptTemplate;
+    this.llmGateway = llmGateway;
+    this.conversationSessionService = conversationSessionService;
+    this.aiProperties = aiProperties;
+    this.workSpaceMemberQueryService = workSpaceMemberQueryService;
+    this.ragTracePersistenceService = ragTracePersistenceService;
+  }
+
+  public DefaultRagChatService(
+      HybridSearchQueryService hybridSearchQueryService,
+      CitationBuilder citationBuilder,
+      RagPromptTemplate ragPromptTemplate,
+      LlmGateway llmGateway,
+      ConversationSessionService conversationSessionService,
+      AiProperties aiProperties,
+      @Nullable WorkSpaceMemberQueryService workSpaceMemberQueryService,
+      @Nullable RagTracePersistenceService ragTracePersistenceService) {
+    this(
+        new DefaultKnowledgeRetrievalQueryService(
+            hybridSearchQueryService, aiProperties, workSpaceMemberQueryService),
+        citationBuilder,
+        ragPromptTemplate,
+        llmGateway,
+        conversationSessionService,
+        aiProperties,
+        workSpaceMemberQueryService,
+        ragTracePersistenceService);
+  }
+
   public DefaultRagChatService(
       HybridSearchQueryService hybridSearchQueryService,
       CitationBuilder citationBuilder,
@@ -57,13 +103,15 @@ public class DefaultRagChatService implements RagChatService {
       ConversationSessionService conversationSessionService,
       AiProperties aiProperties,
       @Nullable WorkSpaceMemberQueryService workSpaceMemberQueryService) {
-    this.hybridSearchQueryService = hybridSearchQueryService;
-    this.citationBuilder = citationBuilder;
-    this.ragPromptTemplate = ragPromptTemplate;
-    this.llmGateway = llmGateway;
-    this.conversationSessionService = conversationSessionService;
-    this.aiProperties = aiProperties;
-    this.workSpaceMemberQueryService = workSpaceMemberQueryService;
+    this(
+        hybridSearchQueryService,
+        citationBuilder,
+        ragPromptTemplate,
+        llmGateway,
+        conversationSessionService,
+        aiProperties,
+        workSpaceMemberQueryService,
+        null);
   }
 
   public DefaultRagChatService(
@@ -80,10 +128,12 @@ public class DefaultRagChatService implements RagChatService {
         llmGateway,
         conversationSessionService,
         aiProperties,
+        null,
         null);
   }
 
   @Override
+  @RagTraceable
   public AiChatResponse chat(AiChatRequest request) {
     validateRequest(request);
 
@@ -91,8 +141,14 @@ public class DefaultRagChatService implements RagChatService {
     String sessionId = resolveSessionId(request.sessionId(), request.workspaceId());
     List<ChatMessage> history = conversationSessionService.getHistory(sessionId);
 
+    RagTraceContext traceContext = RagTraceHolder.get();
+    String traceId = traceContext != null ? traceContext.getTraceId() : null;
+
     // 1. 执行多租户隔离的双路混合检索与可选重排
     List<CitationVO> citations = performSearchAndBuildCitations(request);
+    if (traceContext != null) {
+      traceContext.recordCitations(citations);
+    }
 
     // 2. 组装注入防幻觉约束与参考资料的提示词命令
     LlmChatCommand chatCommand =
@@ -106,15 +162,34 @@ public class DefaultRagChatService implements RagChatService {
         sessionId,
         request.message() != null ? request.message().length() : 0,
         citations.size());
+    long llmStart = System.currentTimeMillis();
     AiChatResponse llmResponse = llmGateway.chat(chatCommand);
+    long llmCost = System.currentTimeMillis() - llmStart;
+    if (traceContext != null) {
+      String modelName =
+          aiProperties != null ? aiProperties.resolveEffectiveModelName() : "deepseek-chat";
+      traceContext.recordAnswer(llmResponse.content(), modelName);
+      traceContext.recordGenerationTime(llmCost);
+      if (llmResponse.promptTokens() != null || llmResponse.completionTokens() != null) {
+        traceContext.recordLlmTokens(
+            llmResponse.promptTokens() != null ? llmResponse.promptTokens().longValue() : null,
+            llmResponse.completionTokens() != null
+                ? llmResponse.completionTokens().longValue()
+                : null);
+      }
+    }
 
     long latencyMs = System.currentTimeMillis() - startMs;
     log.info(
-        "【RagChatService】同步 RAG 对话完成: wsId={}, sessionId={}, 耗时={}ms, 回复长度={}",
+        "【RagChatService】同步 RAG 对话完成: wsId={}, sessionId={}, 耗时={}ms, 回复长度={}, Token=[prompt={},"
+            + " completion={}, total={}]",
         request.workspaceId(),
         sessionId,
         latencyMs,
-        llmResponse.content() != null ? llmResponse.content().length() : 0);
+        llmResponse.content() != null ? llmResponse.content().length() : 0,
+        llmResponse.promptTokens(),
+        llmResponse.completionTokens(),
+        llmResponse.totalTokens());
 
     // 4. 持久化多轮上下文消息及元数据更新 (完整保留正文、溯源卡片与思维链)
     Long currentUserId =
@@ -126,12 +201,21 @@ public class DefaultRagChatService implements RagChatService {
           sessionId, llmResponse.content(), citations, llmResponse.thinkingContent());
     }
 
-    // 5. 组装包含精确视觉溯源坐标及会话 ID 的最终响应
+    // 5. 组装包含精确视觉溯源坐标、会话 ID 及 traceId 的最终响应
     return AiChatResponse.of(
-        llmResponse.content(), llmResponse.thinkingContent(), citations, latencyMs, sessionId);
+        llmResponse.content(),
+        llmResponse.thinkingContent(),
+        citations,
+        latencyMs,
+        sessionId,
+        traceId,
+        llmResponse.promptTokens(),
+        llmResponse.completionTokens(),
+        llmResponse.totalTokens());
   }
 
   @Override
+  @RagTraceable
   public void streamChat(AiChatRequest request, SseEmitter emitter) {
     if (emitter == null) {
       return;
@@ -156,11 +240,17 @@ public class DefaultRagChatService implements RagChatService {
     }
     List<ChatMessage> history = conversationSessionService.getHistory(sessionId);
 
+    RagTraceContext traceContext = RagTraceHolder.get();
+    String traceId = traceContext != null ? traceContext.getTraceId() : null;
+
     // 1. 执行多租户隔离的双路检索并生成结构化引用源
     List<CitationVO> citations = performSearchAndBuildCitations(request);
+    if (traceContext != null) {
+      traceContext.recordCitations(citations);
+    }
 
     // 2. 核心体验保障：优先向客户端推送 citation 事件，使前端阅读器立即完成原件页面切片划线高亮
-    sendSseEvent(emitter, "citation", AiChatChunkResponse.citation(citations, sessionId));
+    sendSseEvent(emitter, "citation", AiChatChunkResponse.citation(citations, sessionId, traceId));
 
     // 3. 组装 Prompt 命令
     LlmChatCommand chatCommand =
@@ -176,6 +266,7 @@ public class DefaultRagChatService implements RagChatService {
 
     StringBuilder fullAssistantContent = new StringBuilder();
     StringBuilder fullThinkingContent = new StringBuilder();
+    long llmStartMs = System.currentTimeMillis();
 
     // 4. 发起大模型流式调用，分流实时下发 Thinking 与 Message
     llmGateway.streamChat(
@@ -194,9 +285,17 @@ public class DefaultRagChatService implements RagChatService {
           }
 
           @Override
+          public void onComplete(Usage usage) {
+            if (usage != null && traceContext != null) {
+              traceContext.recordLlmTokens(usage.getPromptTokens(), usage.getGenerationTokens());
+            }
+            onComplete();
+          }
+
+          @Override
           public void onComplete() {
-            // 推送结束标记
-            sendSseEvent(emitter, "done", AiChatChunkResponse.done(sessionId));
+            // 推送结束标记，回传 traceId 供前端绑定反馈卡片
+            sendSseEvent(emitter, "done", AiChatChunkResponse.done(sessionId, traceId));
             try {
               emitter.complete();
             } catch (Exception ignored) {
@@ -219,6 +318,15 @@ public class DefaultRagChatService implements RagChatService {
                 fullThinkingContent.length() > 0 ? fullThinkingContent.toString() : null;
             conversationSessionService.appendAssistantMessage(
                 sessionId, fullAssistantContent.toString(), citations, thinkingStr);
+
+            // 异步虚拟线程保存全链路观测数据 (零线程池)
+            if (traceContext != null && ragTracePersistenceService != null) {
+              String modelName =
+                  aiProperties != null ? aiProperties.resolveEffectiveModelName() : "deepseek-chat";
+              traceContext.recordAnswer(fullAssistantContent.toString(), modelName);
+              traceContext.recordGenerationTime(System.currentTimeMillis() - llmStartMs);
+              ragTracePersistenceService.asyncSaveTrace(traceContext);
+            }
           }
 
           @Override
@@ -233,6 +341,11 @@ public class DefaultRagChatService implements RagChatService {
               emitter.completeWithError(throwable);
             } catch (Exception ignored) {
             }
+
+            if (traceContext != null && ragTracePersistenceService != null) {
+              traceContext.markError(throwable);
+              ragTracePersistenceService.asyncSaveTrace(traceContext);
+            }
           }
         });
   }
@@ -241,16 +354,18 @@ public class DefaultRagChatService implements RagChatService {
     int requestedTopK = request.topK() != null ? request.topK() : aiProperties.getRag().getTopK();
     int minTopK = aiProperties.getRag().getMinTopK();
     int maxTopK = aiProperties.getRag().getMaxTopK();
-    int topK = Math.max(minTopK, Math.min(requestedTopK, maxTopK));
+    int topK = Math.clamp(requestedTopK, minTopK, maxTopK);
+    // 最低相似度阈值
     double minScore = aiProperties.getRag().getSimilarityThreshold();
 
     Long currentUserId =
         SecurityHolder.getLoginUser().map(LoginUserAuthentication::userId).orElse(null);
     boolean isAdmin =
         currentUserId != null
-            && workSpaceMemberQueryService != null
-            && workSpaceMemberQueryService.hasRole(
-                request.workspaceId(), currentUserId, WorkSpaceRoleEnum.ADMIN);
+            && ((SecurityHolder.getLoginUser().map(u -> u.roles().contains("ADMIN") || u.roles().contains("SUPER_ADMIN")).orElse(false))
+                || (workSpaceMemberQueryService != null
+                    && workSpaceMemberQueryService.hasRole(
+                        request.workspaceId(), currentUserId, WorkSpaceRoleEnum.ADMIN)));
 
     HybridSearchCommand searchCommand =
         new HybridSearchCommand(
@@ -264,18 +379,11 @@ public class DefaultRagChatService implements RagChatService {
             null,
             currentUserId,
             isAdmin,
-            request.weights());
+            request.weights(),
+            request.nativeHybridSearch());
 
-    List<ScoredDocChunkVO> scoredChunks = hybridSearchQueryService.hybridSearch(searchCommand);
-    long distinctWorkspaces =
-        scoredChunks.stream()
-            .map(s -> s.chunk() != null ? s.chunk().getWorkspaceId() : null)
-            .filter(java.util.Objects::nonNull)
-            .distinct()
-            .count();
-    if (distinctWorkspaces > 1) {
-      log.info("【RAG】多空间知识召回完成: 本次对话聚合引用了 {} 个工作空间的文档切片", distinctWorkspaces);
-    }
+    List<ScoredDocChunkVO> scoredChunks =
+        knowledgeRetrievalQueryService.retrieveScoredChunks(searchCommand);
     return citationBuilder.buildCitations(scoredChunks);
   }
 

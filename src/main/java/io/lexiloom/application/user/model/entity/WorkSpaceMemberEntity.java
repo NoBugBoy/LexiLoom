@@ -26,14 +26,17 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class WorkSpaceMemberEntity extends BaseEntity {
 
-  @Column(name = "work_space_id", nullable = false)
+  /** 所属团队空间 ID */
+  @Column(name = "work_space_id", comment = "工作空间ID", nullable = false)
   private Long workSpaceId;
 
-  @Column(name = "user_id", nullable = false)
+  /** 成员用户 ID */
+  @Column(name = "user_id", comment = "用户ID", nullable = false)
   private Long userId;
 
+  /** 成员在空间内的权限角色 */
   @Enumerated(EnumType.STRING)
-  @Column(nullable = false, length = 20)
+  @Column(comment = "成员角色(OWNER/ADMIN/MEMBER/GUEST)", nullable = false, length = 20)
   private WorkSpaceRoleEnum role;
 
   /** 静态工厂：创建团队成员关联 */

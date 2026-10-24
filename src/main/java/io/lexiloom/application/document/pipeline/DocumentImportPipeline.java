@@ -150,12 +150,12 @@ public class DocumentImportPipeline {
     DocSourceFileEntity sourceFile =
         transactionalService.saveInitialSourceFile(command, fileHash, storagePath, storageUrl);
 
-    // 7. 禁止同步解析，统一转入后台异步解析流水线
+    // 7. 禁止同步解析，统一转入后台异步排队解析流水线
     DocParserEngineEnum engine =
         command.preferredEngine() != null ? command.preferredEngine() : DocParserEngineEnum.AUTO;
 
-    DocParseResult asyncInitResult =
-        DocParseResult.asyncProcessing(engine, null, null, command.extraOptions());
+    DocParseResult queueInitResult =
+        DocParseResult.queued(engine, command.extraOptions());
 
     // 8. 区分已有文档升级版本或新文档首次导入
     DocumentImportResult result;
@@ -168,7 +168,7 @@ public class DocumentImportPipeline {
               storagePath,
               storageUrl,
               instantUpload,
-              asyncInitResult,
+              queueInitResult,
               operatorId);
     } else {
       result =
@@ -178,7 +178,7 @@ public class DocumentImportPipeline {
               storagePath,
               storageUrl,
               instantUpload,
-              asyncInitResult,
+              queueInitResult,
               operatorId);
     }
 
@@ -205,13 +205,13 @@ public class DocumentImportPipeline {
   /** 针对解析失败或超时的文档，基于已有对象存储文件重新发起解析 */
   public void retryParse(DocumentEntity doc, DocSourceFileEntity sourceFile, Long operatorId) {
     log.info(
-        "【DocumentImportPipeline】重新触发文档异步解析: docId={}, sourceFileId={}, file={}",
+        "【DocumentImportPipeline】重新触发文档排队解析: docId={}, sourceFileId={}, file={}",
         doc.getId(),
         sourceFile.getId(),
         sourceFile.getOriginalFileName());
 
-    doc.markAsyncProcessing();
-    sourceFile.markAsyncProcessing();
+    doc.markQueued();
+    sourceFile.markQueued();
     documentRepository.save(doc);
     docSourceFileRepository.save(sourceFile);
 

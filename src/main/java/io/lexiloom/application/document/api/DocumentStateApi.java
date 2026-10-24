@@ -17,4 +17,7 @@ public interface DocumentStateApi {
    * @param reason 回滚或流转原因
    */
   void rollbackState(Long documentId, DocumentStateEnum targetState, String reason);
+
+  /** 累加文档向量化实际消耗的 Token 数。 */
+  void recordEmbeddingTokens(Long documentId, int tokens);
 }

@@ -6,7 +6,9 @@
     <description>
         LexiLoom（织机隐喻：将碎片文本“编织”成知识织锦）
         词源：Lexi（希腊语词根，词汇、语义、文本）+ Loom（织布机）。
-        寓意：散落在企业各处的非结构化，就像一团团零散的棉麻丝线。你的系统就是一台现代智能**“织机（Loom）”**，把碎片化的切片、表格、段落精巧地“编织（Weave）”成一张经纬交错、逻辑互联的知识织锦。
+        寓意：散落在企业各处的非结构化，就像一团团零散的棉麻丝线。
+        你的系统就是一台现代智能**“织机（Loom）”**，把碎片化的切片、表格、段落
+        精巧地“编织（Weave）”成一张经纬交错、逻辑互联的知识织锦。
     </description>
     <parent>
         <groupId>org.springframework.boot</groupId>
@@ -27,6 +29,7 @@
         <lombok-mapstruct-binding.version>0.2.0</lombok-mapstruct-binding.version>
         <querydsl.version>5.1.0</querydsl.version>
         <hutools.version>5.8.30</hutools.version>
+        <jacoco.skip>true</jacoco.skip>
         <wx.version>4.6.0</wx.version>
         <minio.version>8.5.17</minio.version>
         <groovy.version>4.0.24</groovy.version>
@@ -288,7 +291,7 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
-                    <release>21</release>
+                    <release>${maven.compiler.release}</release>
                     <compilerArgs>
                         <arg>-Amapstruct.defaultComponentModel=spring</arg>
                         <arg>-Amapstruct.unmappedTargetPolicy=IGNORE</arg>

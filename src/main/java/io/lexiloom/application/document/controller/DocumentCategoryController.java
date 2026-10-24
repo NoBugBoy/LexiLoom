@@ -9,6 +9,7 @@ import io.lexiloom.application.document.model.request.DocCategoryUpdateRequest;
 import jakarta.validation.constraints.NotNull;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -51,8 +52,9 @@ public class DocumentCategoryController {
 
   /** 删除分类 */
   @DeleteMapping("/{id}")
-  public void delete(@PathVariable("id") Long id) {
+  public ResponseEntity<Void> delete(@PathVariable("id") Long id) {
     docCategoryService.deleteCategory(id);
+    return ResponseEntity.noContent().build();
   }
 
   /** 拉取完整分类树（包含各分类下关联文档数量） */

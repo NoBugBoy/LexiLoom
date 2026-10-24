@@ -5,6 +5,7 @@ import io.lexiloom.application.ai.model.request.AiChatRequest;
 import io.lexiloom.application.ai.model.request.ConversationSessionCreateRequest;
 import io.lexiloom.application.ai.model.response.AiChatResponse;
 import io.lexiloom.application.ai.model.response.AiReindexResponse;
+import io.lexiloom.application.ai.model.response.TokenUsageStatsResponse;
 import io.lexiloom.application.ai.model.search.DocChunkDocument;
 import io.lexiloom.application.ai.model.vo.ConversationMessageVO;
 import io.lexiloom.application.ai.model.vo.ConversationSessionVO;
@@ -12,21 +13,27 @@ import io.lexiloom.application.ai.model.vo.DocChunkVO;
 import io.lexiloom.application.ai.rag.ConversationSessionService;
 import io.lexiloom.application.ai.rag.RagChatService;
 import io.lexiloom.application.ai.repository.DocChunkRepository;
+import io.lexiloom.application.ai.service.AiAccessSecurityValidator;
+import io.lexiloom.application.ai.service.AiStatsQueryService;
+import io.lexiloom.application.ai.trace.RagTracePersistenceService;
+import io.lexiloom.application.ai.trace.entity.RagTraceDetailEntity;
+import io.lexiloom.application.ai.trace.entity.RagTraceEntity;
+import io.lexiloom.application.ai.trace.model.RagFeedbackRequest;
+import io.lexiloom.application.ai.trace.model.RagTracePageRequest;
 import io.lexiloom.application.common.ErrorCode;
 import io.lexiloom.application.common.LoginUserAuthentication;
 import io.lexiloom.application.common.SecurityHolder;
 import io.lexiloom.application.document.api.DocumentQueryApi;
 import io.lexiloom.application.document.api.dto.DocumentDTO;
 import io.lexiloom.application.document.statemachine.DocumentStateEnum;
-import io.lexiloom.application.enums.WorkSpaceAclEnum;
-import io.lexiloom.application.enums.WorkSpaceRoleEnum;
 import io.lexiloom.application.exception.BusinessException;
-import io.lexiloom.application.user.api.WorkSpaceMemberQueryService;
 import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -58,7 +65,9 @@ public class AiChatController {
   private final DocumentQueryApi documentQueryApi;
   private final DocChunkRepository docChunkRepository;
   private final DocVectorSyncListener docVectorSyncListener;
-  private final WorkSpaceMemberQueryService workSpaceMemberQueryService;
+  private final AiAccessSecurityValidator accessSecurityValidator;
+  private final RagTracePersistenceService ragTracePersistenceService;
+  private final AiStatsQueryService aiStatsQueryService;
 
   /**
    * SSE 流式对话接口（核心端点）
@@ -77,7 +86,7 @@ public class AiChatController {
    */
   @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
   public SseEmitter streamChat(@Valid @RequestBody AiChatRequest request) {
-    assertCanAccessWorkspace(request.workspaceId());
+    accessSecurityValidator.assertCanAccessWorkspace(request.workspaceId());
     validateChatDocumentScope(request);
 
     SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
@@ -93,10 +102,69 @@ public class AiChatController {
    */
   @PostMapping("/chat")
   public AiChatResponse chat(@Valid @RequestBody AiChatRequest request) {
-    assertCanAccessWorkspace(request.workspaceId());
+    accessSecurityValidator.assertCanAccessWorkspace(request.workspaceId());
     validateChatDocumentScope(request);
 
     return ragChatService.chat(request);
+  }
+
+  /**
+   * 提交对指定 RAG 问答生成的评估反馈 (点赞/点踩、结构化归因标签与批注)
+   *
+   * @param traceId 链路跟踪唯一标识
+   * @param request 反馈请求入参
+   * @return 无内容 204
+   */
+  @PostMapping("/traces/{traceId}/feedback")
+  public ResponseEntity<Void> recordFeedback(
+      @PathVariable("traceId") String traceId, @Valid @RequestBody RagFeedbackRequest request) {
+    Long userId = getCurrentUserId();
+    ragTracePersistenceService.recordFeedback(traceId, request, userId);
+    return ResponseEntity.noContent().build();
+  }
+
+  /**
+   * 分页查询指定工作空间下的 RAG 问答观测链路快照 (继承 BasePageRequest)
+   *
+   * @param request 分页查询参数
+   * @return 链路快照分页数据
+   */
+  @GetMapping("/traces")
+  public Page<RagTraceEntity> pageTraces(@Valid RagTracePageRequest request) {
+    if (request != null && request.getWorkspaceId() != null) {
+      accessSecurityValidator.assertCanAccessWorkspace(request.getWorkspaceId());
+    }
+    return ragTracePersistenceService.pageTraces(request);
+  }
+
+  /**
+   * 查询指定 RAG 观测链路的完整快照明细 (包含初筛切片生死因果与引用卡片)
+   *
+   * @param traceId 链路跟踪唯一标识
+   * @return 链路快照明细
+   */
+  @GetMapping("/traces/{traceId}")
+  public RagTraceDetailEntity getTraceDetail(@PathVariable("traceId") String traceId) {
+    return ragTracePersistenceService
+        .getDetailByTraceId(traceId)
+        .orElseThrow(() -> BusinessException.notFound("未找到指定的链路明细记录"));
+  }
+
+  /**
+   * 统计最近指定天数的 Token 消耗量指标（默认最近 7 天，返回全模型总计与各模型单独总计）
+   *
+   * @param workspaceId 可选的工作空间 ID (若传入则校验访问权限并按空间聚合)
+   * @param days 统计天数范围 (若不传或非法则默认 7 天)
+   * @return Token 消耗综合总计与模型明细
+   */
+  @GetMapping({"/token-stats", "/stats/tokens"})
+  public TokenUsageStatsResponse getTokenUsageStats(
+      @RequestParam(value = "workspaceId", required = false) Long workspaceId,
+      @RequestParam(value = "days", required = false, defaultValue = "7") Integer days) {
+    if (workspaceId != null) {
+      accessSecurityValidator.assertCanAccessWorkspace(workspaceId);
+    }
+    return aiStatsQueryService.getTokenUsageStatsResponse(workspaceId, days);
   }
 
   /**
@@ -110,7 +178,7 @@ public class AiChatController {
     if (workspaceId == null) {
       throw BusinessException.badRequest("工作空间ID不能为空");
     }
-    assertCanAccessWorkspace(workspaceId);
+    accessSecurityValidator.assertCanAccessWorkspace(workspaceId);
     Long userId = getCurrentUserId();
     return conversationSessionService.listSessions(workspaceId, userId);
   }
@@ -124,7 +192,7 @@ public class AiChatController {
   @PostMapping("/sessions")
   public ConversationSessionVO createSession(
       @Valid @RequestBody ConversationSessionCreateRequest request) {
-    assertCanAccessWorkspace(request.workspaceId());
+    accessSecurityValidator.assertCanAccessWorkspace(request.workspaceId());
     Long userId = getCurrentUserId();
     return conversationSessionService.createSession(request.workspaceId(), userId, request.title());
   }
@@ -143,7 +211,7 @@ public class AiChatController {
     }
     conversationSessionService
         .getSessionMeta(sessionId)
-        .ifPresent(meta -> assertCanAccessWorkspace(meta.workspaceId()));
+        .ifPresent(meta -> accessSecurityValidator.assertCanAccessWorkspace(meta.workspaceId()));
 
     return conversationSessionService.getFullHistory(sessionId);
   }
@@ -152,18 +220,20 @@ public class AiChatController {
    * 删除指定会话（销毁消息、元数据及索引）
    *
    * @param sessionId 会话唯一标识
+   * @return 无内容 204
    */
   @DeleteMapping("/sessions/{sessionId}")
-  public void deleteSession(@PathVariable("sessionId") String sessionId) {
+  public ResponseEntity<Void> deleteSession(@PathVariable("sessionId") String sessionId) {
     if (!conversationSessionService.sessionExists(sessionId)) {
       throw new BusinessException(ErrorCode.Ai.SESSION_NOT_FOUND);
     }
     conversationSessionService
         .getSessionMeta(sessionId)
-        .ifPresent(meta -> assertCanAccessWorkspace(meta.workspaceId()));
+        .ifPresent(meta -> accessSecurityValidator.assertCanAccessWorkspace(meta.workspaceId()));
 
-    Long userId = getCurrentUserId();
+    Long userId = SecurityHolder.getLoginUser().map(LoginUserAuthentication::userId).orElse(null);
     conversationSessionService.deleteSession(sessionId, userId);
+    return ResponseEntity.noContent().build();
   }
 
   /**
@@ -179,8 +249,8 @@ public class AiChatController {
             .findDocumentById(docId)
             .orElseThrow(() -> BusinessException.notFound("文档不存在或已被删除"));
 
-    assertCanAccessWorkspace(doc.workSpaceId());
-    assertCanReadDocument(doc, getCurrentUserId(), doc.workSpaceId());
+    accessSecurityValidator.assertCanAccessWorkspace(doc.workSpaceId());
+    accessSecurityValidator.assertCanReadDocument(doc);
 
     List<DocChunkDocument> chunks =
         docChunkRepository.findByWorkspaceIdAndDocumentIdOrderByChunkIndexAsc(
@@ -202,7 +272,7 @@ public class AiChatController {
             .findDocumentById(docId)
             .orElseThrow(() -> BusinessException.notFound("文档不存在或已被删除"));
 
-    assertCanAccessWorkspace(doc.workSpaceId());
+    accessSecurityValidator.assertCanAccessWorkspace(doc.workSpaceId());
 
     if (doc.status() != DocumentStateEnum.APPROVED) {
       throw BusinessException.badRequest("仅允许对已审批通过(APPROVED)状态的文档重建向量索引");
@@ -217,20 +287,6 @@ public class AiChatController {
     return AiReindexResponse.success(docId, count);
   }
 
-  private void assertCanAccessWorkspace(Long workspaceId) {
-    if (workspaceId == null) {
-      return;
-    }
-    SecurityHolder.getLoginUser()
-        .ifPresent(
-            user -> {
-              if (workSpaceMemberQueryService != null
-                  && !workSpaceMemberQueryService.isMember(workspaceId, user.userId())) {
-                throw BusinessException.forbidden("您不是该工作空间成员，无权访问");
-              }
-            });
-  }
-
   private void validateChatDocumentScope(AiChatRequest request) {
     if (request != null && request.documentId() != null) {
       DocumentDTO doc =
@@ -240,31 +296,8 @@ public class AiChatController {
       if (!request.workspaceId().equals(doc.workSpaceId())) {
         throw BusinessException.badRequest("指定文档不属于当前工作空间");
       }
-      assertCanReadDocument(doc, getCurrentUserId(), request.workspaceId());
+      accessSecurityValidator.assertCanReadDocument(doc);
     }
-  }
-
-  private void assertCanReadDocument(DocumentDTO doc, Long userId, Long workspaceId) {
-    if (doc == null) {
-      return;
-    }
-    // 1. 如果是空间管理员或空间拥有者，拥有查看全空间文档权限
-    if (userId != null
-        && workSpaceMemberQueryService != null
-        && workSpaceMemberQueryService.hasRole(workspaceId, userId, WorkSpaceRoleEnum.ADMIN)) {
-      return;
-    }
-    // 2. 兼容历史数据(visibility == null 默认视为 INTERNAL) 与 PUBLIC / INTERNAL 可见性
-    WorkSpaceAclEnum visibility =
-        doc.visibility() != null ? doc.visibility() : WorkSpaceAclEnum.INTERNAL;
-    if (visibility == WorkSpaceAclEnum.PUBLIC || visibility == WorkSpaceAclEnum.INTERNAL) {
-      return;
-    }
-    // 3. PRIVATE 私密文档：仅创建人本人可访问
-    if (visibility == WorkSpaceAclEnum.PRIVATE && userId != null && userId.equals(doc.createBy())) {
-      return;
-    }
-    throw BusinessException.forbidden("您无权访问该私密文档");
   }
 
   private Long getCurrentUserId() {

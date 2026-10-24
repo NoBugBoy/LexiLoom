@@ -344,6 +344,33 @@ public class DocumentQueryApiImpl implements DocumentQueryApi {
     return result;
   }
 
+  @Override
+  public long countDocumentsByWorkspaceId(Long workSpaceId) {
+    if (workSpaceId == null) {
+      return 0L;
+    }
+    return documentRepository.countByWorkSpaceId(workSpaceId);
+  }
+
+  @Override
+  public Map<Long, String> getCategoryNames(java.util.Collection<Long> categoryIds) {
+    if (categoryIds == null || categoryIds.isEmpty()) {
+      return Collections.emptyMap();
+    }
+    Set<Long> validIds =
+        categoryIds.stream()
+            .filter(java.util.Objects::nonNull)
+            .filter(id -> id > 0)
+            .collect(Collectors.toSet());
+    if (validIds.isEmpty()) {
+      return Collections.emptyMap();
+    }
+    return docCategoryRepository.findAllById(validIds).stream()
+        .collect(
+            Collectors.toMap(
+                DocCategoryEntity::getId, DocCategoryEntity::getName, (a, b) -> a));
+  }
+
   private static String formatStorage(long bytes) {
     if (bytes <= 0) {
       return "0 B";

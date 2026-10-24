@@ -9,24 +9,47 @@ public record AiChatResponse(
     String thinkingContent,
     List<CitationVO> citations,
     long latencyMs,
-    String sessionId) {
+    String sessionId,
+    String traceId,
+    Integer promptTokens,
+    Integer completionTokens,
+    Integer totalTokens) {
 
   public AiChatResponse {
     citations = (citations == null) ? List.of() : List.copyOf(citations);
   }
 
   public AiChatResponse(
+      String content,
+      String thinkingContent,
+      List<CitationVO> citations,
+      long latencyMs,
+      String sessionId,
+      String traceId) {
+    this(content, thinkingContent, citations, latencyMs, sessionId, traceId, null, null, null);
+  }
+
+  public AiChatResponse(
+      String content,
+      String thinkingContent,
+      List<CitationVO> citations,
+      long latencyMs,
+      String sessionId) {
+    this(content, thinkingContent, citations, latencyMs, sessionId, null);
+  }
+
+  public AiChatResponse(
       String content, String thinkingContent, List<CitationVO> citations, long latencyMs) {
-    this(content, thinkingContent, citations, latencyMs, null);
+    this(content, thinkingContent, citations, latencyMs, null, null);
   }
 
   public static AiChatResponse of(String content, List<CitationVO> citations, long latencyMs) {
-    return new AiChatResponse(content, null, citations, latencyMs, null);
+    return new AiChatResponse(content, null, citations, latencyMs, null, null);
   }
 
   public static AiChatResponse of(
       String content, String thinkingContent, List<CitationVO> citations, long latencyMs) {
-    return new AiChatResponse(content, thinkingContent, citations, latencyMs, null);
+    return new AiChatResponse(content, thinkingContent, citations, latencyMs, null, null);
   }
 
   public static AiChatResponse of(
@@ -35,6 +58,38 @@ public record AiChatResponse(
       List<CitationVO> citations,
       long latencyMs,
       String sessionId) {
-    return new AiChatResponse(content, thinkingContent, citations, latencyMs, sessionId);
+    return new AiChatResponse(content, thinkingContent, citations, latencyMs, sessionId, null);
+  }
+
+  public static AiChatResponse of(
+      String content,
+      String thinkingContent,
+      List<CitationVO> citations,
+      long latencyMs,
+      String sessionId,
+      String traceId) {
+    return new AiChatResponse(content, thinkingContent, citations, latencyMs, sessionId, traceId);
+  }
+
+  public static AiChatResponse of(
+      String content,
+      String thinkingContent,
+      List<CitationVO> citations,
+      long latencyMs,
+      String sessionId,
+      String traceId,
+      Integer promptTokens,
+      Integer completionTokens,
+      Integer totalTokens) {
+    return new AiChatResponse(
+        content,
+        thinkingContent,
+        citations,
+        latencyMs,
+        sessionId,
+        traceId,
+        promptTokens,
+        completionTokens,
+        totalTokens);
   }
 }

@@ -9,6 +9,7 @@ import io.lexiloom.application.document.parser.DocParserEngineEnum;
 import io.lexiloom.application.document.parser.DocumentContentCleaner;
 import io.lexiloom.application.document.parser.engine.DeepDocDocParserEngine;
 import io.lexiloom.application.document.pipeline.DocumentImportTransactionalService;
+import io.lexiloom.application.document.queue.DocParseQueueService;
 import io.lexiloom.application.document.repository.DocumentRepository;
 import io.lexiloom.application.exception.BusinessException;
 import java.util.HashMap;
@@ -28,6 +29,7 @@ public class DocParseCallbackService {
   private final DocumentImportTransactionalService transactionalService;
   private final DeepDocDocParserEngine deepDocParserEngine;
   private final ApplicationEventPublisher eventPublisher;
+  private final DocParseQueueService docParseQueueService;
 
   /**
    * 处理 DeepDoc 异步解析 HTTP 回调
@@ -68,6 +70,8 @@ public class DocParseCallbackService {
           effectiveSourceFileId,
           errorMsg);
       transactionalService.failAsyncParse(docId, effectiveSourceFileId, errorMsg);
+      // 落库后移出 Redis 队列并调度下一个任务
+      docParseQueueService.onParseCompleted(docId);
       return;
     }
 
@@ -121,7 +125,10 @@ public class DocParseCallbackService {
         DocParserEngineEnum.DEEPDOC,
         metadata);
 
-    // 5. 发布领域事件，触发下游 Elasticsearch 检索索引与向量切片知识库同步
+    // 5. 只有成功入库后才允许删除队列中的数据保证幂等性，并调度下一个任务
+    docParseQueueService.onParseCompleted(docId);
+
+    // 6. 发布领域事件，触发下游 Elasticsearch 检索索引与向量切片知识库同步
     eventPublisher.publishEvent(new DocumentUpdatedEvent(docId, workspaceId, operatorId));
 
     log.info(

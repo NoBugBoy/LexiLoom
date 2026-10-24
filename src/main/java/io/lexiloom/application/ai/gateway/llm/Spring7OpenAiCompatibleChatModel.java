@@ -2,6 +2,7 @@ package io.lexiloom.application.ai.gateway.llm;
 
 import cn.hutool.core.util.StrUtil;
 import io.lexiloom.application.common.ErrorCode;
+import io.lexiloom.application.common.SecurityHolder;
 import io.lexiloom.application.exception.BusinessException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -77,8 +78,10 @@ public class Spring7OpenAiCompatibleChatModel implements ChatModel {
 
   @Override
   public ChatResponse call(Prompt prompt) {
-    if (StrUtil.isBlank(apiKey)) {
-      throw new BusinessException(ErrorCode.Ai.LLM_API_ERROR, "未配置 API Key，无法调用远程大模型服务");
+    String effectiveKey = resolveEffectiveApiKey();
+    if (StrUtil.isBlank(effectiveKey)) {
+      throw new BusinessException(
+          ErrorCode.Ai.LLM_API_ERROR, "未配置有效大模型 API Key（请配置系统模型环境变量或在 OpenAPI Key 中绑定自有 BYOK Key）");
     }
 
     try {
@@ -102,7 +105,7 @@ public class Spring7OpenAiCompatibleChatModel implements ChatModel {
       HttpRequest request =
           HttpRequest.newBuilder()
               .uri(URI.create(this.baseUrl))
-              .header("Authorization", "Bearer " + this.apiKey)
+              .header("Authorization", "Bearer " + effectiveKey)
               .header("Content-Type", "application/json")
               .POST(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8))
               .timeout(Duration.ofSeconds(120))
@@ -193,9 +196,11 @@ public class Spring7OpenAiCompatibleChatModel implements ChatModel {
 
   @Override
   public Flux<ChatResponse> stream(Prompt prompt) {
-    if (StrUtil.isBlank(apiKey)) {
+    String effectiveKey = resolveEffectiveApiKey();
+    if (StrUtil.isBlank(effectiveKey)) {
       return Flux.error(
-          new BusinessException(ErrorCode.Ai.LLM_API_ERROR, "未配置 API Key，无法发起流式大模型调用"));
+          new BusinessException(
+              ErrorCode.Ai.LLM_API_ERROR, "未配置有效大模型 API Key（请配置系统模型环境变量或在 OpenAPI Key 中绑定自有 BYOK Key）"));
     }
 
     return Flux.create(
@@ -222,7 +227,7 @@ public class Spring7OpenAiCompatibleChatModel implements ChatModel {
             HttpRequest request =
                 HttpRequest.newBuilder()
                     .uri(URI.create(this.baseUrl))
-                    .header("Authorization", "Bearer " + this.apiKey)
+                    .header("Authorization", "Bearer " + effectiveKey)
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8))
                     .timeout(Duration.ofSeconds(180))
@@ -456,5 +461,13 @@ public class Spring7OpenAiCompatibleChatModel implements ChatModel {
       return clean;
     }
     return clean + "/chat/completions";
+  }
+
+  private String resolveEffectiveApiKey() {
+    var openApiPrincipal = SecurityHolder.getOpenApiPrincipal().orElse(null);
+    if (openApiPrincipal != null && StrUtil.isNotBlank(openApiPrincipal.llmApiKey())) {
+      return openApiPrincipal.llmApiKey().trim();
+    }
+    return StrUtil.isNotBlank(this.apiKey) ? this.apiKey.trim() : "";
   }
 }

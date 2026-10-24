@@ -1,5 +1,7 @@
 package io.lexiloom.application.document.spacelink.model.response;
 
+import cn.hutool.core.date.DatePattern;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import io.lexiloom.application.enums.SpaceLinkStatusEnum;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -14,5 +16,5 @@ public record SpaceLinkResponse(
     SpaceLinkStatusEnum status,
     String rejectReason,
     List<Long> documentIds,
-    LocalDateTime createTime,
-    LocalDateTime updateTime) {}
+    @JsonFormat(pattern = DatePattern.NORM_DATETIME_PATTERN) LocalDateTime createTime,
+    @JsonFormat(pattern = DatePattern.NORM_DATETIME_PATTERN) LocalDateTime updateTime) {}

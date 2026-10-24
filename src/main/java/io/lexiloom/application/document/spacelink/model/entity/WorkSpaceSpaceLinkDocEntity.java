@@ -28,15 +28,15 @@ import lombok.NoArgsConstructor;
 public class WorkSpaceSpaceLinkDocEntity extends BaseEntity {
 
   /** 关联主表 ID */
-  @Column(name = "link_id", nullable = false)
+  @Column(name = "link_id", comment = "SpaceLink关联主表ID", nullable = false)
   private Long linkId;
 
   /** 目标工作空间 ID (被检索方空间) */
-  @Column(name = "target_workspace_id", nullable = false)
+  @Column(name = "target_workspace_id", comment = "目标工作空间ID(被检索方空间)", nullable = false)
   private Long targetWorkspaceId;
 
   /** 被授权可供跨空间检索的目标文档 ID */
-  @Column(name = "document_id", nullable = false)
+  @Column(name = "document_id", comment = "被授权可供跨空间检索的目标文档ID", nullable = false)
   private Long documentId;
 
   /** 静态工厂：创建单条文档授权记录 */

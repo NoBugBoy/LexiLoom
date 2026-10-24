@@ -1,6 +1,8 @@
 package io.lexiloom.application.ai.gateway.embedding;
 
 import cn.hutool.core.util.StrUtil;
+import io.lexiloom.application.ai.trace.RagTraceHolder;
+import io.lexiloom.application.ai.trace.model.RagTraceContext;
 import io.lexiloom.application.common.ErrorCode;
 import io.lexiloom.application.exception.BusinessException;
 import java.net.http.HttpClient;
@@ -117,6 +119,13 @@ public class Spring7OpenAiCompatibleEmbeddingModel extends AbstractEmbeddingMode
         BatchResult singleResult = doEmbedBatch(texts);
         long latency = System.currentTimeMillis() - startTime;
         if (singleResult.usage() != null) {
+          if (singleResult.usage().getPromptTokens() != null
+              && singleResult.usage().getPromptTokens() > 0) {
+            RagTraceContext traceContext = RagTraceHolder.get();
+            if (traceContext != null) {
+              traceContext.recordEmbeddingTokens(singleResult.usage().getPromptTokens());
+            }
+          }
           log.info(
               "【Spring7OpenAiEmbeddingModel】向量化计算完成: model={}, 条数={}, 总耗时={}ms,"
                   + " 消耗Token=[prompt_tokens={}, total_tokens={}]",
@@ -158,6 +167,12 @@ public class Spring7OpenAiCompatibleEmbeddingModel extends AbstractEmbeddingMode
 
       long latency = System.currentTimeMillis() - startTime;
       if (hasUsage) {
+        if (totalPromptTokens > 0) {
+          RagTraceContext traceContext = RagTraceHolder.get();
+          if (traceContext != null) {
+            traceContext.recordEmbeddingTokens(totalPromptTokens);
+          }
+        }
         log.info(
             "【Spring7OpenAiEmbeddingModel】分批向量化计算完成: model={}, 总条数={}, 分批数={}, 总耗时={}ms,"
                 + " 累计Token消耗=[prompt_tokens={}, total_tokens={}]",

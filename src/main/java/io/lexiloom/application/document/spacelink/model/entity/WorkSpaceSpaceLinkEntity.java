@@ -33,20 +33,20 @@ import lombok.NoArgsConstructor;
 public class WorkSpaceSpaceLinkEntity extends BaseEntity {
 
   /** 发起方工作区 ID (获得检索权限方) */
-  @Column(name = "source_workspace_id", nullable = false)
+  @Column(name = "source_workspace_id", comment = "发起方工作区ID(获得检索权限方)", nullable = false)
   private Long sourceWorkspaceId;
 
   /** 目标工作区 ID (被检索方，需审批其公开内容授权) */
-  @Column(name = "target_workspace_id", nullable = false)
+  @Column(name = "target_workspace_id", comment = "目标工作区ID(被检索授权方)", nullable = false)
   private Long targetWorkspaceId;
 
   /** 关联审批状态 */
   @Enumerated(EnumType.STRING)
-  @Column(nullable = false, length = 20)
+  @Column(comment = "关联状态(PENDING/APPROVED/REJECTED)", nullable = false, length = 20)
   private SpaceLinkStatusEnum status;
 
   /** 驳回原因说明 (可选) */
-  @Column(name = "reject_reason", length = 500)
+  @Column(name = "reject_reason", comment = "驳回原因说明", length = 500)
   private String rejectReason;
 
   /** 静态工厂：创建新的横向关联申请 (初始状态为 PENDING) */

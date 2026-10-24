@@ -1,6 +1,7 @@
 package io.lexiloom.application.document.service;
 
 import cn.hutool.core.util.StrUtil;
+import com.querydsl.core.BooleanBuilder;
 import io.lexiloom.application.common.ErrorCode;
 import io.lexiloom.application.common.storage.FileStorageGateway;
 import io.lexiloom.application.document.acl.DocAccessControlService;
@@ -9,14 +10,15 @@ import io.lexiloom.application.document.api.dto.DocumentDTO;
 import io.lexiloom.application.document.mapper.DocumentMapper;
 import io.lexiloom.application.document.model.entity.DocSourceFileEntity;
 import io.lexiloom.application.document.model.entity.DocumentEntity;
+import io.lexiloom.application.document.model.entity.QDocumentEntity;
 import io.lexiloom.application.document.model.event.DocumentReadEvent;
 import io.lexiloom.application.document.model.request.DocumentPageRequest;
+import io.lexiloom.application.document.parser.DocParseStatusEnum;
+import io.lexiloom.application.document.queue.DocParseQueueService;
 import io.lexiloom.application.document.repository.DocSourceFileRepository;
 import io.lexiloom.application.document.repository.DocumentRepository;
 import io.lexiloom.application.enums.WorkSpaceAclEnum;
 import io.lexiloom.application.exception.BusinessException;
-import jakarta.persistence.criteria.Predicate;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
@@ -25,7 +27,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.data.domain.Page;
-import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.lang.Nullable;
 import org.springframework.scheduling.annotation.Async;
@@ -50,6 +51,7 @@ public class DocumentQueryService {
   private final ApplicationEventPublisher eventPublisher;
   private final StringRedisTemplate stringRedisTemplate;
   private final FileStorageGateway fileStorageGateway;
+  @Nullable private final DocParseQueueService docParseQueueService;
 
   @Autowired
   public DocumentQueryService(
@@ -59,7 +61,8 @@ public class DocumentQueryService {
       DocumentMapper documentMapper,
       ApplicationEventPublisher eventPublisher,
       StringRedisTemplate stringRedisTemplate,
-      @Nullable @Autowired(required = false) FileStorageGateway fileStorageGateway) {
+      @Nullable @Autowired(required = false) FileStorageGateway fileStorageGateway,
+      @Nullable @Autowired(required = false) DocParseQueueService docParseQueueService) {
     this.documentRepository = documentRepository;
     this.docSourceFileRepository = docSourceFileRepository;
     this.docAccessControlService = docAccessControlService;
@@ -67,6 +70,7 @@ public class DocumentQueryService {
     this.eventPublisher = eventPublisher;
     this.stringRedisTemplate = stringRedisTemplate;
     this.fileStorageGateway = fileStorageGateway;
+    this.docParseQueueService = docParseQueueService;
   }
 
   public DocumentQueryService(
@@ -83,6 +87,7 @@ public class DocumentQueryService {
         documentMapper,
         eventPublisher,
         stringRedisTemplate,
+        null,
         null);
   }
 
@@ -104,8 +109,17 @@ public class DocumentQueryService {
               .map(DocSourceFileEntity::getErrorMessage)
               .orElse(null);
     }
+
+    Integer queuePosition = null;
+    if (doc.getParseStatus() == DocParseStatusEnum.QUEUED) {
+      Integer pos = docParseQueueService != null ? docParseQueueService.getQueuePosition(doc.getId()) : null;
+      queuePosition = (pos != null && pos > 0) ? pos : 1;
+    } else if (doc.getParseStatus() == DocParseStatusEnum.ASYNC_PROCESSING) {
+      queuePosition = 0;
+    }
+
     return new DocParseStatusDTO(
-        doc.getId(), doc.getSourceFileId(), doc.getParseStatus(), errorMessage);
+        doc.getId(), doc.getSourceFileId(), doc.getParseStatus(), errorMessage, queuePosition);
   }
 
   /** 按 ID 查阅文档详情（附带读权限断言，阅读量通过异步事件解耦） */
@@ -194,7 +208,7 @@ public class DocumentQueryService {
     }
   }
 
-  /** 动态多条件分页检索文档列表 */
+  /** 动态多条件分页检索文档列表 (QueryDSL) */
   @Transactional(readOnly = true)
   public Page<DocumentDTO> page(DocumentPageRequest request, Long userId) {
     // 0. 工作空间成员准入校验：防止跨租户越权枚举其他团队文档
@@ -203,41 +217,34 @@ public class DocumentQueryService {
     boolean workspaceAdmin =
         docAccessControlService.isWorkspaceAdmin(request.workSpaceId(), userId);
 
-    Specification<DocumentEntity> spec =
-        (root, query, cb) -> {
-          List<Predicate> predicates = new ArrayList<>();
+    QDocumentEntity qDoc = QDocumentEntity.documentEntity;
+    BooleanBuilder builder = new BooleanBuilder();
 
-          // 1. 所属团队空间隔离 (强约束)
-          predicates.add(cb.equal(root.get("workSpaceId"), request.workSpaceId()));
+    // 1. 所属团队空间隔离 (强约束)
+    builder.and(qDoc.workSpaceId.eq(request.workSpaceId()));
 
-          // 1.1 文档可见性隔离：非管理员仅可读取 PUBLIC / INTERNAL 以及自己创建的 PRIVATE 文档
-          if (!workspaceAdmin) {
-            predicates.add(
-                cb.or(
-                    cb.notEqual(root.get("visibility"), WorkSpaceAclEnum.PRIVATE),
-                    cb.equal(root.get("createBy"), userId)));
-          }
+    // 1.1 文档可见性隔离：非管理员仅可读取 PUBLIC / INTERNAL 以及自己创建的 PRIVATE 文档
+    if (!workspaceAdmin) {
+      builder.and(qDoc.visibility.ne(WorkSpaceAclEnum.PRIVATE).or(qDoc.createBy.eq(userId)));
+    }
 
-          // 2. 指定分类筛选
-          if (request.categoryId() != null && request.categoryId() >= 0) {
-            predicates.add(cb.equal(root.get("categoryId"), request.categoryId()));
-          }
+    // 2. 指定分类筛选
+    if (request.categoryId() != null && request.categoryId() >= 0) {
+      builder.and(qDoc.categoryId.eq(request.categoryId()));
+    }
 
-          // 3. 文档生命周期状态筛选
-          if (request.status() != null) {
-            predicates.add(cb.equal(root.get("status"), request.status()));
-          }
+    // 3. 文档生命周期状态筛选
+    if (request.status() != null) {
+      builder.and(qDoc.status.eq(request.status()));
+    }
 
-          // 4. 标题与摘要模糊关键词搜索
-          if (StrUtil.isNotBlank(request.keyword())) {
-            String kw = "%" + request.keyword().trim().toLowerCase() + "%";
-            predicates.add(cb.like(cb.lower(root.get("title")), kw));
-          }
+    // 4. 标题模糊关键词搜索
+    if (StrUtil.isNotBlank(request.keyword())) {
+      String kw = request.keyword().trim().toLowerCase();
+      builder.and(qDoc.title.toLowerCase().contains(kw));
+    }
 
-          return cb.and(predicates.toArray(new Predicate[0]));
-        };
-
-    Page<DocumentEntity> entityPage = documentRepository.findAll(spec, request.toPageable());
+    Page<DocumentEntity> entityPage = documentRepository.findAll(builder, request.toPageable());
     return entityPage.map(documentMapper::toDTO);
   }
 

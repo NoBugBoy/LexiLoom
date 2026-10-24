@@ -32,5 +32,10 @@ class LoginUserAuthenticationTest {
     assertThat(authorities)
         .extracting(GrantedAuthority::getAuthority)
         .containsExactlyInAnyOrder("ROLE_ADMIN", "ROLE_USER");
+    assertThat(auth.apiKey()).isNull();
+
+    LoginUserAuthentication authWithKey =
+        new LoginUserAuthentication(123L, List.of("ADMIN"), "lx_live_abc");
+    assertThat(authWithKey.apiKey()).isEqualTo("lx_live_abc");
   }
 }

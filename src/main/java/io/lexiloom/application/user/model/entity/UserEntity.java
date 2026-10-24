@@ -9,6 +9,8 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
+ * 前台用户实体
+ *
  * @author yujian
  */
 @Entity
@@ -17,30 +19,40 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 public class UserEntity extends BaseEntity {
-  @Column(comment = "小程序openId")
+
+  /** 微信小程序 openId */
+  @Column(name = "open_id", comment = "小程序openId", length = 64)
   private String openId;
 
-  @Column(comment = "小程序unionId")
+  /** 微信开放平台 unionId */
+  @Column(name = "union_id", comment = "小程序unionId", length = 64)
   private String unionId;
 
-  @Column(comment = "wx头像")
+  /** 微信用户头像 URL */
+  @Column(name = "avatar_url", comment = "wx头像", length = 500)
   private String avatarUrl;
 
-  @Column(comment = "wx昵称")
+  /** 微信用户昵称 */
+  @Column(name = "user_name", comment = "wx昵称", length = 100)
   private String userName;
 
-  @Column(comment = "邮箱")
+  /** 用户邮箱地址 */
+  @Column(comment = "邮箱", length = 100)
   private String email;
 
-  @Column(comment = "邮箱是否已认证")
+  /** 邮箱是否已认证 */
+  @Column(name = "email_verified", comment = "邮箱是否已认证")
   private Boolean emailVerified;
 
-  @Column(comment = "wx手机号")
+  /** 手机号 */
+  @Column(name = "phone_number", comment = "wx手机号", length = 32)
   private String phoneNumber;
 
-  @Column(comment = "手机号国家编码")
+  /** 手机号国际区号编码 (如 +86) */
+  @Column(name = "country_code", comment = "手机号国家编码", length = 10)
   private String countryCode;
 
-  @Column(comment = "手机号是否已认证")
+  /** 手机号是否已认证 */
+  @Column(name = "phone_verified", comment = "手机号是否已认证")
   private Boolean phoneVerified;
 }

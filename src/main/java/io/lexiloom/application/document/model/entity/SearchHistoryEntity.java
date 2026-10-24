@@ -1,10 +1,8 @@
 package io.lexiloom.application.document.model.entity;
 
+import io.lexiloom.application.common.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
@@ -27,23 +25,22 @@ import org.hibernate.annotations.Immutable;
     indexes = {@Index(name = "idx_search_history_user", columnList = "user_id, search_at")})
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class SearchHistoryEntity {
+public class SearchHistoryEntity extends BaseEntity {
 
-  @Id
-  @GeneratedValue(strategy = GenerationType.IDENTITY)
-  @Column(comment = "主键")
-  private Long id;
-
-  @Column(name = "user_id", nullable = false)
+  /** 搜索用户 ID */
+  @Column(name = "user_id", comment = "用户ID", nullable = false)
   private Long userId;
 
-  @Column(name = "work_space_id", nullable = false)
+  /** 所属工作空间 ID */
+  @Column(name = "work_space_id", comment = "工作空间ID", nullable = false)
   private Long workspaceId;
 
-  @Column(nullable = false, length = 200)
+  /** 搜索关键词 */
+  @Column(comment = "搜索关键词", nullable = false, length = 200)
   private String keyword;
 
-  @Column(name = "search_at", nullable = false)
+  /** 检索发生时间戳 */
+  @Column(name = "search_at", comment = "搜索时间", nullable = false)
   private LocalDateTime searchAt;
 
   /** 静态工厂方法 */
@@ -63,6 +60,10 @@ public class SearchHistoryEntity {
     entity.workspaceId = workspaceId;
     entity.keyword = keyword.trim();
     entity.searchAt = searchAt != null ? searchAt : LocalDateTime.now();
+    entity.setCreateTime(entity.searchAt);
+    entity.setUpdateTime(entity.searchAt);
+    entity.setCreateBy(userId);
+    entity.setUpdateBy(userId);
     return entity;
   }
 }

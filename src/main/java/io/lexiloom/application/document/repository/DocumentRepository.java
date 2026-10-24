@@ -5,13 +5,11 @@ import io.lexiloom.application.document.model.entity.DocumentEntity;
 import io.lexiloom.application.document.statemachine.DocumentStateEnum;
 import java.util.List;
 import java.util.Optional;
-import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.stereotype.Repository;
 
 /** 文档核心聚合仓储 */
 @Repository
-public interface DocumentRepository
-    extends BaseRepository<DocumentEntity>, JpaSpecificationExecutor<DocumentEntity> {
+public interface DocumentRepository extends BaseRepository<DocumentEntity> {
 
   Optional<DocumentEntity> findByIdAndWorkSpaceId(Long id, Long workSpaceId);
 
@@ -52,6 +50,13 @@ public interface DocumentRepository
   @org.springframework.data.jpa.repository.Query(
       "UPDATE DocumentEntity d SET d.readCount = d.readCount + 1 WHERE d.id = :id")
   void incrementReadCount(@org.springframework.data.repository.query.Param("id") Long id);
+
+  @org.springframework.data.jpa.repository.Modifying
+  @org.springframework.data.jpa.repository.Query(
+      "UPDATE DocumentEntity d SET d.embeddingTokens = d.embeddingTokens + :tokens WHERE d.id = :id")
+  void incrementEmbeddingTokens(
+      @org.springframework.data.repository.query.Param("id") Long id,
+      @org.springframework.data.repository.query.Param("tokens") int tokens);
 
   @org.springframework.data.jpa.repository.Query(
       "SELECT d FROM DocumentEntity d WHERE d.workSpaceId = :workSpaceId "

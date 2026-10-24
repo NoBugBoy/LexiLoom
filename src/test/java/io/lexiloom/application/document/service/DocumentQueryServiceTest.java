@@ -10,6 +10,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.querydsl.core.types.Predicate;
 import io.lexiloom.application.common.ErrorCode;
 import io.lexiloom.application.document.acl.DocAccessControlService;
 import io.lexiloom.application.document.api.dto.DocParseStatusDTO;
@@ -40,7 +41,6 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -94,9 +94,34 @@ class DocumentQueryServiceTest {
     assertThat(statusDTO.sourceFileId()).isEqualTo(200L);
     assertThat(statusDTO.parseStatus()).isEqualTo(DocParseStatusEnum.ASYNC_PROCESSING);
     assertThat(statusDTO.errorMessage()).isNull();
+    assertThat(statusDTO.queuePosition()).isEqualTo(0);
 
     verify(docAccessControlService).assertCanRead(doc, 10L);
     verify(eventPublisher, never()).publishEvent(any());
+  }
+
+  @Test
+  @DisplayName("查询解析状态：排队状态返回当前排位号")
+  void testGetParseStatus_Queued() {
+    DocumentEntity doc =
+        DocumentEntity.createFromImport(
+            1L, 0L, "排队文档", "摘要", "排队中", 201L, "queued.pdf", WorkSpaceAclEnum.INTERNAL, DocParseStatusEnum.QUEUED);
+    ReflectionTestUtils.setField(doc, "id", 101L);
+    ReflectionTestUtils.setField(doc, "sourceFileId", 201L);
+    when(documentRepository.findById(101L)).thenReturn(Optional.of(doc));
+
+    DocSourceFileEntity sourceFile =
+        DocSourceFileEntity.create(
+            1L, null, "queued.pdf", 1024L, "pdf", "application/pdf", "hash", "path", "url");
+    sourceFile.markQueued();
+    ReflectionTestUtils.setField(sourceFile, "id", 201L);
+    when(docSourceFileRepository.findById(201L)).thenReturn(Optional.of(sourceFile));
+
+    DocParseStatusDTO statusDTO = queryService.getParseStatus(101L, 10L);
+
+    assertThat(statusDTO).isNotNull();
+    assertThat(statusDTO.parseStatus()).isEqualTo(DocParseStatusEnum.QUEUED);
+    assertThat(statusDTO.queuePosition()).isEqualTo(1);
   }
 
   @Test
@@ -240,7 +265,7 @@ class DocumentQueryServiceTest {
     ReflectionTestUtils.setField(doc, "id", 100L);
 
     Page<DocumentEntity> entityPage = new PageImpl<>(List.of(doc));
-    when(documentRepository.findAll(any(Specification.class), any(Pageable.class)))
+    when(documentRepository.findAll(any(Predicate.class), any(Pageable.class)))
         .thenReturn(entityPage);
 
     DocumentDTO mockDto =
@@ -287,7 +312,7 @@ class DocumentQueryServiceTest {
         .isInstanceOf(BusinessException.class)
         .hasMessageContaining("不是该工作空间成员");
 
-    verify(documentRepository, never()).findAll(any(Specification.class), any(Pageable.class));
+    verify(documentRepository, never()).findAll(any(Predicate.class), any(Pageable.class));
   }
 
   @Test

@@ -2,8 +2,10 @@ package io.lexiloom.application.config;
 
 import io.lexiloom.application.common.SecurityHolder;
 import io.lexiloom.application.common.security.LoginToken;
+import io.lexiloom.application.common.security.OpenApiPrincipal;
 import io.lexiloom.application.common.security.RedisTokenManager;
 import io.lexiloom.application.enums.AdminRoleEnum;
+import io.lexiloom.application.user.api.ApiKeyAuthApi;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -18,11 +20,13 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * 认证过滤器：
+ * 统一身份认证过滤器 (支持 JWT Token 与 OpenAPI Key / Admin API Key 凭证校验)
+ *
+ * <p>兼容 HTTP 标头：
  *
  * <ul>
- *   <li>Token 有效：写入安全上下文，放行，并由 {@link RedisTokenManager#verifyToken} 自动滑动续期；
- *   <li>Token 无效/过期：不写上下文，放行后由 Security 决定 401。
+ *   <li>Authorization: Bearer lx_live_xxx 或常规 JWT
+ *   <li>X-API-Key: lx_live_xxx
  * </ul>
  */
 @Component
@@ -31,16 +35,15 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class AuthenticationFilter extends OncePerRequestFilter {
 
   private final RedisTokenManager redisTokenManager;
+  private final ApiKeyAuthApi apiKeyAuthApi;
 
   @Override
   protected void doFilterInternal(
       HttpServletRequest request, @NonNull HttpServletResponse response, @NonNull FilterChain chain)
       throws ServletException, IOException {
 
-    String authHeader = request.getHeader("Authorization");
-    if (authHeader != null && !authHeader.isBlank()) {
-      String token =
-          authHeader.startsWith("Bearer ") ? authHeader.substring(7).trim() : authHeader.trim();
+    AuthToken token = resolveToken(request);
+    if (token != null) {
       authenticate(token);
     }
 
@@ -48,9 +51,50 @@ public class AuthenticationFilter extends OncePerRequestFilter {
     chain.doFilter(request, response);
   }
 
-  private void authenticate(String token) {
+  private AuthToken resolveToken(HttpServletRequest request) {
+    String authHeader = request.getHeader("Authorization");
+    if (authHeader != null && !authHeader.isBlank()) {
+      String raw =
+          authHeader.startsWith("Bearer ") ? authHeader.substring(7).trim() : authHeader.trim();
+      return new AuthToken(raw, raw.startsWith("lx_"));
+    }
+    String apiKeyHeader = request.getHeader("X-API-Key");
+    if (apiKeyHeader != null && !apiKeyHeader.isBlank()) {
+      return new AuthToken(apiKeyHeader.trim(), true);
+    }
+    return null;
+  }
+
+  private void authenticate(AuthToken token) {
     try {
-      LoginToken loginToken = redisTokenManager.verifyToken(token);
+      LoginToken loginToken;
+      OpenApiPrincipal openApiPrincipal = null;
+
+      if (token.isApiKey()) {
+        loginToken = apiKeyAuthApi.verifyApiKey(token.value()).orElse(null);
+        if (loginToken == null) {
+          SecurityContextHolder.clearContext();
+          log.debug("API Key 校验失败或已失效，按未登录处理");
+          return;
+        }
+
+        openApiPrincipal =
+            apiKeyAuthApi
+                .findOpenApiKey(token.value())
+                .map(
+                    dto ->
+                        new OpenApiPrincipal(
+                            dto.id(),
+                            dto.userId(),
+                            dto.name(),
+                            dto.scopes(),
+                            dto.allowedWorkspaceIds(),
+                            dto.llmProvider() != null ? dto.llmProvider().name() : "NONE",
+                            dto.llmApiKey()))
+                .orElse(null);
+      } else {
+        loginToken = redisTokenManager.verifyToken(token.value());
+      }
 
       Long userId = loginToken.userId();
       if (userId == null) {
@@ -62,15 +106,14 @@ public class AuthenticationFilter extends OncePerRequestFilter {
           loginToken.roles() != null
               ? loginToken.roles().stream().map(AdminRoleEnum::name).toList()
               : List.of();
-      if (roles.isEmpty()) {
-        SecurityHolder.setAuthentication(userId);
-      } else {
-        SecurityHolder.setAuthentication(userId, roles);
-      }
+      String apiKey = token.isApiKey() ? token.value() : null;
+      SecurityHolder.setAuthentication(userId, roles, apiKey, openApiPrincipal);
     } catch (Exception e) {
       // 显式清空：防止因过滤器被容器/安全链重复执行而残留上一个请求的认证
       SecurityContextHolder.clearContext();
       log.debug("Token 校验失败，按未登录处理: {}", e.getMessage());
     }
   }
+
+  private record AuthToken(String value, boolean isApiKey) {}
 }

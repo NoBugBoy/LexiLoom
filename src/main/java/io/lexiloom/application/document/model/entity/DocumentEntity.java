@@ -34,76 +34,87 @@ import lombok.NoArgsConstructor;
 public class DocumentEntity extends BaseEntity {
 
   /** 所属团队空间 ID */
-  @Column(name = "work_space_id", nullable = false)
+  @Column(name = "work_space_id", comment = "所属团队空间ID", nullable = false)
   private Long workSpaceId;
 
   /** 所属分类树节点 ID (0 表示根目录未分类) */
-  @Column(name = "category_id", nullable = false)
+  @Column(name = "category_id", comment = "所属分类树节点ID(0为根目录未分类)", nullable = false)
   private Long categoryId;
 
   /** 文档标题 */
-  @Column(nullable = false, length = 200)
+  @Column(comment = "文档标题", nullable = false, length = 200)
   private String title;
 
   /** 文档摘要 / 前置描述 */
-  @Column(length = 1000)
+  @Column(comment = "文档摘要/前置描述", length = 1000)
   private String summary;
 
   /** Markdown 正文长文本 */
-  @Column(columnDefinition = "TEXT")
+  @Column(comment = "Markdown正文内容", columnDefinition = "TEXT")
   private String content;
 
   /** 文档生命周期状态 */
   @Enumerated(EnumType.STRING)
-  @Column(nullable = false, length = 30)
+  @Column(
+      comment = "文档生命周期状态(DRAFT/PENDING_APPROVAL/APPROVED/REJECTED/ARCHIVED)",
+      nullable = false,
+      length = 30)
   private DocumentStateEnum status;
 
   /** 文档导入解析状态 */
   @Enumerated(EnumType.STRING)
-  @Column(name = "parse_status", length = 30)
+  @Column(name = "parse_status", comment = "导入解析状态(INIT/PARSING/SUCCESS/FAILED)", length = 30)
   private DocParseStatusEnum parseStatus;
 
   /** 访问控制级别：公开 / 团队内部 / 私密 */
   @Enumerated(EnumType.STRING)
-  @Column(nullable = false, length = 20)
+  @Column(comment = "访问控制级别(PUBLIC/INTERNAL/PRIVATE)", nullable = false, length = 20)
   private WorkSpaceAclEnum visibility;
 
   /** 内容生成/输入渠道：文件导入 / AI辅助生成 */
   @Enumerated(EnumType.STRING)
-  @Column(name = "source_type", nullable = false, length = 30)
+  @Column(
+      name = "source_type",
+      comment = "内容来源类型(IMPORT/AI_GENERATED)",
+      nullable = false,
+      length = 30)
   private DocSourceTypeEnum sourceType;
 
   /** 关联来源原始文件记录 ID (若为导入或含原件附件) */
-  @Column(name = "source_file_id")
+  @Column(name = "source_file_id", comment = "关联来源原始文件记录ID")
   private Long sourceFileId;
 
   /** 导入来源原始文件名 (如: 需求规格说明书.docx) */
-  @Column(name = "file_name", length = 255)
+  @Column(name = "file_name", comment = "导入来源原始文件名", length = 255)
   private String fileName;
 
   /** 当前最新版本号序号 (1, 2, 3...) */
-  @Column(name = "current_version", nullable = false)
+  @Column(name = "current_version", comment = "当前最新版本号序号", nullable = false)
   private Integer currentVersion;
 
   /** 当前唯一审批通过的版本号序号 (未审批通过或回归未审批时为 null) */
-  @Column(name = "published_version")
+  @Column(name = "published_version", comment = "当前唯一审批通过的版本号序号")
   private Integer publishedVersion;
 
   /** 当前版本号标识 (例如 v1.0, v1.1) */
-  @Column(name = "current_version_tag", length = 50)
+  @Column(name = "current_version_tag", comment = "当前版本号标识(如v1.0)", length = 50)
   private String currentVersionTag;
 
   /** 封面图 URL */
-  @Column(name = "cover_url", length = 500)
+  @Column(name = "cover_url", comment = "封面图URL", length = 500)
   private String coverUrl;
 
   /** 统计字数 */
-  @Column(name = "word_count", nullable = false)
+  @Column(name = "word_count", comment = "统计字数", nullable = false)
   private Integer wordCount;
 
   /** 阅读浏览量 */
-  @Column(name = "read_count", nullable = false)
+  @Column(name = "read_count", comment = "阅读浏览量", nullable = false)
   private Integer readCount;
+
+  /** 文档向量化累计消耗 Token 数 */
+  @Column(name = "embedding_tokens", comment = "文档向量化累计消耗Token数", nullable = false)
+  private Integer embeddingTokens = 0;
 
   /** 静态工厂：从外部文件导入转化创建文档（无初始源文件ID快捷重载） */
   public static DocumentEntity createFromImport(
@@ -263,6 +274,11 @@ public class DocumentEntity extends BaseEntity {
   /** 标记异步解析失败 */
   public void markParseFailed(String errorMessage) {
     this.parseStatus = DocParseStatusEnum.FAILED;
+  }
+
+  /** 标记为排队等待中状态 */
+  public void markQueued() {
+    this.parseStatus = DocParseStatusEnum.QUEUED;
   }
 
   /** 重置为异步解析中状态 (供重试解析使用) */

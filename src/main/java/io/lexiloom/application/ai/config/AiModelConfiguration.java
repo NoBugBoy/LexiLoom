@@ -63,18 +63,16 @@ public class AiModelConfiguration {
     if (StrUtil.isBlank(apiKey)) {
       apiKey = System.getenv("AI_API_KEY");
     }
-    if (StrUtil.isBlank(apiKey)) {
-      return null;
-    }
+    String resolvedKey = StrUtil.blankToDefault(apiKey, "");
 
     String baseUrl = StrUtil.blankToDefault(aiProperties.getBaseUrl(), "https://api.deepseek.com");
     String model = StrUtil.blankToDefault(aiProperties.getChatModel(), "deepseek-chat");
 
     log.info(
-        "【AiModelConfiguration】初始化 Spring AI DeepSeek ChatModel: baseUrl={}, model={}",
+        "【AiModelConfiguration】初始化 Spring AI DeepSeek ChatModel (支持运行时 BYOK 覆盖): baseUrl={}, model={}",
         baseUrl,
         model);
-    return new Spring7OpenAiCompatibleChatModel(baseUrl, apiKey, model);
+    return new Spring7OpenAiCompatibleChatModel(baseUrl, resolvedKey, model);
   }
 
   /** 通义千问 (Qwen) 兼容 ChatModel */
@@ -84,24 +82,28 @@ public class AiModelConfiguration {
       return null;
     }
     String apiKey =
-        StrUtil.blankToDefault(aiProperties.getApiKey(), aiProperties.getEmbedding().getApiKey());
+        StrUtil.blankToDefault(
+            aiProperties.getApiKey(),
+            aiProperties.getEmbedding() != null ? aiProperties.getEmbedding().getApiKey() : null);
     if (StrUtil.isBlank(apiKey)) {
       apiKey = System.getenv("DASHSCOPE_API_KEY");
     }
     if (StrUtil.isBlank(apiKey)) {
       apiKey = System.getenv("AI_API_KEY");
     }
-    if (StrUtil.isBlank(apiKey)) {
-      return null;
-    }
+    String resolvedKey = StrUtil.blankToDefault(apiKey, "");
 
+    String defaultQwenUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
     String baseUrl =
-        StrUtil.blankToDefault(
-            aiProperties.getBaseUrl(), "https://maas.qianwenaiapi.com/compatible-mode/v1");
-    String model = StrUtil.blankToDefault(aiProperties.getChatModel(), "qwen3.8-flash");
+        (aiProperties.getBaseUrl() != null && aiProperties.getBaseUrl().contains("dashscope"))
+            ? aiProperties.getBaseUrl()
+            : defaultQwenUrl;
+    String model = "qwen3.8-flash";
 
     log.info(
-        "【AiModelConfiguration】初始化 Spring AI Qwen ChatModel: baseUrl={}, model={}", baseUrl, model);
-    return new Spring7OpenAiCompatibleChatModel(baseUrl, apiKey, model);
+        "【AiModelConfiguration】初始化 Spring AI Qwen ChatModel (支持运行时 BYOK 覆盖): baseUrl={}, model={}",
+        baseUrl,
+        model);
+    return new Spring7OpenAiCompatibleChatModel(baseUrl, resolvedKey, model);
   }
 }

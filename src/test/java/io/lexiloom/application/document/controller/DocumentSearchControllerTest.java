@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -29,6 +30,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -107,6 +109,56 @@ class DocumentSearchControllerTest {
     org.assertj.core.api.Assertions.assertThat(capturedRequest.workspaceId()).isEqualTo(1L);
     org.assertj.core.api.Assertions.assertThat(capturedRequest.sortBy())
         .isEqualTo(DocSearchSortBy.RELEVANCE);
+  }
+
+  @Test
+  @DisplayName("POST /api/search - 支持以 JSON Body 提交多空间 includeLinked 与 weights 检索")
+  void testSearchPost_MultiWorkspace() throws Exception {
+    DocSearchItemVO item =
+        new DocSearchItemVO(
+            "doc-123",
+            "标题",
+            "摘要",
+            "匹配片段",
+            "10",
+            List.of("tag"),
+            "IMPORT",
+            LocalDateTime.now(),
+            1L,
+            "主工作空间",
+            "PRIMARY");
+    DocumentSearchResponse response = DocumentSearchResponse.of(1, 20, List.of(item));
+
+    when(documentSearchQueryService.search(any(DocumentSearchRequest.class))).thenReturn(response);
+
+    String json =
+        """
+        {
+          "keyword": "DDD",
+          "workspaceId": 1,
+          "includeLinked": true,
+          "weights": {
+            "1": 80,
+            "2": 20
+          }
+        }
+        """;
+
+    mockMvc
+        .perform(post("/api/search").contentType(MediaType.APPLICATION_JSON).content(json))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.total", is(1)))
+        .andExpect(jsonPath("$.items[0].workspaceName", is("主工作空间")))
+        .andExpect(jsonPath("$.items[0].relationType", is("PRIMARY")));
+
+    ArgumentCaptor<DocumentSearchRequest> captor =
+        ArgumentCaptor.forClass(DocumentSearchRequest.class);
+    verify(documentSearchQueryService).search(captor.capture());
+    DocumentSearchRequest captured = captor.getValue();
+    org.assertj.core.api.Assertions.assertThat(captured.includeLinked()).isTrue();
+    org.assertj.core.api.Assertions.assertThat(captured.weights())
+        .containsEntry(1L, 80)
+        .containsEntry(2L, 20);
   }
 
   @Test
@@ -189,7 +241,7 @@ class DocumentSearchControllerTest {
     mockMvc
         .perform(
             delete("/api/search/history").param("workspaceId", "1").param("keyword", "C++ & CI/CD"))
-        .andExpect(status().isOk());
+        .andExpect(status().isNoContent());
 
     verify(searchHistoryService).delete(TEST_USER_ID, 1L, "C++ & CI/CD");
   }
@@ -199,7 +251,7 @@ class DocumentSearchControllerTest {
   void testDeleteHistoryItem_Success() throws Exception {
     mockMvc
         .perform(delete("/api/search/history/{keyword}", "Elasticsearch").param("workspaceId", "1"))
-        .andExpect(status().isOk());
+        .andExpect(status().isNoContent());
 
     verify(searchHistoryService).delete(TEST_USER_ID, 1L, "Elasticsearch");
   }
@@ -209,7 +261,7 @@ class DocumentSearchControllerTest {
   void testClearHistory_Success() throws Exception {
     mockMvc
         .perform(delete("/api/search/history").param("workspaceId", "1"))
-        .andExpect(status().isOk());
+        .andExpect(status().isNoContent());
 
     verify(searchHistoryService).clear(TEST_USER_ID, 1L);
   }

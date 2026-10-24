@@ -1,11 +1,15 @@
 package io.lexiloom.application.ai.config;
 
+import cn.hutool.core.util.StrUtil;
 import io.lexiloom.application.ai.enums.EmbeddingProviderEnum;
 import io.lexiloom.application.ai.enums.LlmModelProviderEnum;
 import io.lexiloom.application.ai.enums.RerankProviderEnum;
 import io.lexiloom.application.ai.enums.RerankStrategyEnum;
+import io.lexiloom.application.common.SecurityHolder;
+import io.lexiloom.application.common.security.OpenApiPrincipal;
 import lombok.Getter;
 import lombok.Setter;
+import org.jspecify.annotations.Nullable;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
@@ -35,6 +39,38 @@ public class AiProperties {
 
   /** 对话问答模型名称 (如 deepseek-chat, qwen-plus) */
   private String chatModel = "deepseek-chat";
+
+  /**
+   * 根据当前安全上下文中的 OpenAPI 凭据 (BYOK) 与全局配置智能解析实际生效的模型名称
+   *
+   * <ul>
+   *   <li>若 API Key 配置了有效 BYOK 密钥，使用绑定的厂商枚举标识 (如 QWEN, DEEPSEEK)；</li>
+   *   <li>若未配置 BYOK 或使用平台默认 (NONE)，则使用配置文件中的模型名称 (与 Web Chat 记录的名称完全一致)。</li>
+   * </ul>
+   *
+   * @return 生效的大模型名称
+   */
+  public String resolveEffectiveModelName() {
+    return resolveEffectiveModelName(SecurityHolder.getOpenApiPrincipal().orElse(null));
+  }
+
+  /**
+   * 解析生效模型名称
+   *
+   * @param principal 可选的 OpenAPI Principal
+   * @return 生效的大模型名称
+   */
+  public String resolveEffectiveModelName(@Nullable OpenApiPrincipal principal) {
+    if (principal != null
+        && StrUtil.isNotBlank(principal.llmApiKey())
+        && StrUtil.isNotBlank(principal.llmProvider())) {
+      String p = principal.llmProvider().trim().toUpperCase();
+      if (!"NONE".equals(p)) {
+        return p;
+      }
+    }
+    return StrUtil.blankToDefault(this.chatModel, "deepseek-chat");
+  }
 
   /** 深度推理/思维链模型名称 (如 deepseek-reasoner, qwen-max) */
   private String reasoningModel = "deepseek-reasoner";
@@ -84,8 +120,8 @@ public class AiProperties {
     /** 是否启用重排阶段 (默认 false，完全可选设计) */
     private boolean enabled = false;
 
-    /** 重排算法策略 (NONE, RRF, CROSS_ENCODER) */
-    private RerankStrategyEnum strategy = RerankStrategyEnum.NONE;
+    /** 重排算法策略 (NONE, RRF, CROSS_ENCODER，默认启用时使用 CROSS_ENCODER) */
+    private RerankStrategyEnum strategy = RerankStrategyEnum.CROSS_ENCODER;
 
     /** 外部重排服务供应商 (DASHSCOPE) */
     private RerankProviderEnum provider = RerankProviderEnum.DASHSCOPE;
@@ -142,6 +178,14 @@ public class AiProperties {
 
     /** 单次检索保底最小召回数 (默认 20) */
     private int minTopK = 20;
+
+    /**
+     * 是否启用 Elasticsearch 8.x 原生单请求双路混合检索 (Single-Request Native Hybrid Search)
+     *
+     * <p>开启后在单个 NativeQuery 中同时发送 BM25 词法 multi_match 与 kNN 向量检索， 由 Elasticsearch 内部并行召回并在 ES
+     * 服务端完成打分融合，网络 RTT 减半。默认 false 采用应用层配额隔离保底策略。
+     */
+    private boolean nativeHybridSearch = false;
 
     /**
      * 候选切片最小语义相似度过滤阈值 (真实 Cosine 相似度，非重排模拟分)

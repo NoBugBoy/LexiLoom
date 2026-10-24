@@ -1,5 +1,6 @@
 package io.lexiloom.application.common;
 
+import io.lexiloom.application.common.security.OpenApiPrincipal;
 import java.util.Collection;
 import java.util.List;
 import org.jspecify.annotations.Nullable;
@@ -12,7 +13,20 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
  *
  * @author yujian
  */
-public record LoginUserAuthentication(Long userId, List<String> roles) implements Authentication {
+public record LoginUserAuthentication(
+    Long userId,
+    List<String> roles,
+    @Nullable String apiKey,
+    @Nullable OpenApiPrincipal openApiPrincipal)
+    implements Authentication {
+
+  public LoginUserAuthentication(Long userId, List<String> roles, @Nullable String apiKey) {
+    this(userId, roles, apiKey, null);
+  }
+
+  public LoginUserAuthentication(Long userId, List<String> roles) {
+    this(userId, roles, null, null);
+  }
 
   @Override
   public Collection<? extends GrantedAuthority> getAuthorities() {

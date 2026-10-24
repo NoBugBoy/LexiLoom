@@ -50,3 +50,6 @@ __pycache__/
 *.pyc
 /model_cache/
 /rustfs-data/
+/.agents/plugins/
+/.agents/plugins.json
+# /.agents/skills/ (允许入库共享通用 Agent 技能)

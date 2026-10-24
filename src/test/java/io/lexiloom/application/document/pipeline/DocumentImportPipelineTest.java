@@ -365,8 +365,8 @@ class DocumentImportPipelineTest {
 
     pipeline.retryParse(doc, sourceFile, OPERATOR_ID);
 
-    assertThat(doc.getParseStatus()).isEqualTo(DocParseStatusEnum.ASYNC_PROCESSING);
-    assertThat(sourceFile.getParseStatus()).isEqualTo(DocParseStatusEnum.ASYNC_PROCESSING);
+    assertThat(doc.getParseStatus()).isEqualTo(DocParseStatusEnum.QUEUED);
+    assertThat(sourceFile.getParseStatus()).isEqualTo(DocParseStatusEnum.QUEUED);
     verify(documentRepository).save(doc);
     verify(docSourceFileRepository).save(sourceFile);
     verify(eventPublisher).publishEvent(any(DocumentAsyncParseEvent.class));
