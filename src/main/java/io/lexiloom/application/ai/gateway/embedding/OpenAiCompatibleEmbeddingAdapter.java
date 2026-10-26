@@ -1,33 +1,58 @@
 package io.lexiloom.application.ai.gateway.embedding;
 
+import cn.hutool.core.util.StrUtil;
 import io.lexiloom.application.ai.config.AiProperties;
 import io.lexiloom.application.ai.enums.EmbeddingProviderEnum;
-import org.springframework.ai.embedding.EmbeddingModel;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
+import java.util.List;
 import org.springframework.stereotype.Component;
 
-/**
- * OpenAI 兼容协议 (DashScope / OpenAI / SiliconFlow) 向量化适配器
- *
- * <p>基于 Spring AI 驱动。
- */
+/** OpenAI-compatible embedding provider adapter. */
 @Component
-public class OpenAiCompatibleEmbeddingAdapter extends SpringAiEmbeddingAdapter {
+public class OpenAiCompatibleEmbeddingAdapter implements EmbeddingGateway {
 
-  @Autowired
+  private final OpenAiCompatibleEmbeddingClient client;
+  private final AiProperties properties;
+
   public OpenAiCompatibleEmbeddingAdapter(
-      @Autowired(required = false) @Qualifier("openAiEmbeddingModel") EmbeddingModel embeddingModel,
-      AiProperties aiProperties) {
-    super(
-        embeddingModel,
-        EmbeddingProviderEnum.OPENAI_COMPATIBLE,
-        aiProperties != null && aiProperties.getEmbedding() != null
-            ? aiProperties.getEmbedding().getDimension()
-            : 1536);
+      OpenAiCompatibleEmbeddingClient client, AiProperties properties) {
+    this.client = client;
+    this.properties = properties;
   }
 
-  public OpenAiCompatibleEmbeddingAdapter(EmbeddingModel embeddingModel, int dimension) {
-    super(embeddingModel, EmbeddingProviderEnum.OPENAI_COMPATIBLE, dimension);
+  @Override
+  public float[] embed(String text) {
+    if (StrUtil.isBlank(text)) return new float[getDimension()];
+    return embedBatch(List.of(text)).getFirst();
+  }
+
+  @Override
+  public List<float[]> embedBatch(List<String> texts) {
+    var config = properties.getEmbedding();
+    return client.embedBatch(
+        texts,
+        config.getBaseUrl(),
+        resolveApiKey(config.getApiKey()),
+        config.getModel(),
+        getDimension());
+  }
+
+  @Override
+  public int getDimension() {
+    int dimension = properties.getEmbedding().getDimension();
+    return dimension > 0 ? dimension : 1536;
+  }
+
+  @Override
+  public EmbeddingProviderEnum getProvider() {
+    return EmbeddingProviderEnum.OPENAI_COMPATIBLE;
+  }
+
+  @Override
+  public boolean isAvailable() {
+    return StrUtil.isNotBlank(resolveApiKey(properties.getEmbedding().getApiKey()));
+  }
+
+  protected String resolveApiKey(String configured) {
+    return StrUtil.blankToDefault(configured, properties.getApiKey());
   }
 }

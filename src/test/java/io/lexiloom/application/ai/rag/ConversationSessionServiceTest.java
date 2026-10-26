@@ -14,6 +14,7 @@ import io.lexiloom.application.ai.gateway.llm.LlmChatCommand.ChatMessage;
 import io.lexiloom.application.ai.model.vo.CitationVO;
 import io.lexiloom.application.ai.model.vo.ConversationMessageVO;
 import io.lexiloom.application.ai.model.vo.ConversationSessionVO;
+import io.lexiloom.application.ai.model.vo.ToolEventVO;
 import io.lexiloom.application.exception.BusinessException;
 import java.time.Duration;
 import java.util.LinkedHashSet;
@@ -262,6 +263,39 @@ class ConversationSessionServiceTest {
                         && arr[0].citations().get(0).docTitle().equals("架构规范")
                         && "深度思考过程...".equals(arr[0].thinking());
                   } catch (Exception e) {
+                    return false;
+                  }
+                }),
+            eq(Duration.ofSeconds(604800L)));
+  }
+
+  @Test
+  @DisplayName("验证助手回答关联的工具调用摘要写入 Redis 历史")
+  void testAppendAssistantMessageWithToolEvents() {
+    String sessionId = "sess_tools_test";
+    String key = ConversationSessionService.SESSION_KEY_PREFIX + sessionId;
+    when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+    when(valueOperations.get(key)).thenReturn(null);
+
+    List<ToolEventVO> events =
+        List.of(
+            new ToolEventVO("search_knowledge", "started", "检索问题", null),
+            new ToolEventVO("search_knowledge", "completed", "检索问题", 2));
+    sessionService.appendAssistantMessage(sessionId, "回答内容", List.of(), null, events);
+
+    verify(valueOperations)
+        .set(
+            eq(key),
+            org.mockito.ArgumentMatchers.argThat(
+                json -> {
+                  try {
+                    ConversationMessageVO[] arr =
+                        objectMapper.readValue(json, ConversationMessageVO[].class);
+                    return arr.length == 1
+                        && arr[0].tools().size() == 2
+                        && arr[0].tools().get(1).status().equals("completed")
+                        && arr[0].tools().get(1).resultCount() == 2;
+                  } catch (Exception exception) {
                     return false;
                   }
                 }),

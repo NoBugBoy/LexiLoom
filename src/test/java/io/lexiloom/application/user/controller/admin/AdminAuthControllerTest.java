@@ -23,7 +23,7 @@ class AdminAuthControllerTest extends BaseControllerIntegrationTest {
   @DisplayName("管理员登录失败 - 用户名或密码错误返回400")
   void testLoginFailure() {
     AdminLoginRequest request =
-        new AdminLoginRequest("nonexistent@example.com", "wrongpassword", null, null);
+        new AdminLoginRequest("nonexistent@example.com", "wrongpassword", null, null, "captcha-token");
 
     givenAnonymous().body(request).when().post("/admin/auth/login").then().statusCode(400);
   }
@@ -37,7 +37,7 @@ class AdminAuthControllerTest extends BaseControllerIntegrationTest {
     Long adminId = adminCommandService.saveAdminUser(email, passwordEncoder.encode(password));
     adminRoleService.assignRole(adminId, AdminRoleEnum.ADMIN);
 
-    AdminLoginRequest request = new AdminLoginRequest(email, password, null, null);
+    AdminLoginRequest request = new AdminLoginRequest(email, password, null, null, "captcha-token");
 
     givenAnonymous()
         .body(request)

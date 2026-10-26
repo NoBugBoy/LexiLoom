@@ -3,6 +3,7 @@ package io.lexiloom.application.user.usecase.admin;
 import io.lexiloom.application.common.CustomerProperties;
 import io.lexiloom.application.common.UseCase;
 import io.lexiloom.application.common.security.RedisTokenManager;
+import io.lexiloom.application.common.security.TurnstileVerifier;
 import io.lexiloom.application.exception.BusinessException;
 import io.lexiloom.application.user.api.AdminQueryService;
 import io.lexiloom.application.user.model.entity.AdminEntity;
@@ -22,9 +23,15 @@ public class AdminLoginUseCase implements UseCase<AdminLoginRequest, String> {
   private final AdminQueryService adminQueryService;
   private final AdminRoleService adminRoleService;
   private final RedisTokenManager redisTokenManager;
+  private final TurnstileVerifier turnstileVerifier;
 
   @Override
   public String execute(AdminLoginRequest command) {
+    try {
+      turnstileVerifier.verify(command.turnstileToken());
+    } catch (IllegalArgumentException exception) {
+      throw BusinessException.badRequest(exception.getMessage());
+    }
 
     AdminEntity adminEntity =
         adminQueryService

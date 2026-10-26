@@ -120,4 +120,9 @@ lexiloom:
       max-chunks-per-document: 20
       history-turns: 5
       session-expire-seconds: 604800
+turnstile:
+  enabled: ${TURNSTILE_ENABLED:true}
+  secret-key: ${TURNSTILE_SECRET_KEY:}
+  siteverify-url: https://challenges.cloudflare.com/turnstile/v0/siteverify
+
 

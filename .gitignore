@@ -1,5 +1,6 @@
 HELP.md
 target/
+config/turnstile-secret.yaml
 .mvn/wrapper/maven-wrapper.jar
 .mvn/settings.xml
 .mvn/maven.config

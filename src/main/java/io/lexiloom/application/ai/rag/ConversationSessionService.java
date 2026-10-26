@@ -7,6 +7,7 @@ import io.lexiloom.application.ai.gateway.llm.LlmChatCommand.ChatMessage;
 import io.lexiloom.application.ai.model.vo.CitationVO;
 import io.lexiloom.application.ai.model.vo.ConversationMessageVO;
 import io.lexiloom.application.ai.model.vo.ConversationSessionVO;
+import io.lexiloom.application.ai.model.vo.ToolEventVO;
 import io.lexiloom.application.exception.BusinessException;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -262,7 +263,17 @@ public class ConversationSessionService {
   /** 追加助手回答消息（包含完整视觉溯源卡片与深度推理思考过程） */
   public void appendAssistantMessage(
       String sessionId, String content, List<CitationVO> citations, String thinking) {
-    appendMessage(sessionId, "assistant", content, citations, thinking, null, null);
+    appendAssistantMessage(sessionId, content, citations, thinking, List.of());
+  }
+
+  /** Persist the assistant answer and sanitized tool timeline in one Redis history entry. */
+  public void appendAssistantMessage(
+      String sessionId,
+      String content,
+      List<CitationVO> citations,
+      String thinking,
+      List<ToolEventVO> tools) {
+    appendMessage(sessionId, "assistant", content, citations, thinking, tools, null, null);
   }
 
   /** 向后兼容的 5 参数消息追加方法 */
@@ -280,6 +291,19 @@ public class ConversationSessionService {
       String thinking,
       Long workspaceId,
       Long userId) {
+    appendMessage(sessionId, role, content, citations, thinking, List.of(), workspaceId, userId);
+  }
+
+  /** Append a message with optional persisted tool events. */
+  public void appendMessage(
+      String sessionId,
+      String role,
+      String content,
+      List<CitationVO> citations,
+      String thinking,
+      List<ToolEventVO> tools,
+      Long workspaceId,
+      Long userId) {
     if (StrUtil.isBlank(sessionId) || StrUtil.isBlank(content)) {
       return;
     }
@@ -293,7 +317,12 @@ public class ConversationSessionService {
       List<ConversationMessageVO> existing = new ArrayList<>(getFullHistory(sessionId));
       existing.add(
           new ConversationMessageVO(
-              role, content.trim(), now, citations != null ? citations : List.of(), thinking));
+              role,
+              content.trim(),
+              now,
+              citations != null ? citations : List.of(),
+              thinking,
+              tools != null ? tools : List.of()));
 
       if (existing.size() > MAX_HISTORY_MESSAGES) {
         existing = existing.subList(existing.size() - MAX_HISTORY_MESSAGES, existing.size());

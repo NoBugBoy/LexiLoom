@@ -35,7 +35,6 @@
         <groovy.version>4.0.24</groovy.version>
         <cola-statemachine.version>4.3.2</cola-statemachine.version>
         <elasticsearch.version>8.17.2</elasticsearch.version>
-        <spring-ai.version>1.0.0-M5</spring-ai.version>
         <sonar.coverage.exclusions>
             **/model/**,
             **/dto/**,
@@ -170,12 +169,6 @@
             <version>${minio.version}</version>
         </dependency>
 
-        <!-- Spring AI 官方大模型与向量化框架核心契约 -->
-        <dependency>
-            <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-core</artifactId>
-        </dependency>
-
         <!-- 测试框架 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -259,13 +252,6 @@
                 <groupId>org.springframework.modulith</groupId>
                 <artifactId>spring-modulith-bom</artifactId>
                 <version>${spring-modulith.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-            <dependency>
-                <groupId>org.springframework.ai</groupId>
-                <artifactId>spring-ai-bom</artifactId>
-                <version>${spring-ai.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>

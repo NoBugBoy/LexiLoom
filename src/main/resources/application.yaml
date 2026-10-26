@@ -1,4 +1,6 @@
 spring:
+  config:
+    import: optional:file:./config/turnstile-secret.yaml
   application:
     name: lexiloom
   profiles:
@@ -61,3 +63,8 @@ lexiloom:
       max-chunks-per-document: 8
       history-turns: 3
       session-expire-seconds: 604800
+
+turnstile:
+  enabled: ${TURNSTILE_ENABLED:true}
+  secret-key: ${TURNSTILE_SECRET_KEY:}
+  siteverify-url: https://challenges.cloudflare.com/turnstile/v0/siteverify

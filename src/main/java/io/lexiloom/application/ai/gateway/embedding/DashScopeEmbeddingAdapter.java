@@ -1,35 +1,59 @@
 package io.lexiloom.application.ai.gateway.embedding;
 
+import cn.hutool.core.util.StrUtil;
 import io.lexiloom.application.ai.config.AiProperties;
 import io.lexiloom.application.ai.enums.EmbeddingProviderEnum;
-import org.springframework.ai.embedding.EmbeddingModel;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
+import java.util.List;
 import org.springframework.stereotype.Component;
 
-/**
- * 阿里 DashScope (通义千问 text-embedding) 向量化适配器
- *
- * <p>基于 Spring AI 驱动。
- */
+/** DashScope embedding provider adapter using its OpenAI-compatible endpoint. */
 @Component
-public class DashScopeEmbeddingAdapter extends SpringAiEmbeddingAdapter {
+public class DashScopeEmbeddingAdapter implements EmbeddingGateway {
 
-  @Autowired
+  private final OpenAiCompatibleEmbeddingClient client;
+  private final AiProperties properties;
+
   public DashScopeEmbeddingAdapter(
-      @Autowired(required = false) @Qualifier("dashScopeEmbeddingModel")
-          EmbeddingModel embeddingModel,
-      @Autowired(required = false) @Qualifier("openAiEmbeddingModel") EmbeddingModel fallbackModel,
-      AiProperties aiProperties) {
-    super(
-        embeddingModel != null ? embeddingModel : fallbackModel,
-        EmbeddingProviderEnum.DASHSCOPE,
-        aiProperties != null && aiProperties.getEmbedding() != null
-            ? aiProperties.getEmbedding().getDimension()
-            : 1536);
+      OpenAiCompatibleEmbeddingClient client, AiProperties properties) {
+    this.client = client;
+    this.properties = properties;
   }
 
-  public DashScopeEmbeddingAdapter(EmbeddingModel embeddingModel, int dimension) {
-    super(embeddingModel, EmbeddingProviderEnum.DASHSCOPE, dimension);
+  @Override
+  public float[] embed(String text) {
+    if (StrUtil.isBlank(text)) return new float[getDimension()];
+    return embedBatch(List.of(text)).getFirst();
+  }
+
+  @Override
+  public List<float[]> embedBatch(List<String> texts) {
+    var config = properties.getEmbedding();
+    String key = StrUtil.blankToDefault(config.getApiKey(), properties.getApiKey());
+    if (StrUtil.isBlank(key)) key = System.getenv("DASHSCOPE_API_KEY");
+    return client.embedBatch(
+        texts,
+        StrUtil.blankToDefault(config.getBaseUrl(), "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+        key,
+        StrUtil.blankToDefault(config.getModel(), "text-embedding-v3"),
+        getDimension());
+  }
+
+  @Override
+  public int getDimension() {
+    int dimension = properties.getEmbedding().getDimension();
+    return dimension > 0 ? dimension : 1536;
+  }
+
+  @Override
+  public EmbeddingProviderEnum getProvider() {
+    return EmbeddingProviderEnum.DASHSCOPE;
+  }
+
+  @Override
+  public boolean isAvailable() {
+    var config = properties.getEmbedding();
+    return StrUtil.isNotBlank(config.getApiKey())
+        || StrUtil.isNotBlank(properties.getApiKey())
+        || StrUtil.isNotBlank(System.getenv("DASHSCOPE_API_KEY"));
   }
 }

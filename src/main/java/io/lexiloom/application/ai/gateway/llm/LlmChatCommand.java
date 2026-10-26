@@ -1,6 +1,7 @@
 package io.lexiloom.application.ai.gateway.llm;
 
 import java.util.List;
+import java.util.Map;
 
 /** LLM 对话执行命令对象 (不可变 record) */
 public record LlmChatCommand(
@@ -11,7 +12,31 @@ public record LlmChatCommand(
     Double temperature,
     Integer maxTokens) {
 
-  public record ChatMessage(String role, String content) {}
+  public record ChatMessage(
+      String role, String content, String toolCallId, List<ToolCall> toolCalls) {
+    public ChatMessage(String role, String content) {
+      this(role, content, null, List.of());
+    }
+
+    public ChatMessage {
+      toolCalls = toolCalls == null ? List.of() : List.copyOf(toolCalls);
+    }
+  }
+
+  public record ToolCall(String id, String name, String arguments) {}
+
+  public record ToolDefinition(String name, String description, Map<String, Object> parameters) {}
+
+  public record ToolChatResult(
+      String content, String thinkingContent, List<ToolCall> toolCalls, LlmUsage usage) {
+    public ToolChatResult {
+      toolCalls = toolCalls == null ? List.of() : List.copyOf(toolCalls);
+    }
+
+    public ToolChatResult(String content, String thinkingContent, List<ToolCall> toolCalls) {
+      this(content, thinkingContent, toolCalls, null);
+    }
+  }
 
   public LlmChatCommand {
     prompt = (prompt == null) ? "" : prompt;

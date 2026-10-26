@@ -81,7 +81,7 @@ public class DocChunkDocument {
   /**
    * 语义密集向量 (Dense Vector，默认维度=1024 对齐通义千问模型，Cosine 相似度)
    *
-   * <p>基于带帽子的上下文富化文本 (contextPrefix + content) 由 Spring AI EmbeddingModel 驱动计算。
+   * <p>基于带帽子的上下文富化文本 (contextPrefix + content) 调用兼容 Embeddings API 计算。
    */
   @Field(name = "content_vector", type = FieldType.Dense_Vector, dims = 1024)
   private float[] contentVector;

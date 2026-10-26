@@ -77,6 +77,7 @@ public class AiChatController {
    * <ul>
    *   <li>{@code event: citation} 视觉溯源几何坐标引用数组
    *   <li>{@code event: thinking} 深度推理思维链 Token
+   *   <li>{@code event: tools} 工具调用状态增量，数据以 {@code <tools>...</tools>} 包裹
    *   <li>{@code event: message} 回答正文增量 Token
    *   <li>{@code event: done} 对话生成完成标记
    * </ul>

@@ -13,6 +13,7 @@ import static org.mockito.Mockito.verify;
 import io.lexiloom.application.common.CustomerProperties;
 import io.lexiloom.application.common.cache.CacheHelper;
 import io.lexiloom.application.common.security.RedisTokenManager;
+import io.lexiloom.application.common.security.TurnstileVerifier;
 import io.lexiloom.application.enums.AdminRoleEnum;
 import io.lexiloom.application.exception.BusinessException;
 import io.lexiloom.application.user.api.AdminQueryService;
@@ -61,6 +62,7 @@ class AdminAuthCaseTest {
   @Mock private CustomerProperties customerProperties;
   @Mock private CustomerProperties.Security security;
   @Mock private RedisTokenManager redisTokenManager;
+  @Mock private TurnstileVerifier turnstileVerifier;
 
   @InjectMocks private SendAdminRegisterEmailUseCase sendAdminRegisterEmailUseCase;
   @InjectMocks private SendAdminRestPasswordEmailUseCase sendAdminRestPasswordEmailUseCase;
@@ -164,7 +166,7 @@ class AdminAuthCaseTest {
     @DisplayName("登录时用户不存在应抛出业务异常")
     void shouldThrowExceptionWhenUserNotFound() {
       AdminLoginRequest request =
-          new AdminLoginRequest("admin@lexiloom.com", "wrongpwd", null, null);
+          new AdminLoginRequest("admin@lexiloom.com", "wrongpwd", null, null, "captcha-token");
       given(adminQueryService.findAdminByEmail("admin@lexiloom.com")).willReturn(Optional.empty());
 
       assertThatThrownBy(() -> adminLoginUseCase.execute(request))
@@ -176,7 +178,7 @@ class AdminAuthCaseTest {
     @DisplayName("登录时密码不匹配应抛出业务异常")
     void shouldThrowExceptionWhenPasswordMismatch() {
       AdminLoginRequest request =
-          new AdminLoginRequest("admin@lexiloom.com", "wrongpwd", null, null);
+          new AdminLoginRequest("admin@lexiloom.com", "wrongpwd", null, null, "captcha-token");
       AdminEntity admin = new AdminEntity();
       admin.setId(1L);
       admin.setPassword("encoded_pwd");
@@ -194,7 +196,7 @@ class AdminAuthCaseTest {
     @DisplayName("登录成功应生成有效 JWT Token")
     void shouldReturnTokenOnSuccess() {
       AdminLoginRequest request =
-          new AdminLoginRequest("admin@lexiloom.com", "correctpwd", null, null);
+          new AdminLoginRequest("admin@lexiloom.com", "correctpwd", null, null, "captcha-token");
       AdminEntity admin = new AdminEntity();
       admin.setId(88L);
       admin.setPassword("encoded_correct");

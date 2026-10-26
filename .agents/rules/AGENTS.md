@@ -16,16 +16,13 @@ trigger: always_on
 5. 非纯CRUD，涉及多模块，或业务逻辑较多的情况，对应的service和usecase要补充mock单元测试,仅覆盖sonar.coverage包之外即可
 6. 非必要禁止自己实现工具方法，优先使用Spring、HuTools提供的工具类
 7. 简单实体，可以不强制分为Query和Command service
-8. **AI 与 RAG 智能中枢核心生态规范**：AI 库必须使用 **Spring AI** (`org.springframework.ai`) 进行统一构建与模型交互，大模型对话与文本向量化必须基于
-   Spring AI 官方标准抽象（如 `ChatModel`, `StreamingChatModel`, `ChatClient`, `EmbeddingModel`），严禁手写裸 HTTP
-   请求或引入零散第三方未受管 SDK。
-9. 优先使用QueryDsl查询，Entity必须继承BaseEntity,Repository必须继承BaseRepository,page请求对象必须继承BasePageRequest,
-   Controller无响应值必须返回ResponseEntity并配置合理的http status
-10. 禁止定义线程池和使用ThreadLocal，必须使用虚拟线程和ScopeValue,禁止同步锁，优先使用juc包的锁，可以使用结构化并发，不强制使用@Async
-11. service核心方法加注释，Entity字段必须加备注,时间类型务必使用LocalDateTime,如果是VO类，需要加yyyy-MM-dd HH:mm:
+8. 优先使用QueryDsl查询，Entity必须继承BaseEntity,Repository必须继承BaseRepository,page请求对象必须继承BasePageRequest,
+9. Controller无响应值必须返回ResponseEntity并配置合理的http status
+   禁止定义线程池和使用ThreadLocal，必须使用虚拟线程和ScopeValue,禁止同步锁，优先使用juc包的锁，可以使用结构化并发，不强制使用@Async
+10. service核心方法加注释，Entity字段必须加备注,时间类型务必使用LocalDateTime,如果是VO类，需要加yyyy-MM-dd HH:mm:
     ss的格式化Jackson注解,防止返回的时间带'T'
-12. 多用switch,和instance of record等新特性，减少if else
-13. 任何涉及调用第三方AI接口，必须统一使用OpenAI Compatible / Responses API 形式，如对方文档不支持，则提示用户
+11. 多用switch,和instance of record等新特性，减少if else
+12. 任何涉及调用第三方AI接口，必须统一使用OpenAI Compatible / Responses API 形式，如对方文档不支持，则提示用户
 
 ## 2. 语言新特性与编程范式
 

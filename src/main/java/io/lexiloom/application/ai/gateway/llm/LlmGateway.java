@@ -2,11 +2,15 @@ package io.lexiloom.application.ai.gateway.llm;
 
 import io.lexiloom.application.ai.enums.LlmModelProviderEnum;
 import io.lexiloom.application.ai.model.response.AiChatResponse;
+import java.util.List;
+import io.lexiloom.application.ai.gateway.llm.LlmChatCommand.ChatMessage;
+import io.lexiloom.application.ai.gateway.llm.LlmChatCommand.ToolChatResult;
+import io.lexiloom.application.ai.gateway.llm.LlmChatCommand.ToolDefinition;
 
 /**
  * 大模型通用防腐层网关契约 (LlmGateway)
  *
- * <p>统一上层业务与底层大模型实现之间的交互标准，底层强制基于 Spring AI 驱动。
+ * <p>统一上层业务与 OpenAI-compatible 模型 HTTP 实现之间的交互标准。
  */
 public interface LlmGateway {
 
@@ -18,6 +22,13 @@ public interface LlmGateway {
    */
   AiChatResponse chat(LlmChatCommand command);
 
+  /** Synchronous OpenAI-compatible tool-call step. */
+  default ToolChatResult chatWithTools(
+      LlmChatCommand command, List<ChatMessage> messages, List<ToolDefinition> tools) {
+    AiChatResponse response = chat(command);
+    return new ToolChatResult(response.content(), response.thinkingContent(), List.of());
+  }
+
   /**
    * 异步流式模型对话
    *
@@ -25,6 +36,15 @@ public interface LlmGateway {
    * @param callback 流式事件回调
    */
   void streamChat(LlmChatCommand command, LlmStreamCallback callback);
+
+  /** Stream a model turn that may request one or more server-side tools. */
+  default void streamChatWithTools(
+      LlmChatCommand command,
+      List<ChatMessage> messages,
+      List<ToolDefinition> tools,
+      LlmStreamCallback callback) {
+    streamChat(command, callback);
+  }
 
   /** 当前网关适配的模型供应商类型 */
   LlmModelProviderEnum getProvider();

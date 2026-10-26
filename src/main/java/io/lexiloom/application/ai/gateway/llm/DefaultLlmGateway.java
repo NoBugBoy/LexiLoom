@@ -6,6 +6,9 @@ import io.lexiloom.application.ai.enums.LlmModelProviderEnum;
 import io.lexiloom.application.ai.model.response.AiChatResponse;
 import io.lexiloom.application.common.SecurityHolder;
 import java.util.List;
+import io.lexiloom.application.ai.gateway.llm.LlmChatCommand.ChatMessage;
+import io.lexiloom.application.ai.gateway.llm.LlmChatCommand.ToolChatResult;
+import io.lexiloom.application.ai.gateway.llm.LlmChatCommand.ToolDefinition;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Primary;
@@ -37,6 +40,12 @@ public class DefaultLlmGateway implements LlmGateway {
   }
 
   @Override
+  public ToolChatResult chatWithTools(
+      LlmChatCommand command, List<ChatMessage> messages, List<ToolDefinition> tools) {
+    return selectAdapter().chatWithTools(command, messages, tools);
+  }
+
+  @Override
   public void streamChat(LlmChatCommand command, LlmStreamCallback callback) {
     LlmGateway selected = selectAdapter();
     log.info(
@@ -44,6 +53,15 @@ public class DefaultLlmGateway implements LlmGateway {
         selected.getProvider(),
         command.prompt() != null ? command.prompt().length() : 0);
     selected.streamChat(command, callback);
+  }
+
+  @Override
+  public void streamChatWithTools(
+      LlmChatCommand command,
+      List<ChatMessage> messages,
+      List<ToolDefinition> tools,
+      LlmStreamCallback callback) {
+    selectAdapter().streamChatWithTools(command, messages, tools, callback);
   }
 
   @Override

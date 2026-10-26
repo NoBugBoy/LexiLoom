@@ -6,7 +6,7 @@ import java.util.List;
 /**
  * 文本向量化计算通用防腐层网关契约 (EmbeddingGateway)
  *
- * <p>统一上层知识库切片向量化与检索相似度计算标准，底层强制基于 Spring AI EmbeddingModel 驱动。
+ * <p>统一上层知识库切片向量化契约，底层通过 OpenAI-compatible Embeddings API 调用模型。
  */
 public interface EmbeddingGateway {
 

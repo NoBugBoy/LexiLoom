@@ -154,6 +154,9 @@ public class OpenApiController {
   /**
    * SSE 异步流式问答通道
    *
+   * <p>流式事件包括 {@code thinking}、{@code message}、{@code citation}、{@code tools} 和 {@code done}；
+   * 工具过程数据以 {@code <tools>...</tools>} 标记，仅包含工具状态，不包含完整检索片段。
+   *
    * @param request 对话请求体
    * @return SSE 事件发射器通道
    */

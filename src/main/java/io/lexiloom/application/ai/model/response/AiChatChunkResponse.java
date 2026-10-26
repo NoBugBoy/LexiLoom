@@ -21,6 +21,7 @@ public record AiChatChunkResponse(
   public static final String TYPE_THINKING = "THINKING";
   public static final String TYPE_MESSAGE = "MESSAGE";
   public static final String TYPE_CITATION = "CITATION";
+  public static final String TYPE_TOOLS = "TOOLS";
   public static final String TYPE_DONE = "DONE";
 
   public AiChatChunkResponse {
@@ -42,6 +43,10 @@ public record AiChatChunkResponse(
 
   public static AiChatChunkResponse thinking(String delta) {
     return new AiChatChunkResponse(TYPE_THINKING, delta, List.of(), null, null);
+  }
+
+  public static AiChatChunkResponse tools(String delta) {
+    return new AiChatChunkResponse(TYPE_TOOLS, delta, List.of(), null, null);
   }
 
   public static AiChatChunkResponse citation(List<CitationVO> citations) {

@@ -1,12 +1,9 @@
 package io.lexiloom.application.ai.gateway.llm;
 
-import org.springframework.ai.chat.metadata.Usage;
+import io.lexiloom.application.ai.gateway.llm.LlmChatCommand.ToolCall;
+import java.util.List;
 
-/**
- * LLM 流式输出事件回调接口 (Reactive Stream Listener)
- *
- * <p>支持思维链推理过程 (DeepSeek-R1 / Qwen 等) 与正文 Token 的分流实时推送。
- */
+/** LLM 流式输出事件回调。 */
 public interface LlmStreamCallback {
 
   /**
@@ -27,12 +24,15 @@ public interface LlmStreamCallback {
   void onComplete();
 
   /**
-   * 生成全部完成回调（携带真实 Token 消耗元数据）
-   *
-   * @param usage 模型服务商返回的真实 Token 使用统计
+   * 生成全部完成回调（携带服务商返回的 Token 使用量）。
    */
-  default void onComplete(Usage usage) {
+  default void onComplete(LlmUsage usage) {
     onComplete();
+  }
+
+  /** A streamed model turn ended with tool calls instead of a final answer. */
+  default void onToolCalls(List<ToolCall> toolCalls, LlmUsage usage) {
+    onComplete(usage);
   }
 
   /**

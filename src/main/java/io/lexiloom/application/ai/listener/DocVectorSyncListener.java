@@ -27,7 +27,7 @@ import org.springframework.stereotype.Component;
 /**
  * 异步切块与向量入库监听器 (DocVectorSyncListener)
  *
- * <p>响应文档生命周期与状态流转事件，编排带帽子的原子切块生成、Spring AI 批量向量化与 ES 8.x 密集向量索引落库：
+ * <p>响应文档生命周期与状态流转事件，编排上下文切块、批量向量化与 ES 8.x 向量索引落库：
  *
  * <ul>
  *   <li>{@code APPROVED}（审批通过/发布）：组装带帽子切块，批量调用 {@link EmbeddingGateway} 向量化，原子写入 ES；
@@ -159,7 +159,7 @@ public class DocVectorSyncListener {
       return;
     }
 
-    // 4. 批量调用 Spring AI EmbeddingGateway 计算向量 (单批 16 条，保守满足各大模型如千问 batch <= 20 限制)
+    // 4. 批量调用 EmbeddingGateway 计算向量，供应商请求批次由网关适配器控制。
     List<String> textsToEmbed =
         enrichedChunks.stream().map(EnrichedDocChunk::enrichedText).toList();
     List<float[]> vectors = new ArrayList<>(textsToEmbed.size());
