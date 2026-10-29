@@ -12,9 +12,6 @@ public enum DocParseStatusEnum {
   /** 解析成功，产出完整 Markdown 内容 */
   SUCCESS("解析成功"),
 
-  /** 仅作为固化版面附件预览（如 PDF 双轨制默认轨） */
-  PREVIEW_ONLY("仅附件预览"),
-
   /** 异步解析中（已提交至 DeepDoc） */
   ASYNC_PROCESSING("异步解析中"),
 

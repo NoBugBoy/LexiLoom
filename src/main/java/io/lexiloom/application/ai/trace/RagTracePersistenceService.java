@@ -7,22 +7,23 @@ import io.lexiloom.application.ai.trace.entity.QRagTraceDetailEntity;
 import io.lexiloom.application.ai.trace.entity.QRagTraceEntity;
 import io.lexiloom.application.ai.trace.entity.RagTraceDetailEntity;
 import io.lexiloom.application.ai.trace.entity.RagTraceEntity;
-import io.lexiloom.application.ai.trace.model.FilterDecision;
 import io.lexiloom.application.ai.trace.model.RagFeedbackRequest;
 import io.lexiloom.application.ai.trace.model.RagTraceContext;
 import io.lexiloom.application.ai.trace.model.RagTracePageRequest;
-import io.lexiloom.application.ai.trace.model.TraceLatency;
 import io.lexiloom.application.ai.trace.repository.RagTraceDetailRepository;
 import io.lexiloom.application.ai.trace.repository.RagTraceRepository;
+import io.lexiloom.application.common.SecurityHolder;
 import io.lexiloom.application.enums.AiCallSourceEnum;
 import io.lexiloom.application.exception.BusinessException;
 import java.util.Objects;
 import java.util.Optional;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.Nullable;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -37,12 +38,31 @@ import tools.jackson.databind.ObjectMapper;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class RagTracePersistenceService {
 
   private final RagTraceRepository ragTraceRepository;
   private final RagTraceDetailRepository ragTraceDetailRepository;
   private final ObjectMapper objectMapper;
+  @Nullable private final TransactionTemplate transactionTemplate;
+
+  public RagTracePersistenceService(
+      RagTraceRepository ragTraceRepository,
+      RagTraceDetailRepository ragTraceDetailRepository,
+      ObjectMapper objectMapper) {
+    this(ragTraceRepository, ragTraceDetailRepository, objectMapper, null);
+  }
+
+  @Autowired
+  public RagTracePersistenceService(
+      RagTraceRepository ragTraceRepository,
+      RagTraceDetailRepository ragTraceDetailRepository,
+      ObjectMapper objectMapper,
+      @Nullable TransactionTemplate transactionTemplate) {
+    this.ragTraceRepository = ragTraceRepository;
+    this.ragTraceDetailRepository = ragTraceDetailRepository;
+    this.objectMapper = objectMapper;
+    this.transactionTemplate = transactionTemplate;
+  }
 
   /**
    * 使用独立 Virtual Thread 异步持久化观测数据 (零线程池、零阻塞业务链路)
@@ -58,7 +78,11 @@ public class RagTracePersistenceService {
         .start(
             () -> {
               try {
-                saveTrace(context);
+                if (transactionTemplate != null) {
+                  transactionTemplate.executeWithoutResult(status -> saveTraceInternal(context));
+                } else {
+                  saveTraceInternal(context);
+                }
               } catch (Exception e) {
                 log.error(
                     "【RagTrace】虚拟线程异步保存链路快照异常: traceId={}, error={}",
@@ -72,6 +96,10 @@ public class RagTracePersistenceService {
   /** 写入观测主表及明细表事务方法 */
   @Transactional
   public void saveTrace(RagTraceContext context) {
+    saveTraceInternal(context);
+  }
+
+  private void saveTraceInternal(RagTraceContext context) {
     Objects.requireNonNull(context, "traceContext 不能为空");
     QRagTraceEntity qTrace = QRagTraceEntity.ragTraceEntity;
     if (ragTraceRepository.exists(qTrace.traceId.eq(context.getTraceId()))) {
@@ -79,41 +107,8 @@ public class RagTracePersistenceService {
       return;
     }
 
-    TraceLatency latency = context.buildLatency();
-    int totalCandidates = context.getCandidates().size();
-    int retainedChunks =
-        (int)
-            context.getCandidates().stream()
-                .filter(c -> c.decision() == FilterDecision.ACCEPTED)
-                .count();
-    int filteredChunks = Math.max(0, totalCandidates - retainedChunks);
-
-    // 1. 构建主表记录
-    RagTraceEntity traceEntity =
-        RagTraceEntity.create(
-            context.getTraceId(),
-            context.getSessionId(),
-            context.getWorkspaceId(),
-            context.getUserId(),
-            context.getQuery(),
-            context.getModelName(),
-            context.getRerankStrategy(),
-            totalCandidates,
-            retainedChunks,
-            filteredChunks,
-            latency.embeddingMs(),
-            latency.retrievalMs(),
-            latency.rerankMs(),
-            latency.generationMs(),
-            latency.totalMs(),
-            context.getPromptTokens(),
-            context.getCompletionTokens(),
-            context.getEmbeddingTokens(),
-            context.getRerankTokens(),
-            context.getTotalTokens(),
-            context.getCallSource(),
-            context.getApiKey());
-
+    // 1. 委派充血领域工厂构建主表记录
+    RagTraceEntity traceEntity = RagTraceEntity.fromContext(context);
     ragTraceRepository.save(traceEntity);
 
     // 2. 序列化全量快照大字段写入明细表
@@ -131,9 +126,9 @@ public class RagTracePersistenceService {
             + " 真实Token消耗=[prompt={}, completion={}, embedding={}, rerank={}, total={}]",
         context.getTraceId(),
         context.getWorkspaceId(),
-        totalCandidates,
-        retainedChunks,
-        latency.totalMs(),
+        traceEntity.getTotalCandidates(),
+        traceEntity.getRetainedChunks(),
+        traceEntity.getTotalTimeMs(),
         context.getPromptTokens(),
         context.getCompletionTokens(),
         context.getEmbeddingTokens(),
@@ -215,7 +210,9 @@ public class RagTracePersistenceService {
       return Optional.empty();
     }
     QRagTraceDetailEntity qDetail = QRagTraceDetailEntity.ragTraceDetailEntity;
-    return ragTraceDetailRepository.findOne(qDetail.traceId.eq(traceId));
+    // 回答的内容这些只能看到自己的 无论是不是管理员还是拥有者
+    return ragTraceDetailRepository.findOne(
+        qDetail.traceId.eq(traceId).and(qDetail.createBy.eq(SecurityHolder.getUserId())));
   }
 
   private String toJsonSafe(Object obj) {

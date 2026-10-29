@@ -247,7 +247,7 @@
    - 在 `DocumentRepository` 新增 `@Modifying @Query` 原生原子更新方法（`incrementReadCount` / `incrementLikeCount`），消灭应用内存读-改-写竞态。
 5. **不可变快照与状态机防重入守卫**：
    - `DocVersionEntity` 标注 Hibernate `@Immutable`，数据库层面阻止快照内容被意外修改；
-   - `DocSourceFileEntity` 增加状态机逆向流转防御（已 `SUCCESS` / `PREVIEW_ONLY` 不可逆转为 `FAILED`），并 DRY 抽取 `applyParseResult()`；
+   - `DocSourceFileEntity` 增加状态机逆向流转防御（已 `SUCCESS` 不可逆转为 `FAILED`），并 DRY 抽取 `applyParseResult()`；
    - `DocumentStateMachineEngine` 采用动态实例 `machineId`，彻底隔离单元测试与并发执行时的闭包依赖污染。
 6. **Controller 纯粹性与分层边界治理**：
    - `DocVersionService.rollbackToVersion()` 统一在 Service 层完成 `DocumentEntity → DocumentDTO` 转换；

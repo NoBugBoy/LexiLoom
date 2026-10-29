@@ -9,8 +9,8 @@ import static org.mockito.Mockito.when;
 
 import io.lexiloom.application.document.model.entity.DocumentEntity;
 import io.lexiloom.application.document.repository.DocumentRepository;
-import io.lexiloom.application.document.statemachine.DocumentStateEnum;
-import io.lexiloom.application.document.statemachine.DocumentStateTransitionEvent;
+import io.lexiloom.application.document.api.dto.DocumentStateEnum;
+import io.lexiloom.application.document.model.event.DocumentStateTransitionEvent;
 import io.lexiloom.application.enums.WorkSpaceAclEnum;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;

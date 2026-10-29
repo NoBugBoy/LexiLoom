@@ -4,7 +4,7 @@ import cn.hutool.core.util.StrUtil;
 import io.lexiloom.application.common.BaseEntity;
 import io.lexiloom.application.document.model.enums.DocSourceTypeEnum;
 import io.lexiloom.application.document.parser.DocParseStatusEnum;
-import io.lexiloom.application.document.statemachine.DocumentStateEnum;
+import io.lexiloom.application.document.api.dto.DocumentStateEnum;
 import io.lexiloom.application.enums.WorkSpaceAclEnum;
 import io.lexiloom.application.exception.BusinessException;
 import jakarta.persistence.Column;
@@ -220,6 +220,26 @@ public class DocumentEntity extends BaseEntity {
         markdownContent,
         visibility,
         DocSourceTypeEnum.AI_GENERATED,
+        null,
+        null);
+  }
+
+  /** 静态工厂：在线空白或手工撰写创建文档 */
+  public static DocumentEntity createManual(
+      Long workSpaceId,
+      Long categoryId,
+      String title,
+      String summary,
+      String markdownContent,
+      WorkSpaceAclEnum visibility) {
+    return buildBase(
+        workSpaceId,
+        categoryId,
+        title,
+        summary,
+        markdownContent,
+        visibility,
+        DocSourceTypeEnum.MANUAL,
         null,
         null);
   }
@@ -448,11 +468,25 @@ public class DocumentEntity extends BaseEntity {
     return this.status == DocumentStateEnum.APPROVED;
   }
 
+  /** 检查当前文档是否来源于物理原始文件资产 */
+  public boolean isFileBased() {
+    return this.sourceType != null && this.sourceType.isFileBased();
+  }
+
   /** 校验文档当前是否可编辑（待审核状态处于审批锁定，不可编辑） */
   public void assertCanEdit() {
     if (this.status == DocumentStateEnum.PENDING_APPROVAL) {
       throw BusinessException.badRequest("文档当前正在审核中，不可编辑");
     }
+  }
+
+  /** 判断指定工作空间成员（非管理员）是否有权查看当前文档（PRIVATE 仅作者本人及管理员可见） */
+  public boolean isVisibleToWorkspaceMember(
+      @org.jspecify.annotations.Nullable Long userId, boolean isWorkspaceAdmin) {
+    if (isWorkspaceAdmin || this.visibility != WorkSpaceAclEnum.PRIVATE) {
+      return true;
+    }
+    return userId != null && userId.equals(this.getCreateBy());
   }
 
   /** 简易准确的 Markdown 字数统计（剔除常见标记符） */

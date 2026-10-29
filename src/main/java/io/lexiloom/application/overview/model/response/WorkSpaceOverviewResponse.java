@@ -2,7 +2,7 @@ package io.lexiloom.application.overview.model.response;
 
 import cn.hutool.core.date.DatePattern;
 import com.fasterxml.jackson.annotation.JsonFormat;
-import io.lexiloom.application.document.statemachine.DocumentStateEnum;
+import io.lexiloom.application.document.api.dto.DocumentStateEnum;
 import io.lexiloom.application.enums.WorkSpaceAclEnum;
 import io.lexiloom.application.enums.WorkSpaceStatusEnum;
 import java.time.LocalDateTime;

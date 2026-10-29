@@ -56,9 +56,9 @@ class WorkSpaceMemberCommandServiceImplTest {
   void addMemberSuccess() {
     Long targetUserId = 200L;
     String targetEmail = "member@example.com";
-    UserEntity targetUser = new UserEntity();
+    UserEntity targetUser = UserEntity.create("openid-200", "unionid-200");
     ReflectionTestUtils.setField(targetUser, "id", targetUserId);
-    targetUser.setEmail(targetEmail);
+    targetUser.bindEmail(targetEmail, true);
 
     WorkSpaceEntity workSpace =
         WorkSpaceEntity.create("团队", "team", null, null, currentUserId, 10, null);
@@ -117,9 +117,9 @@ class WorkSpaceMemberCommandServiceImplTest {
   @DisplayName("添加成员 - 目标用户是自身时忽略操作并返回null")
   void addMemberSelfIgnoredReturnsNull() {
     String selfEmail = "self@example.com";
-    UserEntity selfUser = new UserEntity();
+    UserEntity selfUser = UserEntity.create("self-openid", "self-unionid");
     ReflectionTestUtils.setField(selfUser, "id", currentUserId);
-    selfUser.setEmail(selfEmail);
+    selfUser.bindEmail(selfEmail, true);
 
     WorkSpaceEntity workSpace =
         WorkSpaceEntity.create("团队", "team", null, null, currentUserId, 10, null);
@@ -147,9 +147,9 @@ class WorkSpaceMemberCommandServiceImplTest {
   void addMemberAlreadyMemberThrows() {
     Long targetUserId = 200L;
     String targetEmail = "member@example.com";
-    UserEntity targetUser = new UserEntity();
+    UserEntity targetUser = UserEntity.create("openid-200", "unionid-200");
     ReflectionTestUtils.setField(targetUser, "id", targetUserId);
-    targetUser.setEmail(targetEmail);
+    targetUser.bindEmail(targetEmail, true);
 
     WorkSpaceEntity workSpace =
         WorkSpaceEntity.create("团队", "team", null, null, currentUserId, 10, null);
@@ -203,9 +203,9 @@ class WorkSpaceMemberCommandServiceImplTest {
   void addMemberExceedsLimitThrows() {
     Long targetUserId = 200L;
     String targetEmail = "member@example.com";
-    UserEntity targetUser = new UserEntity();
+    UserEntity targetUser = UserEntity.create("openid-200", "unionid-200");
     ReflectionTestUtils.setField(targetUser, "id", targetUserId);
-    targetUser.setEmail(targetEmail);
+    targetUser.bindEmail(targetEmail, true);
 
     WorkSpaceEntity workSpace =
         WorkSpaceEntity.create("团队", "team", null, null, currentUserId, 5, null);

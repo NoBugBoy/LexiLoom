@@ -25,8 +25,7 @@ class AdminQueryServiceImplTest {
   @Test
   @DisplayName("按邮箱查询管理员")
   void testFindAdminByEmail() {
-    AdminEntity entity = new AdminEntity();
-    entity.setEmail("admin@test.com");
+    AdminEntity entity = AdminEntity.create("admin@test.com", "dummy-pwd", true);
     when(repository.findByEmail("admin@test.com")).thenReturn(Optional.of(entity));
 
     Optional<AdminEntity> result = service.findAdminByEmail("admin@test.com");

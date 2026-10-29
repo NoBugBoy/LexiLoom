@@ -5,7 +5,7 @@ import io.lexiloom.application.common.cache.CacheHelper;
 import io.lexiloom.application.common.security.RedisTokenManager;
 import io.lexiloom.application.enums.AdminRoleEnum;
 import io.lexiloom.application.exception.BusinessException;
-import io.lexiloom.application.user.api.AdminQueryService;
+import io.lexiloom.application.user.service.AdminQueryService;
 import io.lexiloom.application.user.cache.AccountCacheKey;
 import io.lexiloom.application.user.service.AdminCommandService;
 import io.lexiloom.application.user.service.AdminRoleService;

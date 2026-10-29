@@ -6,7 +6,7 @@ import static org.mockito.Mockito.*;
 
 import io.lexiloom.application.common.LoginUserAuthentication;
 import io.lexiloom.application.exception.BusinessException;
-import io.lexiloom.application.user.api.UserQueryService;
+import io.lexiloom.application.user.service.UserEntityQueryService;
 import io.lexiloom.application.user.api.dto.Email;
 import io.lexiloom.application.user.api.dto.Phone;
 import io.lexiloom.application.user.mapper.UserEntityMapper;
@@ -27,7 +27,7 @@ class UserCommandServiceImplTest {
 
   @Mock private UserRepository userRepository;
 
-  @Mock private UserQueryService userQueryService;
+  @Mock private UserEntityQueryService userQueryService;
 
   @Mock private UserEntityMapper userEntityMapper;
 
@@ -47,7 +47,7 @@ class UserCommandServiceImplTest {
             "unionid",
             new Phone("13800138000"),
             new Email("test@test.com", "1234", false));
-    UserEntity entity = new UserEntity();
+    UserEntity entity = UserEntity.create("openid", "unionid");
 
     when(userEntityMapper.toUserEntity(register)).thenReturn(entity);
     when(userRepository.save(entity)).thenReturn(entity);
@@ -77,12 +77,13 @@ class UserCommandServiceImplTest {
     LoginUserAuthentication auth = new LoginUserAuthentication(1L, java.util.List.of("user"));
     SecurityContextHolder.getContext().setAuthentication(auth);
 
-    UserEntity entity = new UserEntity();
+    UserEntity entity = UserEntity.create("openid", "unionid");
     when(userQueryService.getUserByUserId(1L)).thenReturn(Optional.of(entity));
-    when(userEntityMapper.updateEntity("nick", "avatar", entity)).thenReturn(entity);
 
     service.updateProfile("nick", "avatar");
 
+    assertThat(entity.getUserName()).isEqualTo("nick");
+    assertThat(entity.getAvatarUrl()).isEqualTo("avatar");
     verify(userRepository).saveAndFlush(entity);
   }
 }

@@ -2,7 +2,7 @@ package io.lexiloom.application.document.service;
 
 import cn.hutool.core.util.StrUtil;
 import com.querydsl.core.BooleanBuilder;
-import io.lexiloom.application.common.ErrorCode;
+import io.lexiloom.application.exception.ErrorCode;
 import io.lexiloom.application.common.storage.FileStorageGateway;
 import io.lexiloom.application.document.acl.DocAccessControlService;
 import io.lexiloom.application.document.api.dto.DocParseStatusDTO;
@@ -19,16 +19,16 @@ import io.lexiloom.application.document.repository.DocSourceFileRepository;
 import io.lexiloom.application.document.repository.DocumentRepository;
 import io.lexiloom.application.enums.WorkSpaceAclEnum;
 import io.lexiloom.application.exception.BusinessException;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.data.domain.Page;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.lang.Nullable;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -159,30 +159,7 @@ public class DocumentQueryService {
         // 如果存在来源文件 RustFS 存储地址，将 content 替换为 RustFS 访问地址供前端直接预览原件；若无则保留原正文
         String effectiveContent = StrUtil.isNotBlank(rustFsUrl) ? rustFsUrl : dto.content();
 
-        dto =
-            new DocumentDTO(
-                dto.id(),
-                dto.workSpaceId(),
-                dto.categoryId(),
-                dto.title(),
-                dto.summary(),
-                effectiveContent,
-                dto.status(),
-                dto.parseStatus(),
-                dto.visibility(),
-                dto.sourceType(),
-                dto.sourceFileId(),
-                realFileName,
-                dto.currentVersion(),
-                dto.currentVersionTag(),
-                dto.versionCount(),
-                dto.publishedVersion(),
-                dto.coverUrl(),
-                dto.wordCount(),
-                dto.readCount(),
-                dto.createBy(),
-                dto.createTime(),
-                dto.updateTime());
+        dto = dto.withSourcePreview(effectiveContent, realFileName);
       }
     }
 
@@ -202,9 +179,14 @@ public class DocumentQueryService {
     Boolean isNew =
         stringRedisTemplate
             .opsForValue()
-            .setIfAbsent(redisKey, "1", DOC_READ_TTL_HOURS, TimeUnit.HOURS);
+            .setIfAbsent(redisKey, "1", Duration.ofHours(DOC_READ_TTL_HOURS));
     if (Boolean.TRUE.equals(isNew)) {
-      documentRepository.incrementReadCount(event.documentId());
+      try {
+        documentRepository.incrementReadCount(event.documentId());
+      } catch (Exception e) {
+        stringRedisTemplate.delete(redisKey);
+        log.warn("【DocumentQueryService】累计阅读量失败，清理 Redis 防重标记: docId={}, error={}", event.documentId(), e.getMessage());
+      }
     }
   }
 
@@ -248,12 +230,15 @@ public class DocumentQueryService {
     return entityPage.map(documentMapper::toDTO);
   }
 
-  /** 按分类拉取文档精简列表（补充团队权限断言） */
+  /** 按分类拉取文档精简列表（补充团队权限断言与私密文档隔离） */
   @Transactional(readOnly = true)
   public List<DocumentDTO> listByCategory(Long workSpaceId, Long categoryId, Long userId) {
     docAccessControlService.assertCanReadWorkSpace(workSpaceId, userId);
+    boolean workspaceAdmin = docAccessControlService.isWorkspaceAdmin(workSpaceId, userId);
     List<DocumentEntity> list =
-        documentRepository.findByWorkSpaceIdAndCategoryId(workSpaceId, categoryId);
+        documentRepository.findByWorkSpaceIdAndCategoryId(workSpaceId, categoryId).stream()
+            .filter(doc -> doc.isVisibleToWorkspaceMember(userId, workspaceAdmin))
+            .toList();
     return documentMapper.toDTOList(list);
   }
 }

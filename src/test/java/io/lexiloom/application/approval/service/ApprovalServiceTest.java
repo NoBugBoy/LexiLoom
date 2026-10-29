@@ -182,6 +182,53 @@ class ApprovalServiceTest {
   }
 
   @Test
+  @DisplayName("重复提交审批：自动将历史残留的 PENDING 审批单归档为 CANCELLED，防止产生幽灵待办单")
+  void testResubmitSupersedesStalePendingRecords() {
+    when(approvalRecordRepository.findAllByApprovalTypeAndBizIdAndStatus(
+            ApprovalTypeEnum.DOCUMENT_AUDIT, 2001L, ApprovalStatusEnum.PENDING))
+        .thenReturn(List.of(docAuditRecord));
+    when(approvalRecordRepository.save(any(ApprovalRecordEntity.class)))
+        .thenAnswer(
+            inv -> {
+              ApprovalRecordEntity r = inv.getArgument(0);
+              ReflectionTestUtils.setField(r, "id", 5005L);
+              return r;
+            });
+
+    Long newId =
+        approvalService.submitDocumentAudit(2001L, 1L, 999L, "张三", "修复后重新提交发布", null);
+
+    assertThat(newId).isEqualTo(5005L);
+    assertThat(docAuditRecord.getStatus()).isEqualTo(ApprovalStatusEnum.CANCELLED);
+    assertThat(docAuditRecord.getApprovalTime()).isNotNull();
+    verify(approvalRecordRepository).saveAll(List.of(docAuditRecord));
+  }
+
+  @Test
+  @DisplayName("服务层撤回：申请人通过 ApprovalService.cancel 成功撤回待审批单并记录自定义撤回说明")
+  void testServiceCancelApproval() {
+    when(approvalRecordRepository.findFirstByApprovalTypeAndBizIdAndStatusOrderByCreateTimeDesc(
+            ApprovalTypeEnum.SPACE_LINK, 1001L, ApprovalStatusEnum.PENDING))
+        .thenReturn(Optional.of(spaceLinkRecord));
+
+    approvalService.cancel(ApprovalTypeEnum.SPACE_LINK, 1001L, 999L, "先补充材料后再提交");
+
+    assertThat(spaceLinkRecord.getStatus()).isEqualTo(ApprovalStatusEnum.CANCELLED);
+    assertThat(spaceLinkRecord.getApprovalComment()).isEqualTo("先补充材料后再提交");
+    assertThat(spaceLinkRecord.getApprovalTime()).isNotNull();
+    verify(approvalRecordRepository).save(spaceLinkRecord);
+  }
+
+  @Test
+  @DisplayName("领域约束：超过500字符的说明或申请理由抛出业务异常")
+  void testExceedMaxCommentLengthThrows() {
+    String tooLong = "a".repeat(501);
+    assertThatThrownBy(() -> spaceLinkRecord.approve(888L, "李四", tooLong))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("500");
+  }
+
+  @Test
   @DisplayName("查询最新待审批单、待审批列表与历史流转记录")
   void testQueryApprovals() {
     ApprovalRecordDTO dto =

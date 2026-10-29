@@ -1,5 +1,6 @@
 package io.lexiloom.application.approval.api.dto;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import io.lexiloom.application.enums.ApprovalStatusEnum;
 import io.lexiloom.application.enums.ApprovalTypeEnum;
 import java.time.LocalDateTime;
@@ -18,6 +19,6 @@ public record ApprovalRecordDTO(
     Long approverId,
     String approverName,
     String approvalComment,
-    LocalDateTime approvalTime,
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime approvalTime,
     String extraData,
-    LocalDateTime createTime) {}
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime createTime) {}

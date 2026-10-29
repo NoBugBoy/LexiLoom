@@ -1,7 +1,7 @@
 package io.lexiloom.application.document.parser;
 
 import cn.hutool.core.util.StrUtil;
-import io.lexiloom.application.common.ErrorCode;
+import io.lexiloom.application.exception.ErrorCode;
 import io.lexiloom.application.exception.BusinessException;
 import jakarta.annotation.PostConstruct;
 import java.util.List;

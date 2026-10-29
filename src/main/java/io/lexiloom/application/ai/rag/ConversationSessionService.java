@@ -122,6 +122,10 @@ public class ConversationSessionService {
    * @return 会话元数据 Optional
    */
   public Optional<ConversationSessionVO> getSessionMeta(String sessionId) {
+    return readSessionMeta(sessionId, true);
+  }
+
+  private Optional<ConversationSessionVO> readSessionMeta(String sessionId, boolean refreshTtl) {
     if (StrUtil.isBlank(sessionId)) {
       return Optional.empty();
     }
@@ -132,8 +136,9 @@ public class ConversationSessionService {
         return Optional.empty();
       }
 
-      // 访问滑动续期
-      redisTemplate.expire(metaKey, Duration.ofSeconds(getExpireSeconds()));
+      if (refreshTtl) {
+        redisTemplate.expire(metaKey, Duration.ofSeconds(getExpireSeconds()));
+      }
 
       ConversationSessionVO meta = objectMapper.readValue(json, ConversationSessionVO.class);
       return Optional.of(meta);
@@ -196,6 +201,10 @@ public class ConversationSessionService {
    * @return 完整历史消息列表
    */
   public List<ConversationMessageVO> getFullHistory(String sessionId) {
+    return readFullHistory(sessionId, true);
+  }
+
+  private List<ConversationMessageVO> readFullHistory(String sessionId, boolean refreshTtl) {
     if (StrUtil.isBlank(sessionId)) {
       return List.of();
     }
@@ -206,9 +215,10 @@ public class ConversationSessionService {
         return List.of();
       }
 
-      // 访问滑动续期
-      redisTemplate.expire(key, Duration.ofSeconds(getExpireSeconds()));
-      redisTemplate.expire(buildMetaKey(sessionId), Duration.ofSeconds(getExpireSeconds()));
+      if (refreshTtl) {
+        redisTemplate.expire(key, Duration.ofSeconds(getExpireSeconds()));
+        redisTemplate.expire(buildMetaKey(sessionId), Duration.ofSeconds(getExpireSeconds()));
+      }
 
       ConversationMessageVO[] arr = objectMapper.readValue(json, ConversationMessageVO[].class);
       if (arr == null || arr.length == 0) {
@@ -313,8 +323,8 @@ public class ConversationSessionService {
     long nowEpoch = System.currentTimeMillis();
 
     try {
-      // 1. 追加并持久化消息 (完整保留正文、时间戳、溯源卡片与思维链)
-      List<ConversationMessageVO> existing = new ArrayList<>(getFullHistory(sessionId));
+      // 1. 追加并持久化消息 (完整保留正文、时间戳、溯源卡片与思维链，写前跳过冗余 EXPIRE)
+      List<ConversationMessageVO> existing = new ArrayList<>(readFullHistory(sessionId, false));
       existing.add(
           new ConversationMessageVO(
               role,
@@ -333,9 +343,9 @@ public class ConversationSessionService {
 
       final int messageCount = existing.size();
 
-      // 2. 维护/更新会话元数据与标题
+      // 2. 维护/更新会话元数据与标题 (写前跳过冗余 EXPIRE)
       ConversationSessionVO meta =
-          getSessionMeta(sessionId)
+          readSessionMeta(sessionId, false)
               .map(
                   oldMeta -> {
                     String title = oldMeta.title();
@@ -392,7 +402,7 @@ public class ConversationSessionService {
       return;
     }
     try {
-      getSessionMeta(sessionId)
+      readSessionMeta(sessionId, false)
           .ifPresent(
               meta -> {
                 if (currentUserId != null

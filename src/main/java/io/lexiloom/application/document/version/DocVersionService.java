@@ -1,7 +1,7 @@
 package io.lexiloom.application.document.version;
 
 import cn.hutool.core.util.StrUtil;
-import io.lexiloom.application.common.ErrorCode;
+import io.lexiloom.application.exception.ErrorCode;
 import io.lexiloom.application.document.acl.DocAccessControlService;
 import io.lexiloom.application.document.api.dto.DocVersionCompareDTO;
 import io.lexiloom.application.document.api.dto.DocVersionDTO;
@@ -11,11 +11,12 @@ import io.lexiloom.application.document.mapper.DocumentMapper;
 import io.lexiloom.application.document.model.entity.DocVersionEntity;
 import io.lexiloom.application.document.model.entity.DocumentEntity;
 import io.lexiloom.application.document.model.request.DocVersionCreateRequest;
+import io.lexiloom.application.document.parser.DocParseStatusEnum;
 import io.lexiloom.application.document.repository.DocVersionRepository;
 import io.lexiloom.application.document.repository.DocumentRepository;
-import io.lexiloom.application.document.statemachine.DocumentEventEnum;
-import io.lexiloom.application.document.statemachine.DocumentStateEnum;
-import io.lexiloom.application.document.statemachine.DocumentStateTransitionEvent;
+import io.lexiloom.application.document.api.dto.DocumentEventEnum;
+import io.lexiloom.application.document.api.dto.DocumentStateEnum;
+import io.lexiloom.application.document.model.event.DocumentStateTransitionEvent;
 import io.lexiloom.application.exception.BusinessException;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -56,6 +57,12 @@ public class DocVersionService {
             .orElseThrow(() -> new BusinessException(ErrorCode.Document.DOC_NOT_FOUND, "文档不存在"));
 
     docAccessControlService.assertCanWrite(doc, publisherId);
+
+    if (doc.getParseStatus() == DocParseStatusEnum.QUEUED
+        || doc.getParseStatus() == DocParseStatusEnum.ASYNC_PROCESSING) {
+      throw new BusinessException(
+          ErrorCode.Document.DOC_PARSE_FAILED, "文档正处于排队或解析中，无法生成版本快照");
+    }
 
     int targetVersionNumber = doc.getCurrentVersion();
     // 检查当前版本快照是否已存在，若已存在则递增版本并创建新快照
@@ -190,7 +197,7 @@ public class DocVersionService {
                       new BusinessException(
                           ErrorCode.Document.DOC_VERSION_NOT_FOUND,
                           "旧版本不存在: v" + oldVersionNumber));
-      oldText = oldVer.getContent();
+      oldText = resolveEffectiveContent(oldVer, doc);
       oldTag = oldVer.getVersionTag();
     }
 
@@ -215,7 +222,7 @@ public class DocVersionService {
                       new BusinessException(
                           ErrorCode.Document.DOC_VERSION_NOT_FOUND,
                           "新版本不存在: v" + newVersionNumber));
-      newText = newVer.getContent();
+      newText = resolveEffectiveContent(newVer, doc);
       newTag = newVer.getVersionTag();
     }
 
@@ -298,5 +305,23 @@ public class DocVersionService {
   @Transactional(readOnly = true)
   public DocVersionDTO getVersion(Long documentId, Integer versionNumber) {
     return getVersion(documentId, versionNumber, null);
+  }
+
+  private String resolveEffectiveContent(DocVersionEntity ver, DocumentEntity doc) {
+    if (ver == null) {
+      return "";
+    }
+    String content = ver.getContent();
+    // 若快照内容仍为排队占位符，而主文档此时已解析出完整真实正文，回退使用主文档最新解析正文
+    if (isPlaceholderText(content)
+        && java.util.Objects.equals(ver.getVersionNumber(), doc.getCurrentVersion())
+        && !isPlaceholderText(doc.getContent())) {
+      return doc.getContent();
+    }
+    return content != null ? content : "";
+  }
+
+  private static boolean isPlaceholderText(String text) {
+    return StrUtil.isBlank(text) || text.startsWith("> ⏳");
   }
 }

@@ -41,11 +41,6 @@ spring:
     socket-timeout: 30s
     connection-timeout: 5s
 
-wx:
-  miniapp:
-    appid: wx0c0e1b56a66e6e3b
-    secret: 56fe21c4c920712af5eb991cb356695b
-
 # ── 安全 ──────────────────────────────────────────────────────────────────────
 security:
   token:

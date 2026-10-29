@@ -5,7 +5,6 @@ import io.lexiloom.application.document.api.dto.DocParseStatusDTO;
 import io.lexiloom.application.document.api.dto.DocumentDTO;
 import io.lexiloom.application.document.model.request.DocumentPageRequest;
 import io.lexiloom.application.document.model.request.DocumentTransitionRequest;
-import io.lexiloom.application.document.model.request.DocumentUpdateRequest;
 import io.lexiloom.application.document.parser.DocParserEngineEnum;
 import io.lexiloom.application.document.pipeline.DocumentImportResult;
 import io.lexiloom.application.document.service.DocumentCommandService;
@@ -52,14 +51,6 @@ public class DocumentController {
   public DocParseStatusDTO getParseStatus(@PathVariable("id") Long id) {
     Long userId = SecurityHolder.getUserId();
     return documentQueryService.getParseStatus(id, userId);
-  }
-
-  /** 修改编辑文档 */
-  @PutMapping("/{id}")
-  public DocumentDTO update(
-      @PathVariable("id") Long id, @Validated @RequestBody DocumentUpdateRequest request) {
-    Long userId = SecurityHolder.getUserId();
-    return documentCommandService.update(id, request, userId);
   }
 
   /** 删除文档 */

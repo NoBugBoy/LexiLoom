@@ -1,6 +1,6 @@
 package io.lexiloom.application.document.api.dto;
 
-import io.lexiloom.application.document.statemachine.DocumentStateEnum;
+import io.lexiloom.application.document.api.dto.DocumentStateEnum;
 import java.time.LocalDateTime;
 import java.util.List;
 

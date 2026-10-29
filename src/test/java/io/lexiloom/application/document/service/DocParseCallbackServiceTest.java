@@ -108,6 +108,7 @@ class DocParseCallbackServiceTest {
 
     service.handleCallback(request);
 
+    verify(docParseQueueService).onParseCompleted(999L);
     verify(transactionalService, never())
         .completeAsyncParse(any(), any(), any(), any(), any(), any(), any());
     verify(transactionalService, never()).failAsyncParse(any(), any(), any());

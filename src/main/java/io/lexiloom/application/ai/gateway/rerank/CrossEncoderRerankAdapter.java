@@ -1,8 +1,6 @@
 package io.lexiloom.application.ai.gateway.rerank;
 
 import cn.hutool.core.util.StrUtil;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.lexiloom.application.ai.config.AiProperties;
 import io.lexiloom.application.ai.enums.RerankStrategyEnum;
 import io.lexiloom.application.ai.model.search.DocChunkDocument;
@@ -15,12 +13,14 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
-import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * 深度 Cross-Encoder / 通义千问 DashScope Rerank 模型重排适配器 (CrossEncoderRerankAdapter)
@@ -153,7 +153,7 @@ public class CrossEncoderRerankAdapter implements RerankGateway {
       docTexts.add(buildRerankDocumentText(doc));
     }
 
-    int topN = Math.max(1, Math.min(command.topK(), candidateList.size()));
+    int topN = Math.clamp(command.topK(), 1, candidateList.size());
     String query = command.query() != null ? command.query() : "";
 
     Map<String, Object> requestPayload;

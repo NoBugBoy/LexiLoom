@@ -150,4 +150,53 @@ class DocCategoryServiceTest {
         .isInstanceOf(BusinessException.class)
         .hasMessageContaining("最多支持 10 层");
   }
+
+  @Test
+  @DisplayName("移动分类：级联刷新子孙节点的物化路径与深度，且不受同尾数 ID 干扰")
+  void testMoveCategoryUpdatesSubtreePathAndLevelCorrectly() {
+    DocCategoryEntity targetParent = DocCategoryEntity.create(1L, 0L, "新父目录", 1, "/0/", 0);
+    ReflectionTestUtils.setField(targetParent, "id", 12L);
+    ReflectionTestUtils.setField(targetParent, "path", "/0/12/");
+    ReflectionTestUtils.setField(targetParent, "level", 1);
+
+    DocCategoryEntity movingCat = DocCategoryEntity.create(1L, 0L, "待移动目录", 1, "/0/", 0);
+    ReflectionTestUtils.setField(movingCat, "id", 5L);
+    ReflectionTestUtils.setField(movingCat, "path", "/0/5/");
+    ReflectionTestUtils.setField(movingCat, "level", 1);
+
+    // 子节点 ID 为 2（与祖先 ID 12 具有相同尾字符 '2'，验证不会误截断）
+    DocCategoryEntity childCat = DocCategoryEntity.create(1L, 5L, "子目录", 1, "/0/5/", 1);
+    ReflectionTestUtils.setField(childCat, "id", 2L);
+    ReflectionTestUtils.setField(childCat, "path", "/0/5/2/");
+    ReflectionTestUtils.setField(childCat, "level", 2);
+
+    when(docCategoryRepository.findById(5L)).thenReturn(Optional.of(movingCat));
+    when(docCategoryRepository.findById(12L)).thenReturn(Optional.of(targetParent));
+    when(docCategoryRepository.save(any(DocCategoryEntity.class)))
+        .thenAnswer(inv -> inv.getArgument(0));
+    when(docCategoryRepository.findByWorkSpaceIdAndPathStartingWith(1L, "/0/5/"))
+        .thenReturn(List.of(movingCat, childCat));
+
+    categoryService.moveCategory(5L, 12L);
+
+    assertThat(movingCat.getPath()).isEqualTo("/0/12/5/");
+    assertThat(movingCat.getLevel()).isEqualTo(2);
+    assertThat(childCat.getPath()).isEqualTo("/0/12/5/2/");
+    assertThat(childCat.getLevel()).isEqualTo(3);
+  }
+
+  @Test
+  @DisplayName("创建分类：禁止指定其他工作空间的父分类")
+  void testCreateCategoryCrossWorkspaceParentFails() {
+    DocCategoryEntity foreignParent = DocCategoryEntity.create(2L, 0L, "其他空间目录", 1, "/0/", 0);
+    ReflectionTestUtils.setField(foreignParent, "id", 88L);
+
+    when(docCategoryRepository.existsByWorkSpaceIdAndParentIdAndName(1L, 88L, "子目录"))
+        .thenReturn(false);
+    when(docCategoryRepository.findById(88L)).thenReturn(Optional.of(foreignParent));
+
+    assertThatThrownBy(() -> categoryService.createCategory(1L, 88L, "子目录", 1))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("不能跨团队空间创建子分类");
+  }
 }

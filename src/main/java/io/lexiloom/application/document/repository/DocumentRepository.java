@@ -2,7 +2,7 @@ package io.lexiloom.application.document.repository;
 
 import io.lexiloom.application.common.BaseRepository;
 import io.lexiloom.application.document.model.entity.DocumentEntity;
-import io.lexiloom.application.document.statemachine.DocumentStateEnum;
+import io.lexiloom.application.document.api.dto.DocumentStateEnum;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.stereotype.Repository;

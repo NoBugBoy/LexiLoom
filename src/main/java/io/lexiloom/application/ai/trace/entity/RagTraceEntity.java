@@ -1,6 +1,11 @@
 package io.lexiloom.application.ai.trace.entity;
 
+import cn.hutool.core.util.StrUtil;
+import io.lexiloom.application.ai.trace.model.FilterDecision;
+import io.lexiloom.application.ai.trace.model.RagTraceContext;
+import io.lexiloom.application.ai.trace.model.TraceLatency;
 import io.lexiloom.application.common.BaseEntity;
+import io.lexiloom.application.enums.AiCallSourceEnum;
 import io.lexiloom.application.utils.DesensitizeUtils;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -131,6 +136,48 @@ public class RagTraceEntity extends BaseEntity {
   /** 调用凭证 API Key (例如 lx_live_xxx 或脱敏前缀) */
   @Column(name = "api_key", comment = "调用凭证API Key", length = 128)
   private String apiKey;
+
+  /**
+   * 充血领域工厂方法：基于运行期观测上下文内聚计算候选采纳率、阶段耗时与凭证脱敏并构建主表实体
+   *
+   * @param context 运行期全链路上下文对象
+   * @return 组装完成的 {@link RagTraceEntity}
+   */
+  public static RagTraceEntity fromContext(RagTraceContext context) {
+    Objects.requireNonNull(context, "traceContext 不能为空");
+    TraceLatency latency = context.buildLatency();
+    int totalCandidates = context.getCandidates().size();
+    int retainedChunks =
+        (int)
+            context.getCandidates().stream()
+                .filter(c -> c.decision() == FilterDecision.ACCEPTED)
+                .count();
+    int filteredChunks = Math.max(0, totalCandidates - retainedChunks);
+
+    return create(
+        context.getTraceId(),
+        context.getSessionId(),
+        context.getWorkspaceId(),
+        context.getUserId(),
+        context.getQuery(),
+        context.getModelName(),
+        context.getRerankStrategy(),
+        totalCandidates,
+        retainedChunks,
+        filteredChunks,
+        latency.embeddingMs(),
+        latency.retrievalMs(),
+        latency.rerankMs(),
+        latency.generationMs(),
+        latency.totalMs(),
+        context.getPromptTokens(),
+        context.getCompletionTokens(),
+        context.getEmbeddingTokens(),
+        context.getRerankTokens(),
+        context.getTotalTokens(),
+        context.getCallSource(),
+        context.getApiKey());
+  }
 
   public static RagTraceEntity create(
       String traceId,
@@ -277,21 +324,13 @@ public class RagTraceEntity extends BaseEntity {
             embeddingTokens,
             rerankTokens,
             totalTokens);
-    if (cn.hutool.core.util.StrUtil.isNotBlank(callSource)) {
-      entity.callSource =
-          io.lexiloom.application.enums.AiCallSourceEnum.from(
-                  callSource, io.lexiloom.application.enums.AiCallSourceEnum.WEB_CHAT)
-              .getCode();
+    if (StrUtil.isNotBlank(callSource)) {
+      entity.callSource = AiCallSourceEnum.from(callSource, AiCallSourceEnum.WEB_CHAT).getCode();
     }
-    if (cn.hutool.core.util.StrUtil.isNotBlank(apiKey)) {
+    if (StrUtil.isNotBlank(apiKey)) {
       entity.apiKey = DesensitizeUtils.maskApiKey(apiKey);
     }
     return entity;
-  }
-
-  /** 获取经安全脱敏后的 API Key (供接口返回及日志打印) */
-  public String getApiKey() {
-    return DesensitizeUtils.maskApiKey(this.apiKey);
   }
 
   public static RagTraceEntity create(
@@ -332,6 +371,11 @@ public class RagTraceEntity extends BaseEntity {
         0,
         0,
         0);
+  }
+
+  /** 获取经安全脱敏后的 API Key (供接口返回及日志打印) */
+  public String getApiKey() {
+    return DesensitizeUtils.maskApiKey(this.apiKey);
   }
 
   /** 更新用户反馈 */

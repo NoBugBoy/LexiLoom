@@ -15,7 +15,7 @@ import io.lexiloom.application.document.spacelink.model.response.SpaceLinkRespon
 import io.lexiloom.application.document.spacelink.repository.WorkSpaceSpaceLinkDocRepository;
 import io.lexiloom.application.document.spacelink.repository.WorkSpaceSpaceLinkRepository;
 import io.lexiloom.application.document.spacelink.service.WorkSpaceSpaceLinkService;
-import io.lexiloom.application.document.statemachine.DocumentStateEnum;
+import io.lexiloom.application.document.api.dto.DocumentStateEnum;
 import io.lexiloom.application.enums.ApprovalTypeEnum;
 import io.lexiloom.application.enums.SpaceLinkStatusEnum;
 import io.lexiloom.application.enums.WorkSpaceAclEnum;

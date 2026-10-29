@@ -151,4 +151,16 @@ class DocParseQueueServiceTest {
     verify(redisTemplate).delete(DocParseQueueService.TASK_PREFIX + "100");
     verify(redisTemplate).delete(DocParseQueueService.ACTIVE_KEY);
   }
+
+  @Test
+  @DisplayName("onParseCompleted - 当 ACTIVE_KEY 已被新任务占用时，不误删新任务的 ACTIVE_KEY")
+  void testOnParseCompleted_DoesNotDeleteOtherActiveTaskLock() {
+    when(valueOperations.get(DocParseQueueService.ACTIVE_KEY)).thenReturn("200");
+
+    queueService.onParseCompleted(100L);
+
+    verify(zSetOperations).remove(DocParseQueueService.QUEUE_KEY, "100");
+    verify(redisTemplate).delete(DocParseQueueService.TASK_PREFIX + "100");
+    verify(redisTemplate, never()).delete(DocParseQueueService.ACTIVE_KEY);
+  }
 }

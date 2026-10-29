@@ -7,7 +7,7 @@ import io.lexiloom.application.common.SecurityHolder;
 import io.lexiloom.application.common.security.LoginToken;
 import io.lexiloom.application.common.security.RedisTokenManager;
 import io.lexiloom.application.enums.AdminRoleEnum;
-import io.lexiloom.application.user.api.ApiKeyAuthApi;
+import io.lexiloom.application.common.security.ApiKeyAuthApi;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import java.io.IOException;
@@ -110,5 +110,24 @@ class AuthenticationFilterTest {
     assertThat(SecurityHolder.getLoginUser()).isEmpty();
     verify(filterChain).doFilter(request, response);
     verifyNoInteractions(apiKeyAuthApi, redisTokenManager);
+  }
+
+  @Test
+  @DisplayName("兼容小写 bearer 前缀与非 Bearer 方案（如 Basic）自动回退 X-API-Key")
+  void testCaseInsensitiveBearerAndBlankFallback() throws ServletException, IOException {
+    MockHttpServletRequest request = new MockHttpServletRequest();
+    request.addHeader("Authorization", "Basic dXNlcjpwYXNz");
+    request.addHeader("X-API-Key", "lx_live_fallback_789");
+    MockHttpServletResponse response = new MockHttpServletResponse();
+
+    LoginToken token = new LoginToken(77L, List.of(AdminRoleEnum.ADMIN));
+    when(apiKeyAuthApi.verifyApiKey("lx_live_fallback_789")).thenReturn(Optional.of(token));
+
+    filter.doFilter(request, response, filterChain);
+
+    assertThat(SecurityHolder.getLoginUser()).isPresent();
+    assertThat(SecurityHolder.getUserId()).isEqualTo(77L);
+    verify(filterChain).doFilter(request, response);
+    verifyNoInteractions(redisTokenManager);
   }
 }

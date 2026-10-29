@@ -1,6 +1,8 @@
 package io.lexiloom.application.common.cache;
 
 import java.util.Optional;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,6 +15,7 @@ import org.springframework.stereotype.Component;
 @Slf4j
 public class CacheHelper {
   private final CacheManager cacheManager;
+  private final ReentrantLock consumeLock = new ReentrantLock();
 
   /** 1. 标准 Cache-Aside 模式（防击穿并发安全） 查缓存，存在则返回；不存在则调用 loader 加载并写回缓存 */
   public <K, V> V getOrLoad(CacheKey<K, V> keySpec, K id, Supplier<V> loader) {
@@ -31,7 +34,9 @@ public class CacheHelper {
   /** 2. 获取缓存对象（返回 Optional，安全防 NPE） */
   public <K, V> Optional<V> get(CacheKey<K, V> keySpec, K id) {
     Cache cache = cacheManager.getCache(keySpec.cacheName());
-    if (cache == null) return Optional.empty();
+    if (cache == null) {
+      return Optional.empty();
+    }
 
     String key = keySpec.formatKey(id);
     return Optional.ofNullable(cache.get(key, keySpec.valueType()));
@@ -51,16 +56,49 @@ public class CacheHelper {
     }
   }
 
-  /** 5. 原子消费：获取并立即清除（专用于 OTT、一次性验证码场景，防重放） */
+  /** 5. 原子消费：获取并立即清除（专用于 OTT、一次性验证码场景，防并发重放） */
   public <K, V> Optional<V> getAndEvict(CacheKey<K, V> keySpec, K id) {
     Cache cache = cacheManager.getCache(keySpec.cacheName());
-    if (cache == null) return Optional.empty();
+    if (cache == null) {
+      return Optional.empty();
+    }
 
     String key = keySpec.formatKey(id);
-    V value = cache.get(key, keySpec.valueType());
-    if (value != null) {
-      cache.evict(key); // 消费即焚
-      return Optional.of(value);
+    Object nativeCache = cache.getNativeCache();
+    if (nativeCache instanceof com.github.benmanes.caffeine.cache.Cache<?, ?> caffeineCache) {
+      Object removed = caffeineCache.asMap().remove(key);
+      return castValue(removed, keySpec.valueType());
+    }
+    if (nativeCache instanceof ConcurrentMap<?, ?> concurrentMap) {
+      Object removed = concurrentMap.remove(key);
+      return castValue(removed, keySpec.valueType());
+    }
+
+    consumeLock.lock();
+    try {
+      V value = cache.get(key, keySpec.valueType());
+      if (value != null) {
+        cache.evict(key);
+        return Optional.of(value);
+      }
+      return Optional.empty();
+    } finally {
+      consumeLock.unlock();
+    }
+  }
+
+  private <V> Optional<V> castValue(Object rawValue, Class<V> valueType) {
+    if (rawValue == null) {
+      return Optional.empty();
+    }
+    if (valueType.isInstance(rawValue)) {
+      return Optional.of(valueType.cast(rawValue));
+    }
+    if (rawValue instanceof Cache.ValueWrapper wrapper) {
+      Object unwrapped = wrapper.get();
+      if (valueType.isInstance(unwrapped)) {
+        return Optional.of(valueType.cast(unwrapped));
+      }
     }
     return Optional.empty();
   }

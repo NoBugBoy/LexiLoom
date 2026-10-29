@@ -1,5 +1,8 @@
 package io.lexiloom.application.document.parser;
 
+import io.lexiloom.application.document.api.dto.DocBoxMetadata;
+import io.lexiloom.application.document.api.dto.DocTextChunk;
+
 import java.util.LinkedHashMap;
 import java.util.Map;
 

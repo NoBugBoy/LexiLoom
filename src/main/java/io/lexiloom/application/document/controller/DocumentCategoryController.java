@@ -32,22 +32,21 @@ public class DocumentCategoryController {
   /** 创建分类目录 */
   @PostMapping
   public DocCategoryDTO create(@Validated @RequestBody DocCategoryCreateRequest request) {
-    return docCategoryService.createCategory(
-        request.workSpaceId(), request.parentId(), request.name(), request.sortOrder());
+    return docCategoryService.createCategory(request);
   }
 
   /** 更新分类名称与排序 */
   @PutMapping("/{id}")
   public DocCategoryDTO update(
       @PathVariable("id") Long id, @Validated @RequestBody DocCategoryUpdateRequest request) {
-    return docCategoryService.updateCategory(id, request.name(), request.sortOrder());
+    return docCategoryService.updateCategory(id, request);
   }
 
   /** 移动分类节点 */
   @PutMapping("/{id}/move")
   public DocCategoryDTO move(
       @PathVariable("id") Long id, @Validated @RequestBody DocCategoryMoveRequest request) {
-    return docCategoryService.moveCategory(id, request.newParentId());
+    return docCategoryService.moveCategory(id, request);
   }
 
   /** 删除分类 */

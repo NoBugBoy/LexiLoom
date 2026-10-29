@@ -1,8 +1,10 @@
 package io.lexiloom.application.document.api.dto;
 
+import cn.hutool.core.date.DatePattern;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import io.lexiloom.application.document.model.enums.DocSourceTypeEnum;
 import io.lexiloom.application.document.parser.DocParseStatusEnum;
-import io.lexiloom.application.document.statemachine.DocumentStateEnum;
+import io.lexiloom.application.document.api.dto.DocumentStateEnum;
 import io.lexiloom.application.enums.WorkSpaceAclEnum;
 import java.time.LocalDateTime;
 
@@ -28,8 +30,35 @@ public record DocumentDTO(
     Integer wordCount,
     Integer readCount,
     Long createBy,
-    LocalDateTime createTime,
-    LocalDateTime updateTime) {
+    @JsonFormat(pattern = DatePattern.NORM_DATETIME_PATTERN) LocalDateTime createTime,
+    @JsonFormat(pattern = DatePattern.NORM_DATETIME_PATTERN) LocalDateTime updateTime) {
+
+  /** 派生并替换用于原件预览的正文内容与真实来源文件名 */
+  public DocumentDTO withSourcePreview(String effectiveContent, String realFileName) {
+    return new DocumentDTO(
+        id,
+        workSpaceId,
+        categoryId,
+        title,
+        summary,
+        effectiveContent,
+        status,
+        parseStatus,
+        visibility,
+        sourceType,
+        sourceFileId,
+        realFileName,
+        currentVersion,
+        currentVersionTag,
+        versionCount,
+        publishedVersion,
+        coverUrl,
+        wordCount,
+        readCount,
+        createBy,
+        createTime,
+        updateTime);
+  }
 
   /** 兼容旧版参数构造器（无 fileName, versionCount, publishedVersion） */
   public DocumentDTO(

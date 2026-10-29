@@ -13,11 +13,11 @@ import io.lexiloom.application.user.api.WorkSpaceMemberQueryService;
 import io.lexiloom.application.user.api.WorkSpaceQueryService;
 import io.lexiloom.application.user.api.dto.UserDTO;
 import io.lexiloom.application.user.api.dto.WorkSpaceDTO;
+import java.time.Duration;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -93,8 +93,10 @@ public class WorkSpaceOverviewQueryService {
     int maxMembers = ws.maxMembers() != null ? ws.maxMembers() : DEFAULT_MAX_MEMBERS;
     double usagePercentage =
         maxMembers > 0
-            ? Math.min(
-                100.0, Math.round(((double) currentMembers / maxMembers * 100) * 10.0) / 10.0)
+            ? Math.clamp(
+                Math.round(((double) currentMembers / maxMembers * 100) * 10.0) / 10.0,
+                0.0,
+                100.0)
             : 0.0;
     long ownerCount =
         workSpaceMemberQueryService.countMembersByRole(workSpaceId, WorkSpaceRoleEnum.OWNER);
@@ -287,7 +289,9 @@ public class WorkSpaceOverviewQueryService {
     // 8. 写入 Redis 缓存
     try {
       String json = objectMapper.writeValueAsString(response);
-      redisTemplate.opsForValue().set(cacheKey, json, CACHE_TTL_SECONDS, TimeUnit.SECONDS);
+      redisTemplate
+          .opsForValue()
+          .set(cacheKey, json, Duration.ofSeconds(CACHE_TTL_SECONDS));
     } catch (Exception e) {
       log.warn("【WorkSpaceOverview】写入 Redis 缓存失败: wsId={}, error={}", workSpaceId, e.getMessage());
     }

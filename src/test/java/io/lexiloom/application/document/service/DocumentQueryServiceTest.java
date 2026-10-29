@@ -11,7 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.querydsl.core.types.Predicate;
-import io.lexiloom.application.common.ErrorCode;
+import io.lexiloom.application.exception.ErrorCode;
 import io.lexiloom.application.document.acl.DocAccessControlService;
 import io.lexiloom.application.document.api.dto.DocParseStatusDTO;
 import io.lexiloom.application.document.api.dto.DocumentDTO;
@@ -24,9 +24,10 @@ import io.lexiloom.application.document.model.request.DocumentPageRequest;
 import io.lexiloom.application.document.parser.DocParseStatusEnum;
 import io.lexiloom.application.document.repository.DocSourceFileRepository;
 import io.lexiloom.application.document.repository.DocumentRepository;
-import io.lexiloom.application.document.statemachine.DocumentStateEnum;
+import io.lexiloom.application.document.api.dto.DocumentStateEnum;
 import io.lexiloom.application.enums.WorkSpaceAclEnum;
 import io.lexiloom.application.exception.BusinessException;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -230,7 +231,7 @@ class DocumentQueryServiceTest {
   @DisplayName("阅读量去重：首次阅读（Redis 无记录）→ 原子 SQL incrementReadCount 被调用")
   void testOnDocumentRead_firstRead_incrementsCount() {
     when(stringRedisTemplate.opsForValue()).thenReturn(valueOps);
-    when(valueOps.setIfAbsent(anyString(), eq("1"), eq(24L), eq(TimeUnit.HOURS)))
+    when(valueOps.setIfAbsent(anyString(), eq("1"), eq(Duration.ofHours(24))))
         .thenReturn(Boolean.TRUE);
 
     queryService.onDocumentRead(new DocumentReadEvent(100L, 10L));
@@ -242,7 +243,7 @@ class DocumentQueryServiceTest {
   @DisplayName("阅读量去重：24h 内重复阅读（Redis 有记录）→ incrementReadCount 不再调用")
   void testOnDocumentRead_repeatedRead_skipsIncrement() {
     when(stringRedisTemplate.opsForValue()).thenReturn(valueOps);
-    when(valueOps.setIfAbsent(anyString(), eq("1"), eq(24L), eq(TimeUnit.HOURS)))
+    when(valueOps.setIfAbsent(anyString(), eq("1"), eq(Duration.ofHours(24))))
         .thenReturn(Boolean.FALSE);
 
     queryService.onDocumentRead(new DocumentReadEvent(100L, 10L));
@@ -417,5 +418,50 @@ class DocumentQueryServiceTest {
     assertThat(dto.publishedVersion()).isEqualTo(2);
     assertThat(dto.currentVersion()).isEqualTo(3);
     assertThat(dto.status()).isEqualTo(DocumentStateEnum.APPROVED);
+  }
+
+  @Test
+  @DisplayName("按分类检索文档列表：非管理员应过滤他人私密文档")
+  void testListByCategory_FiltersPrivateDocumentsForNonAdmin() {
+    DocumentEntity myPrivateDoc =
+        DocumentEntity.createFromImport(1L, 5L, "我的私密文档", "摘要", "正文", WorkSpaceAclEnum.PRIVATE);
+    ReflectionTestUtils.setField(myPrivateDoc, "id", 101L);
+    ReflectionTestUtils.setField(myPrivateDoc, "createBy", 10L);
+
+    DocumentEntity othersPrivateDoc =
+        DocumentEntity.createFromImport(1L, 5L, "他人的私密文档", "摘要", "正文", WorkSpaceAclEnum.PRIVATE);
+    ReflectionTestUtils.setField(othersPrivateDoc, "id", 102L);
+    ReflectionTestUtils.setField(othersPrivateDoc, "createBy", 99L);
+
+    when(docAccessControlService.isWorkspaceAdmin(1L, 10L)).thenReturn(false);
+    when(documentRepository.findByWorkSpaceIdAndCategoryId(1L, 5L))
+        .thenReturn(List.of(myPrivateDoc, othersPrivateDoc));
+
+    DocumentDTO myDto =
+        new DocumentDTO(
+            101L,
+            1L,
+            5L,
+            "我的私密文档",
+            "摘要",
+            "正文",
+            DocumentStateEnum.APPROVED,
+            WorkSpaceAclEnum.PRIVATE,
+            DocSourceTypeEnum.IMPORT,
+            null,
+            0,
+            "v1.0",
+            null,
+            4,
+            0,
+            10L,
+            LocalDateTime.now(),
+            LocalDateTime.now());
+    when(documentMapper.toDTOList(List.of(myPrivateDoc))).thenReturn(List.of(myDto));
+
+    List<DocumentDTO> result = queryService.listByCategory(1L, 5L, 10L);
+
+    assertThat(result).hasSize(1);
+    assertThat(result.getFirst().id()).isEqualTo(101L);
   }
 }

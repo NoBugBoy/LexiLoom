@@ -9,9 +9,11 @@ import static org.mockito.Mockito.when;
 
 import io.lexiloom.application.ai.listener.DocVectorSyncListener;
 import io.lexiloom.application.ai.model.request.AiChatRequest;
+import io.lexiloom.application.ai.model.request.ApiKeyTokenUsageQueryRequest;
 import io.lexiloom.application.ai.model.request.ConversationSessionCreateRequest;
 import io.lexiloom.application.ai.model.response.AiChatResponse;
 import io.lexiloom.application.ai.model.response.AiReindexResponse;
+import io.lexiloom.application.ai.model.response.ApiKeyTokenUsageResponse;
 import io.lexiloom.application.ai.model.search.DocChunkDocument;
 import io.lexiloom.application.ai.model.vo.ConversationMessageVO;
 import io.lexiloom.application.ai.model.vo.ConversationSessionVO;
@@ -28,7 +30,7 @@ import io.lexiloom.application.ai.trace.model.RagTracePageRequest;
 import io.lexiloom.application.common.SecurityHolder;
 import io.lexiloom.application.document.api.DocumentQueryApi;
 import io.lexiloom.application.document.api.dto.DocumentDTO;
-import io.lexiloom.application.document.statemachine.DocumentStateEnum;
+import io.lexiloom.application.document.api.dto.DocumentStateEnum;
 import io.lexiloom.application.enums.WorkSpaceAclEnum;
 import io.lexiloom.application.enums.WorkSpaceRoleEnum;
 import io.lexiloom.application.exception.BusinessException;
@@ -598,6 +600,50 @@ class AiChatControllerTest {
     when(workSpaceMemberQueryService.isMember(20L, 999L)).thenReturn(false);
 
     assertThatThrownBy(() -> controller.getTokenUsageStats(20L, 7))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("您不是该工作空间成员");
+  }
+
+  @Test
+  @DisplayName("验证 GET /api/ai/stats/tokens/api-keys 控制器正常转发查询")
+  void testGetApiKeyTokenUsageStats() {
+    SecurityHolder.setAuthentication(100L);
+    when(workSpaceMemberQueryService.isMember(1L, 100L)).thenReturn(true);
+
+    ApiKeyTokenUsageQueryRequest request =
+        new ApiKeyTokenUsageQueryRequest("lx_live_b7c2xxxx", 1L, "DAILY", 30, null);
+    ApiKeyTokenUsageResponse mockResponse =
+        new ApiKeyTokenUsageResponse(
+            "DAILY",
+            "lx_live_b7c2****xxxx",
+            1L,
+            LocalDateTime.now().minusDays(30),
+            LocalDateTime.now(),
+            new ApiKeyTokenUsageResponse.TokenUsageSummaryVO(5000L, 2000L, 3000L, 0L, 0L, 10L),
+            List.of(),
+            List.of());
+
+    when(aiStatsQueryService.getApiKeyTokenUsageStats(request)).thenReturn(mockResponse);
+
+    ApiKeyTokenUsageResponse actual = controller.getApiKeyTokenUsageStats(request);
+
+    assertThat(actual).isNotNull();
+    assertThat(actual.periodType()).isEqualTo("DAILY");
+    assertThat(actual.targetApiKey()).isEqualTo("lx_live_b7c2****xxxx");
+    assertThat(actual.total().totalTokens()).isEqualTo(5000L);
+    verify(aiStatsQueryService).getApiKeyTokenUsageStats(request);
+  }
+
+  @Test
+  @DisplayName("验证 GET /api/ai/stats/tokens/api-keys 无权限访问空间时校验拦截")
+  void testGetApiKeyTokenUsageStatsForbidden() {
+    SecurityHolder.setAuthentication(999L);
+    when(workSpaceMemberQueryService.isMember(2L, 999L)).thenReturn(false);
+
+    ApiKeyTokenUsageQueryRequest request =
+        new ApiKeyTokenUsageQueryRequest(null, 2L, "MONTHLY", null, 6);
+
+    assertThatThrownBy(() -> controller.getApiKeyTokenUsageStats(request))
         .isInstanceOf(BusinessException.class)
         .hasMessageContaining("您不是该工作空间成员");
   }

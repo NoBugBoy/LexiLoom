@@ -2,7 +2,7 @@ package io.lexiloom.application.document.model.request;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.lexiloom.application.common.BasePageRequest;
-import io.lexiloom.application.document.statemachine.DocumentStateEnum;
+import io.lexiloom.application.document.api.dto.DocumentStateEnum;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 import lombok.EqualsAndHashCode;

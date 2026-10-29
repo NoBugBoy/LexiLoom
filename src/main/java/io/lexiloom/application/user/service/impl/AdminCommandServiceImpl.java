@@ -22,6 +22,7 @@ public class AdminCommandServiceImpl implements AdminCommandService {
   private final CacheHelper cacheHelper;
 
   @Override
+  @Transactional(rollbackFor = Throwable.class)
   public Long saveAdminUser(String email, String password) {
     AdminEntity adminEntity = adminEntityMapper.toAdminEntity(email, password, true);
 
@@ -37,11 +38,12 @@ public class AdminCommandServiceImpl implements AdminCommandService {
             .findById(userId)
             .filter(adminEntity -> passwordEncoder.matches(password, adminEntity.getPassword()))
             .orElseThrow(() -> BusinessException.badRequest("旧密码错误"));
-    admin.setPassword(passwordEncoder.encode(newPassword));
+    admin.changePassword(passwordEncoder.encode(newPassword));
     adminRepository.saveAndFlush(admin);
   }
 
   @Override
+  @Transactional(rollbackFor = Throwable.class)
   public void resetPassword(String ott) {
     cacheHelper
         .getAndEvict(AccountCacheKey.OTT_RESET_PASSWORD, ott)
@@ -51,7 +53,7 @@ public class AdminCommandServiceImpl implements AdminCommandService {
                   .findByEmail(it.email())
                   .map(
                       admin -> {
-                        admin.setPassword(passwordEncoder.encode(it.newPassword()));
+                        admin.changePassword(passwordEncoder.encode(it.newPassword()));
                         adminRepository.saveAndFlush(admin);
                         return it;
                       })

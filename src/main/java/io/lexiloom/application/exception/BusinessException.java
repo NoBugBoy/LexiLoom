@@ -1,7 +1,7 @@
 package io.lexiloom.application.exception;
 
-import io.lexiloom.application.common.ErrorCode;
-import io.lexiloom.application.common.ErrorCode.Common;
+import io.lexiloom.application.exception.ErrorCode;
+import io.lexiloom.application.exception.ErrorCode.Common;
 import java.util.HashMap;
 import java.util.Map;
 import lombok.Getter;

@@ -19,17 +19,19 @@ class SessionLogoutServiceTest {
   @InjectMocks private SessionLogoutService sessionLogoutService;
 
   @Test
-  @DisplayName("logout - 空 token 幂等，不调用 redis")
+  @DisplayName("logout - 空或空白 token 幂等，不调用 redis")
   void testLogoutNullHeader() {
     sessionLogoutService.logout(null);
+    sessionLogoutService.logout("   ");
+    sessionLogoutService.logout("Bearer   ");
     verifyNoInteractions(redisTokenManager);
   }
 
   @Test
-  @DisplayName("logout - 正常登出删除 Redis Token")
+  @DisplayName("logout - 正常登出（含 Bearer 前缀自动剥离）删除 Redis Token")
   void testLogoutSuccess() {
     String token = "test-token-uuid";
-    sessionLogoutService.logout(token);
+    sessionLogoutService.logout("Bearer " + token);
     verify(redisTokenManager).deleteToken(token);
   }
 }

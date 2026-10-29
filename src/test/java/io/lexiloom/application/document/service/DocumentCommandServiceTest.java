@@ -18,16 +18,16 @@ import io.lexiloom.application.document.model.enums.DocSourceTypeEnum;
 import io.lexiloom.application.document.model.event.DocumentDeletedEvent;
 import io.lexiloom.application.document.model.event.DocumentUpdatedEvent;
 import io.lexiloom.application.document.model.request.DocumentTransitionRequest;
-import io.lexiloom.application.document.model.request.DocumentUpdateRequest;
+import io.lexiloom.application.document.parser.DocParserEngineEnum;
 import io.lexiloom.application.document.pipeline.DocumentImportCommand;
 import io.lexiloom.application.document.pipeline.DocumentImportPipeline;
 import io.lexiloom.application.document.repository.DocCategoryRepository;
 import io.lexiloom.application.document.repository.DocCommentRepository;
 import io.lexiloom.application.document.repository.DocSourceFileRepository;
 import io.lexiloom.application.document.repository.DocumentRepository;
-import io.lexiloom.application.document.statemachine.DocumentEventEnum;
+import io.lexiloom.application.document.api.dto.DocumentEventEnum;
 import io.lexiloom.application.document.statemachine.DocumentStateContext;
-import io.lexiloom.application.document.statemachine.DocumentStateEnum;
+import io.lexiloom.application.document.api.dto.DocumentStateEnum;
 import io.lexiloom.application.document.statemachine.DocumentStateMachineEngine;
 import io.lexiloom.application.enums.WorkSpaceAclEnum;
 import io.lexiloom.application.exception.BusinessException;
@@ -74,121 +74,6 @@ class DocumentCommandServiceTest {
             docCategoryRepository,
             docSourceFileRepository,
             approvalApi);
-  }
-
-  @Test
-  @DisplayName("更新文档：未传 summary / coverUrl 时保留原值，避免部分更新误清空")
-  void testUpdateDocumentKeepsUntouchedFields() {
-    DocumentEntity doc =
-        DocumentEntity.createFromImport(1L, 0L, "原标题", "原摘要", "原内容", WorkSpaceAclEnum.INTERNAL);
-    ReflectionTestUtils.setField(doc, "id", 100L);
-    ReflectionTestUtils.setField(doc, "status", DocumentStateEnum.APPROVED);
-    ReflectionTestUtils.setField(doc, "coverUrl", "/uploads/cover.png");
-    when(documentRepository.findById(100L)).thenReturn(Optional.of(doc));
-    when(documentRepository.save(any(DocumentEntity.class))).thenAnswer(inv -> inv.getArgument(0));
-
-    DocumentUpdateRequest req = new DocumentUpdateRequest(null, null, "仅更新正文", null, null, null);
-    commandService.update(100L, req, 10L);
-
-    assertThat(doc.getSummary()).isEqualTo("原摘要");
-    assertThat(doc.getCoverUrl()).isEqualTo("/uploads/cover.png");
-    assertThat(doc.getContent()).isEqualTo("仅更新正文");
-  }
-
-  @Test
-  @DisplayName("更新文档：显式传空白 coverUrl 时清除封面")
-  void testUpdateDocumentClearsCoverWhenBlank() {
-    DocumentEntity doc =
-        DocumentEntity.createFromImport(1L, 0L, "标题", "摘要", "内容", WorkSpaceAclEnum.INTERNAL);
-    ReflectionTestUtils.setField(doc, "id", 100L);
-    ReflectionTestUtils.setField(doc, "status", DocumentStateEnum.APPROVED);
-    ReflectionTestUtils.setField(doc, "coverUrl", "/uploads/cover.png");
-    when(documentRepository.findById(100L)).thenReturn(Optional.of(doc));
-    when(documentRepository.save(any(DocumentEntity.class))).thenAnswer(inv -> inv.getArgument(0));
-
-    DocumentUpdateRequest req = new DocumentUpdateRequest(null, null, null, null, null, "   ");
-    commandService.update(100L, req, 10L);
-
-    assertThat(doc.getCoverUrl()).isNull();
-  }
-
-  @Test
-  @DisplayName("更新文档：校验写权限并更新核心属性")
-  void testUpdateDocumentSuccess() {
-    DocumentEntity doc =
-        DocumentEntity.createFromImport(1L, 0L, "原标题", "原摘要", "原内容", WorkSpaceAclEnum.INTERNAL);
-    ReflectionTestUtils.setField(doc, "id", 100L);
-    ReflectionTestUtils.setField(doc, "status", DocumentStateEnum.APPROVED);
-    when(documentRepository.findById(100L)).thenReturn(Optional.of(doc));
-    when(documentRepository.save(any(DocumentEntity.class))).thenAnswer(inv -> inv.getArgument(0));
-
-    DocumentDTO mockDto =
-        new DocumentDTO(
-            100L,
-            1L,
-            0L,
-            "新标题",
-            "新摘要",
-            "新内容",
-            DocumentStateEnum.APPROVED,
-            WorkSpaceAclEnum.INTERNAL,
-            DocSourceTypeEnum.IMPORT,
-            null,
-            0,
-            "v0.1-draft",
-            null,
-            3,
-            0,
-            10L,
-            LocalDateTime.now(),
-            LocalDateTime.now());
-    when(documentMapper.toDTO(any(DocumentEntity.class))).thenReturn(mockDto);
-
-    DocumentUpdateRequest req = new DocumentUpdateRequest("新标题", "新摘要", "新内容", null, null, null);
-    DocumentDTO result = commandService.update(100L, req, 10L);
-
-    assertThat(result.title()).isEqualTo("新标题");
-    verify(docAccessControlService).assertCanWrite(doc, 10L);
-    verify(documentRepository).save(doc);
-  }
-
-  @Test
-  @DisplayName("更新已发布文档：发布 DocumentUpdatedEvent 领域事件触发下游 ES 索引同步")
-  void testUpdatePublishedDocument_publishesUpdatedEvent() {
-    DocumentEntity doc =
-        DocumentEntity.createFromImport(1L, 0L, "原标题", "原摘要", "原内容", WorkSpaceAclEnum.INTERNAL);
-    ReflectionTestUtils.setField(doc, "id", 100L);
-    ReflectionTestUtils.setField(doc, "status", DocumentStateEnum.APPROVED);
-
-    when(documentRepository.findById(100L)).thenReturn(Optional.of(doc));
-    when(documentRepository.save(any(DocumentEntity.class))).thenAnswer(inv -> inv.getArgument(0));
-
-    DocumentDTO mockDto =
-        new DocumentDTO(
-            100L,
-            1L,
-            0L,
-            "新标题",
-            "新摘要",
-            "新内容",
-            DocumentStateEnum.APPROVED,
-            WorkSpaceAclEnum.INTERNAL,
-            DocSourceTypeEnum.IMPORT,
-            null,
-            0,
-            "v1.0",
-            null,
-            3,
-            0,
-            10L,
-            LocalDateTime.now(),
-            LocalDateTime.now());
-    when(documentMapper.toDTO(any(DocumentEntity.class))).thenReturn(mockDto);
-
-    DocumentUpdateRequest req = new DocumentUpdateRequest("新标题", "新摘要", "新内容", null, null, null);
-    commandService.update(100L, req, 10L);
-
-    verify(eventPublisher).publishEvent(any(DocumentUpdatedEvent.class));
   }
 
   @Test
@@ -379,5 +264,25 @@ class DocumentCommandServiceTest {
         org.mockito.ArgumentCaptor.forClass(DocumentImportCommand.class);
     verify(importPipeline).importFile(captor.capture(), eq(10L));
     assertThat(captor.getValue().originalFileName()).isEqualTo("evil.md");
+  }
+
+  @Test
+  @DisplayName("文件导入：50MB 文件（处于 100MB 阈值内）正常放行，不被误拦截")
+  void testImportFileAllowsFileWithin100MbLimit() throws Exception {
+    org.springframework.web.multipart.MultipartFile file =
+        org.mockito.Mockito.mock(org.springframework.web.multipart.MultipartFile.class);
+    when(file.isEmpty()).thenReturn(false);
+    when(file.getSize()).thenReturn(50L * 1024 * 1024);
+    when(file.getOriginalFilename()).thenReturn("large-handbook.pdf");
+    when(file.getContentType()).thenReturn("application/pdf");
+    when(file.getInputStream())
+        .thenAnswer(
+            inv ->
+                new java.io.ByteArrayInputStream(
+                    "pdf".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+
+    commandService.importFile(1L, 0L, file, null, WorkSpaceAclEnum.INTERNAL, 10L);
+
+    verify(importPipeline).importFile(any(DocumentImportCommand.class), eq(10L));
   }
 }

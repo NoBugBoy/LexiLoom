@@ -20,6 +20,10 @@ public record LoginUserAuthentication(
     @Nullable OpenApiPrincipal openApiPrincipal)
     implements Authentication {
 
+  public LoginUserAuthentication {
+    roles = roles == null ? List.of() : List.copyOf(roles);
+  }
+
   public LoginUserAuthentication(Long userId, List<String> roles, @Nullable String apiKey) {
     this(userId, roles, apiKey, null);
   }

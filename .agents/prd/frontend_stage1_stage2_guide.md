@@ -179,7 +179,7 @@ stateDiagram-v2
 ### 3.2 接口详细规范
 
 > [!IMPORTANT]
-> **LexiLoom 不提供"空白新建文档"功能。** 所有文档必须通过文件导入（`POST /documents/import`）由 DeepDoc 引擎解析进入系统，导入完成后自动生成草稿（`DRAFT`）供用户在 Markdown 编辑器中二次编辑精修。
+> **LexiLoom 不提供"空白新建文档"与"直接在线修改文档正文"功能。** 所有文档必须通过文件导入（`POST /documents/import`）由 DeepDoc 引擎解析进入系统。当前系统**不需要直接在线修改文档功能**，如需修改文档内容，只能在本地修改原始文件本身并进行二次上传更新（`POST /documents/{id}/reupload` 或 `POST /documents/import?documentId={id}`）。
 
 #### 1. 查阅文档详情
 - **请求方式**：`GET /documents/{id}`
@@ -208,32 +208,16 @@ stateDiagram-v2
   }
   ```
 
-#### 2. 编辑更新文档
-- **请求方式**：`PUT /documents/{id}`
-- **请求体**：
-  ```json
-  {
-    "title": "系统架构设计规范 (修订版)",
-    "summary": "新增了消息队列一致性设计方案",
-    "content": "# 完整Markdown新正文...",
-    "categoryId": 10,
-    "visibility": "INTERNAL",
-    "coverUrl": null
-  }
-  ```
-- **响应**：更新后的 `DocumentDTO`。
-
-#### 3. 删除文档（软删除）
+#### 2. 删除文档（软删除）
 - **请求方式**：`DELETE /documents/{id}`
 - **响应**：`200 OK`
 
-#### 4. 点赞文档
+#### 3. 点赞文档
 - **请求方式**：`POST /documents/{id}/like`
 - **业务规则**：基于 Redis 24 小时去重保护，同一用户对同一篇文档 24 小时内仅能点赞一次；重复点赞将返回 HTTP 400 业务提示。
 - **响应**：`200 OK`
 
-
-#### 5. 动态多条件分页查询文档列表
+#### 4. 动态多条件分页查询文档列表
 - **请求方式**：`POST /documents/page`
 - **请求体**：
   ```json
@@ -248,7 +232,7 @@ stateDiagram-v2
   ```
 - **响应**：Spring Data 标准 `Page<DocumentDTO>` 分页对象（包含 `content`, `totalElements`, `totalPages`, `number` 等）。
 
-#### 6. 文档生命周期流转驱动
+#### 5. 文档生命周期流转驱动
 
 - **请求方式**：`POST /documents/{id}/transition`
 - **请求体**：
@@ -278,6 +262,7 @@ stateDiagram-v2
   |:---|:---|:---|:---|
   | `file` | Binary | 是 | 上传的原文件 |
   | `workSpaceId`| Long | 是 | 归属工作空间 ID |
+  | `documentId` | Long | 否 | 目标文档 ID（若传入则对已有文档升级新版本并重新解析） |
   | `categoryId` | Long | 否 | 分类目录 ID |
   | `preferredEngine` | String | 否 | 解析引擎：`AUTO` (推荐) \| `MARKITDOWN` \| `MINERU` |
   | `extractPdfToDoc` | Boolean| 否 | 是否直接将 PDF 提炼创建为 Markdown 文档（默认 false） |
@@ -291,7 +276,7 @@ stateDiagram-v2
     "originalFileName": "prd_v1.0.docx",
     "storagePath": "workspaces/1/docs/a1b2c3d4_prd_v1.0.docx",
     "storageUrl": "http://localhost:9000/lexiloom/workspaces/1/docs/...",
-    "parseStatus": "SUCCESS",     // SUCCESS | PREVIEW_ONLY | FAILED
+    "parseStatus": "SUCCESS",     // QUEUED | ASYNC_PROCESSING | SUCCESS | FAILED
     "engineUsed": "MARKITDOWN",
     "instantUpload": false,       // 是否秒传命中
     "previewOrMarkdownContent": "# 解析抽取的 Markdown 内容...",

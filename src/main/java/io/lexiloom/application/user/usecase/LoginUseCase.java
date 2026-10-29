@@ -1,23 +1,23 @@
 package io.lexiloom.application.user.usecase;
 
-import cn.binarywang.wx.miniapp.api.WxMaService;
-import io.lexiloom.application.common.CustomerProperties;
+import cn.hutool.core.util.StrUtil;
 import io.lexiloom.application.common.UseCase;
 import io.lexiloom.application.common.security.RedisTokenManager;
 import io.lexiloom.application.exception.BusinessException;
-import io.lexiloom.application.user.api.UserQueryService;
 import io.lexiloom.application.user.model.entity.UserEntity;
 import io.lexiloom.application.user.service.UserCommandService;
+import io.lexiloom.application.user.service.UserEntityQueryService;
 import io.lexiloom.application.user.service.impl.UserCommandServiceImpl.UserRegister;
 import io.lexiloom.application.user.usecase.LoginUseCase.LoginCommand;
 import java.util.Collections;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import me.chanjar.weixin.common.error.WxErrorException;
 import org.springframework.stereotype.Service;
 
 /**
+ * 用户凭据登录用例
+ *
  * @author yujian
  */
 @Service
@@ -25,9 +25,7 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class LoginUseCase implements UseCase<LoginCommand, String> {
   private final UserCommandService userCommandService;
-  private final UserQueryService userQueryService;
-  private final WxMaService wxMaService;
-  private final CustomerProperties customerProperties;
+  private final UserEntityQueryService userQueryService;
   private final RedisTokenManager redisTokenManager;
 
   public record LoginCommand(String loginCode) {}
@@ -35,22 +33,12 @@ public class LoginUseCase implements UseCase<LoginCommand, String> {
   @Override
   public String execute(LoginCommand loginCommand) {
     final var loginCode = loginCommand.loginCode();
-    String openid;
-    String unionId;
-
-    try {
-      var sessionInfo = wxMaService.getUserService().getSessionInfo(loginCode);
-      openid = sessionInfo.getOpenid();
-      unionId = sessionInfo.getUnionid();
-
-    } catch (WxErrorException e) {
-      log.error("微信 code2Session 调用失败, loginCode: {}", loginCode, e);
-      throw handleWxException(e, "登录异常,请稍后重试");
+    if (StrUtil.isBlank(loginCode)) {
+      throw BusinessException.badRequest("登录凭据不能为空");
     }
 
-    var user = userQueryService.isFirstLogin(openid);
-
-    return doRegisterAndLogin(user, openid, unionId);
+    var user = userQueryService.isFirstLogin(loginCode);
+    return doRegisterAndLogin(user, loginCode, null);
   }
 
   private String doRegisterAndLogin(Optional<UserEntity> user, String openid, String unionId) {
@@ -63,15 +51,5 @@ public class LoginUseCase implements UseCase<LoginCommand, String> {
             .getId();
     log.info(">>> userId = {} 登录", userId);
     return redisTokenManager.generateToken(userId, Collections.emptyList());
-  }
-
-  private BusinessException handleWxException(WxErrorException e, String defaultMsg) {
-    int errCode = e.getError().getErrorCode();
-    return switch (errCode) {
-      case 40029 -> new BusinessException("微信登录凭证已失效，请重新打开小程序");
-      case 45011 -> new BusinessException("操作过于频繁，请稍后再试");
-      case -1 -> new BusinessException("微信系统繁忙，请稍后重试");
-      default -> new BusinessException(defaultMsg + " (错误码: " + errCode + ")");
-    };
   }
 }

@@ -1,5 +1,9 @@
 package io.lexiloom.application.document.parser;
 
+import io.lexiloom.application.document.api.dto.DocBoxMetadata;
+import io.lexiloom.application.document.api.dto.DocTextChunk;
+import io.lexiloom.application.document.api.DocumentContentCleaner;
+
 import cn.hutool.core.util.StrUtil;
 import java.util.ArrayList;
 import java.util.List;
@@ -91,8 +95,8 @@ public final class DeepDocCoordinateUtil {
     try {
       JsonNode root = OBJECT_MAPPER.readTree(trimmed);
       int code = root.hasNonNull("code") ? root.get("code").asInt(200) : 200;
-      String filename = root.hasNonNull("filename") ? root.get("filename").asText() : "";
-      String fileType = root.hasNonNull("file_type") ? root.get("file_type").asText() : "";
+      String filename = root.hasNonNull("filename") ? root.get("filename").asString() : "";
+      String fileType = root.hasNonNull("file_type") ? root.get("file_type").asString() : "";
       int totalChunks = root.hasNonNull("total_chunks") ? root.get("total_chunks").asInt(0) : 0;
 
       List<DeepDocBlock> blocks =
@@ -118,13 +122,13 @@ public final class DeepDocCoordinateUtil {
             if (!cNode.isObject()) {
               continue;
             }
-            String chunkId = cNode.hasNonNull("chunk_id") ? cNode.get("chunk_id").asText() : "";
+            String chunkId = cNode.hasNonNull("chunk_id") ? cNode.get("chunk_id").asString() : "";
             String content =
                 cNode.hasNonNull("content")
-                    ? cNode.get("content").asText()
-                    : cNode.hasNonNull("text") ? cNode.get("text").asText() : "";
-            String type = cNode.hasNonNull("type") ? cNode.get("type").asText() : "text";
-            String anchor = cNode.hasNonNull("anchor") ? cNode.get("anchor").asText() : null;
+                    ? cNode.get("content").asString()
+                    : cNode.hasNonNull("text") ? cNode.get("text").asString() : "";
+            String type = cNode.hasNonNull("type") ? cNode.get("type").asString() : "text";
+            String anchor = cNode.hasNonNull("anchor") ? cNode.get("anchor").asString() : null;
             Integer page = cNode.hasNonNull("page") ? cNode.get("page").asInt() : null;
 
             DocBoxMetadata boxMeta = null;
@@ -154,8 +158,8 @@ public final class DeepDocCoordinateUtil {
 
         // 提取 Markdown：优先使用服务端直接返回的完整 markdown 文本
         String markdown = "";
-        if (root.hasNonNull("markdown") && StrUtil.isNotBlank(root.get("markdown").asText())) {
-          markdown = root.get("markdown").asText();
+        if (root.hasNonNull("markdown") && StrUtil.isNotBlank(root.get("markdown").asString())) {
+          markdown = root.get("markdown").asString();
         } else {
           StringBuilder sb = new StringBuilder();
           for (DocTextChunk c : chunks) {
@@ -214,19 +218,19 @@ public final class DeepDocCoordinateUtil {
       if (!node.isObject()) continue;
       String id =
           node.hasNonNull("block_id")
-              ? node.get("block_id").asText()
+              ? node.get("block_id").asString()
               : node.hasNonNull("chunk_id")
-                  ? node.get("chunk_id").asText()
+                  ? node.get("chunk_id").asString()
                   : "block_" + fallbackSequence;
       int sequence = node.hasNonNull("sequence") ? node.get("sequence").asInt() : fallbackSequence;
       String type =
           node.hasNonNull("block_type")
-              ? node.get("block_type").asText()
-              : node.hasNonNull("type") ? node.get("type").asText() : "text";
+              ? node.get("block_type").asString()
+              : node.hasNonNull("type") ? node.get("type").asString() : "text";
       String content =
           node.hasNonNull("content")
-              ? node.get("content").asText()
-              : node.hasNonNull("text") ? node.get("text").asText() : "";
+              ? node.get("content").asString()
+              : node.hasNonNull("text") ? node.get("text").asString() : "";
       Integer page = node.hasNonNull("page") ? node.get("page").asInt() : null;
       DocBoxMetadata box = null;
       JsonNode bbox = node.has("bbox") ? node.get("bbox") : node.get("box");
@@ -240,8 +244,8 @@ public final class DeepDocCoordinateUtil {
                 bbox.get(3).asDouble());
         if (page == null) page = box.page();
       }
-      String anchor = node.hasNonNull("anchor") ? node.get("anchor").asText() : null;
-      String source = node.hasNonNull("source") ? node.get("source").asText() : "deepdoc";
+      String anchor = node.hasNonNull("anchor") ? node.get("anchor").asString() : null;
+      String source = node.hasNonNull("source") ? node.get("source").asString() : "deepdoc";
       blocks.add(new DeepDocBlock(id, sequence, type, content, page, box, anchor, source));
       fallbackSequence++;
     }
@@ -422,7 +426,7 @@ public final class DeepDocCoordinateUtil {
   private static String extractContentFromJsonNode(JsonNode root) {
     // 1. 优先使用 markdown 字段（若非空）
     if (root.hasNonNull("markdown")) {
-      String md = root.get("markdown").asText();
+      String md = root.get("markdown").asString();
       if (StrUtil.isNotBlank(md)) {
         return md;
       }
@@ -434,8 +438,8 @@ public final class DeepDocCoordinateUtil {
       if (dataNode.isArray()) {
         StringBuilder sb = new StringBuilder();
         for (JsonNode item : dataNode) {
-          if (item.isTextual()) {
-            String text = item.asText();
+          if (item.isString()) {
+            String text = item.asString();
             if (StrUtil.isNotBlank(text)) {
               if (!sb.isEmpty()) {
                 sb.append("\n\n");
@@ -455,34 +459,34 @@ public final class DeepDocCoordinateUtil {
         if (!sb.isEmpty()) {
           return sb.toString();
         }
-      } else if (dataNode.isTextual()) {
-        return dataNode.asText();
+      } else if (dataNode.isString()) {
+        return dataNode.asString();
       }
     }
 
     // 3. 兜底检查 text 或 content 字段
-    if (root.hasNonNull("text") && StrUtil.isNotBlank(root.get("text").asText())) {
-      return root.get("text").asText();
+    if (root.hasNonNull("text") && StrUtil.isNotBlank(root.get("text").asString())) {
+      return root.get("text").asString();
     }
-    if (root.hasNonNull("content") && StrUtil.isNotBlank(root.get("content").asText())) {
-      return root.get("content").asText();
+    if (root.hasNonNull("content") && StrUtil.isNotBlank(root.get("content").asString())) {
+      return root.get("content").asString();
     }
 
     return "";
   }
 
   private static String extractItemText(JsonNode item) {
-    if (item.hasNonNull("html") && StrUtil.isNotBlank(item.get("html").asText())) {
-      return item.get("html").asText();
+    if (item.hasNonNull("html") && StrUtil.isNotBlank(item.get("html").asString())) {
+      return item.get("html").asString();
     }
-    if (item.hasNonNull("text") && StrUtil.isNotBlank(item.get("text").asText())) {
-      return item.get("text").asText();
+    if (item.hasNonNull("text") && StrUtil.isNotBlank(item.get("text").asString())) {
+      return item.get("text").asString();
     }
-    if (item.hasNonNull("markdown") && StrUtil.isNotBlank(item.get("markdown").asText())) {
-      return item.get("markdown").asText();
+    if (item.hasNonNull("markdown") && StrUtil.isNotBlank(item.get("markdown").asString())) {
+      return item.get("markdown").asString();
     }
-    if (item.hasNonNull("content") && StrUtil.isNotBlank(item.get("content").asText())) {
-      return item.get("content").asText();
+    if (item.hasNonNull("content") && StrUtil.isNotBlank(item.get("content").asString())) {
+      return item.get("content").asString();
     }
     return "";
   }

@@ -20,7 +20,7 @@ import lombok.NoArgsConstructor;
 /**
  * 统一通用审批流记录实体 (ApprovalRecord)
  *
- * <p>遵循 DDD 充血模型设计，自闭合管理文档发布审批、跨空间横向关联及文档精准授权审批， 强制约束审批动作附带决断说明（为什么同意 / 为什么驳回）。
+ * <p>遵循 DDD 充血模型设计，自闭合管理文档发布审批、跨空间横向关联及文档精准授权审批，强制约束审批动作附带决断说明（为什么同意 / 为什么驳回）。
  */
 @Entity
 @Table(
@@ -30,17 +30,19 @@ import lombok.NoArgsConstructor;
       @Index(
           name = "idx_approval_target_status",
           columnList = "target_workspace_id, status, approval_type"),
-      @Index(name = "idx_approval_biz", columnList = "biz_id, approval_type")
+      @Index(name = "idx_approval_biz", columnList = "approval_type, biz_id, status")
     })
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class ApprovalRecordEntity extends BaseEntity {
 
+  private static final int MAX_COMMENT_LENGTH = 500;
+
   /** 审批业务类型 */
   @Enumerated(EnumType.STRING)
   @Column(
       name = "approval_type",
-      comment = "审批业务类型(DOCUMENT_PUBLISH/SPACE_LINK/DOC_ACCESS)",
+      comment = "审批业务类型(DOCUMENT_AUDIT/SPACE_LINK)",
       nullable = false,
       length = 32)
   private ApprovalTypeEnum approvalType;
@@ -71,7 +73,10 @@ public class ApprovalRecordEntity extends BaseEntity {
 
   /** 当前审批状态 */
   @Enumerated(EnumType.STRING)
-  @Column(comment = "当前审批状态(PENDING/APPROVED/REJECTED)", nullable = false, length = 20)
+  @Column(
+      comment = "当前审批状态(PENDING/APPROVED/REJECTED/CANCELLED)",
+      nullable = false,
+      length = 20)
   private ApprovalStatusEnum status;
 
   /** 实际审批人用户 ID */
@@ -115,7 +120,9 @@ public class ApprovalRecordEntity extends BaseEntity {
     record.targetWorkspaceId = targetWorkspaceId;
     record.applicantId = applicantId;
     record.applicantName = applicantName;
-    record.applyReason = StrUtil.blankToDefault(applyReason, "申请建立工作空间跨域文档检索关联");
+    record.applyReason =
+        normalizeText(
+            StrUtil.blankToDefault(applyReason, "申请建立工作空间跨域文档检索关联"), "申请理由不能超过500个字符");
     record.status = ApprovalStatusEnum.PENDING;
     record.extraData = extraData;
     return record;
@@ -140,7 +147,8 @@ public class ApprovalRecordEntity extends BaseEntity {
     record.targetWorkspaceId = workspaceId;
     record.applicantId = applicantId;
     record.applicantName = applicantName;
-    record.applyReason = StrUtil.blankToDefault(applyReason, "提交文档发布审核");
+    record.applyReason =
+        normalizeText(StrUtil.blankToDefault(applyReason, "提交文档发布审核"), "申请理由不能超过500个字符");
     record.status = ApprovalStatusEnum.PENDING;
     record.extraData = extraData;
     return record;
@@ -148,40 +156,33 @@ public class ApprovalRecordEntity extends BaseEntity {
 
   /** 审批通过 (必须提供审批通过说明) */
   public void approve(Long approverId, String approverName, String comment) {
-    if (this.status != ApprovalStatusEnum.PENDING) {
-      throw BusinessException.badRequest("当前审批单状态不是待审批，无法执行审批: " + this.status);
-    }
-    Objects.requireNonNull(approverId, "审批人 ID 不能为空");
-    if (StrUtil.isBlank(comment)) {
-      throw BusinessException.badRequest("审批通过必须填写说明（为什么同意）");
-    }
-
-    this.status = ApprovalStatusEnum.APPROVED;
-    this.approverId = approverId;
-    this.approverName = approverName;
-    this.approvalComment = comment.trim();
-    this.approvalTime = LocalDateTime.now();
+    completeDecision(
+        ApprovalStatusEnum.APPROVED,
+        approverId,
+        approverName,
+        comment,
+        "当前审批单状态不是待审批，无法执行审批: " + this.status,
+        "审批通过必须填写说明（为什么同意）");
   }
 
   /** 审批驳回 (必须提供驳回原因) */
   public void reject(Long approverId, String approverName, String comment) {
-    if (this.status != ApprovalStatusEnum.PENDING) {
-      throw BusinessException.badRequest("当前审批单状态不是待审批，无法执行驳回: " + this.status);
-    }
-    Objects.requireNonNull(approverId, "审批人 ID 不能为空");
-    if (StrUtil.isBlank(comment)) {
-      throw BusinessException.badRequest("审批驳回必须填写原因（为什么驳回）");
-    }
-
-    this.status = ApprovalStatusEnum.REJECTED;
-    this.approverId = approverId;
-    this.approverName = approverName;
-    this.approvalComment = comment.trim();
-    this.approvalTime = LocalDateTime.now();
+    completeDecision(
+        ApprovalStatusEnum.REJECTED,
+        approverId,
+        approverName,
+        comment,
+        "当前审批单状态不是待审批，无法执行驳回: " + this.status,
+        "审批驳回必须填写原因（为什么驳回）");
   }
 
   /** 申请人主动撤回审批单 */
   public void cancel(Long operatorId) {
+    cancel(operatorId, null);
+  }
+
+  /** 申请人主动撤回审批单（支持附带可选撤回备注） */
+  public void cancel(Long operatorId, String comment) {
     if (this.status != ApprovalStatusEnum.PENDING) {
       throw BusinessException.badRequest("当前审批单已处理，无法撤回: " + this.status);
     }
@@ -189,5 +190,53 @@ public class ApprovalRecordEntity extends BaseEntity {
       throw BusinessException.forbidden("仅申请人本人可撤回审批单");
     }
     this.status = ApprovalStatusEnum.CANCELLED;
+    this.approvalComment =
+        normalizeText(StrUtil.blankToDefault(comment, "申请人主动撤回审批单"), "撤回说明不能超过500个字符");
+    this.approvalTime = LocalDateTime.now();
+  }
+
+  /**
+   * 同一业务实体重新发起审批时，自动归档/取代历史残留的 PENDING 审批单，防止产生幽灵待办单
+   *
+   * @param reason 取代说明
+   */
+  public void supersede(String reason) {
+    if (this.status != ApprovalStatusEnum.PENDING) {
+      return;
+    }
+    this.status = ApprovalStatusEnum.CANCELLED;
+    this.approvalComment =
+        normalizeText(StrUtil.blankToDefault(reason, "业务重新发起审批，旧待审单自动失效"), "归档说明不能超过500个字符");
+    this.approvalTime = LocalDateTime.now();
+  }
+
+  private void completeDecision(
+      ApprovalStatusEnum targetStatus,
+      Long approverId,
+      String approverName,
+      String comment,
+      String invalidStateMessage,
+      String blankCommentMessage) {
+    if (this.status != ApprovalStatusEnum.PENDING) {
+      throw BusinessException.badRequest(invalidStateMessage);
+    }
+    Objects.requireNonNull(approverId, "审批人 ID 不能为空");
+    if (StrUtil.isBlank(comment)) {
+      throw BusinessException.badRequest(blankCommentMessage);
+    }
+
+    this.status = targetStatus;
+    this.approverId = approverId;
+    this.approverName = approverName;
+    this.approvalComment = normalizeText(comment, "审批描述最多500字符");
+    this.approvalTime = LocalDateTime.now();
+  }
+
+  private static String normalizeText(String text, String tooLongMessage) {
+    String trimmed = text.trim();
+    if (trimmed.length() > MAX_COMMENT_LENGTH) {
+      throw BusinessException.badRequest(tooLongMessage);
+    }
+    return trimmed;
   }
 }

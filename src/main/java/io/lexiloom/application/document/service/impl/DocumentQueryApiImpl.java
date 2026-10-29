@@ -13,7 +13,7 @@ import io.lexiloom.application.document.repository.DocCategoryRepository;
 import io.lexiloom.application.document.repository.DocCommentRepository;
 import io.lexiloom.application.document.repository.DocSourceFileRepository;
 import io.lexiloom.application.document.repository.DocumentRepository;
-import io.lexiloom.application.document.statemachine.DocumentStateEnum;
+import io.lexiloom.application.document.api.dto.DocumentStateEnum;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -71,16 +71,12 @@ public class DocumentQueryApiImpl implements DocumentQueryApi {
     if (documentId == null) {
       return Optional.empty();
     }
-    Optional<DocSourceFileDTO> directMatch =
-        docSourceFileRepository.findByDocumentId(documentId).map(docSourceFileMapper::toDTO);
-    if (directMatch.isPresent()) {
-      return directMatch;
-    }
     return documentRepository
         .findById(documentId)
         .map(DocumentEntity::getSourceFileId)
         .filter(java.util.Objects::nonNull)
         .flatMap(docSourceFileRepository::findById)
+        .or(() -> docSourceFileRepository.findFirstByDocumentIdOrderByCreateTimeDesc(documentId))
         .map(docSourceFileMapper::toDTO);
   }
 
@@ -134,7 +130,7 @@ public class DocumentQueryApiImpl implements DocumentQueryApi {
           DocParseStatusEnum status = (DocParseStatusEnum) row[0];
           long count = row[1] != null ? ((Number) row[1]).longValue() : 0L;
           totalParsedFiles += count;
-          if (status == DocParseStatusEnum.SUCCESS || status == DocParseStatusEnum.PREVIEW_ONLY) {
+          if (status == DocParseStatusEnum.SUCCESS) {
             successCount += count;
           }
         }

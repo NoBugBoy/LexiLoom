@@ -10,7 +10,6 @@ public record DocParseResult(
     String suggestedTitle,
     DocParseStatusEnum status,
     DocParserEngineEnum engineUsed,
-    boolean isPreviewOnly,
     Map<String, Object> metadata,
     String errorMessage) {
 
@@ -30,23 +29,6 @@ public record DocParseResult(
         suggestedTitle,
         DocParseStatusEnum.SUCCESS,
         engineUsed,
-        false,
-        metadata,
-        null);
-  }
-
-  public static DocParseResult previewOnly(
-      String rawText,
-      String suggestedTitle,
-      DocParserEngineEnum engineUsed,
-      Map<String, Object> metadata) {
-    return new DocParseResult(
-        null,
-        rawText,
-        suggestedTitle,
-        DocParseStatusEnum.PREVIEW_ONLY,
-        engineUsed,
-        true,
         metadata,
         null);
   }
@@ -58,7 +40,6 @@ public record DocParseResult(
         null,
         DocParseStatusEnum.FAILED,
         engineUsed,
-        false,
         Collections.emptyMap(),
         errorMessage);
   }
@@ -67,7 +48,7 @@ public record DocParseResult(
     java.util.Map<String, Object> meta =
         new java.util.HashMap<>(metadata != null ? metadata : Collections.emptyMap());
     return new DocParseResult(
-        null, null, null, DocParseStatusEnum.QUEUED, engineUsed, false, meta, null);
+        null, null, null, DocParseStatusEnum.QUEUED, engineUsed, meta, null);
   }
 
   public static DocParseResult asyncProcessing(
@@ -81,7 +62,7 @@ public record DocParseResult(
       meta.put("taskId", taskId);
     }
     return new DocParseResult(
-        null, null, null, DocParseStatusEnum.ASYNC_PROCESSING, engineUsed, false, meta, null);
+        null, null, null, DocParseStatusEnum.ASYNC_PROCESSING, engineUsed, meta, null);
   }
 
   public boolean isSuccess() {

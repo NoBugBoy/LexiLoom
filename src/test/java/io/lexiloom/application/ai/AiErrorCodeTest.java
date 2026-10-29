@@ -3,7 +3,7 @@ package io.lexiloom.application.ai;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import io.lexiloom.application.common.ErrorCode;
+import io.lexiloom.application.exception.ErrorCode;
 import io.lexiloom.application.exception.BusinessException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

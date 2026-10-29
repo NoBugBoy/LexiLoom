@@ -7,5 +7,7 @@ import org.mapstruct.Mapper;
 @Mapper
 public interface AdminRoleMapper {
 
-  AdminRoleEntity toAdminRoleEntity(Long userId, AdminRoleEnum role);
+  default AdminRoleEntity toAdminRoleEntity(Long userId, AdminRoleEnum role) {
+    return AdminRoleEntity.create(userId, role);
+  }
 }

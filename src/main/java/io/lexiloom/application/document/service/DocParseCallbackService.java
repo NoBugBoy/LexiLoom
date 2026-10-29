@@ -1,12 +1,12 @@
 package io.lexiloom.application.document.service;
 
 import cn.hutool.core.util.StrUtil;
-import io.lexiloom.application.common.ErrorCode;
+import io.lexiloom.application.exception.ErrorCode;
 import io.lexiloom.application.document.model.entity.DocumentEntity;
 import io.lexiloom.application.document.model.event.DocumentUpdatedEvent;
 import io.lexiloom.application.document.model.request.DeepDocParseCallbackRequest;
 import io.lexiloom.application.document.parser.DocParserEngineEnum;
-import io.lexiloom.application.document.parser.DocumentContentCleaner;
+import io.lexiloom.application.document.api.DocumentContentCleaner;
 import io.lexiloom.application.document.parser.engine.DeepDocDocParserEngine;
 import io.lexiloom.application.document.pipeline.DocumentImportTransactionalService;
 import io.lexiloom.application.document.queue.DocParseQueueService;
@@ -47,7 +47,10 @@ public class DocParseCallbackService {
 
     DocumentEntity doc = documentRepository.findById(docId).orElse(null);
     if (doc == null) {
-      log.warn("【DocParseCallbackService】回调对应的文档不存在: docId={}", docId);
+      log.warn("【DocParseCallbackService】回调对应的文档不存在或已删除，清理队列锁: docId={}", docId);
+      if (docParseQueueService != null) {
+        docParseQueueService.onParseCompleted(docId);
+      }
       return;
     }
 

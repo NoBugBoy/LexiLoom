@@ -1,5 +1,7 @@
 package io.lexiloom.application.document.parser;
 
+import io.lexiloom.application.document.api.dto.DocBoxMetadata;
+
 import java.util.Optional;
 
 /**

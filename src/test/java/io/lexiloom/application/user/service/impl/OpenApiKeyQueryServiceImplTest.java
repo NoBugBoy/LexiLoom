@@ -69,7 +69,7 @@ class OpenApiKeyQueryServiceImplTest {
         new OpenApiKeyDTO(
             10L, 1L, "Key-Cached", "masked", "kb:read", null, null, null, AiLlmProviderEnum.NONE, null);
     String json = objectMapper.writeValueAsString(cached);
-    when(valueOperations.get("openapi:key:lx_live_cache")).thenReturn(json);
+    when(valueOperations.get(OpenApiKeyQueryServiceImpl.REDIS_OPENAPI_KEY_PREFIX + "lx_live_cache")).thenReturn(json);
 
     Optional<OpenApiKeyDTO> result = service.findCachedKeyInfo("lx_live_cache");
     assertThat(result).isPresent();
@@ -80,7 +80,7 @@ class OpenApiKeyQueryServiceImplTest {
   @DisplayName("findCachedKeyInfo - 缓存未命中时从数据库查询并回填")
   void testFindCachedKeyInfo_fromDb() {
     when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
-    when(valueOperations.get("openapi:key:lx_live_db")).thenReturn(null);
+    when(valueOperations.get(OpenApiKeyQueryServiceImpl.REDIS_OPENAPI_KEY_PREFIX + "lx_live_db")).thenReturn(null);
 
     OpenApiKeyEntity entity =
         OpenApiKeyEntity.create(1L, "Key-Db", "lx_live_db", "masked", null, null, null, null, null);
@@ -100,7 +100,7 @@ class OpenApiKeyQueryServiceImplTest {
         new OpenApiKeyDTO(
             10L, 88L, "Key-Valid", "masked", "kb:read", null, null, null, AiLlmProviderEnum.NONE, null);
     String json = objectMapper.writeValueAsString(cached);
-    when(valueOperations.get("openapi:key:lx_live_valid")).thenReturn(json);
+    when(valueOperations.get(OpenApiKeyQueryServiceImpl.REDIS_OPENAPI_KEY_PREFIX + "lx_live_valid")).thenReturn(json);
     when(adminRoleService.findRolesByUserId(88L)).thenReturn(List.of(AdminRoleEnum.ADMIN));
 
     Optional<LoginToken> tokenOpt = service.verifyApiKey("lx_live_valid");
@@ -126,7 +126,7 @@ class OpenApiKeyQueryServiceImplTest {
         new OpenApiKeyDTO(
             10L, 88L, "Key-Valid", "masked", "kb:read", null, null, null, AiLlmProviderEnum.NONE, null);
     String json = objectMapper.writeValueAsString(cached);
-    when(valueOperations.get("openapi:key:lx_live_valid")).thenReturn(json);
+    when(valueOperations.get(OpenApiKeyQueryServiceImpl.REDIS_OPENAPI_KEY_PREFIX + "lx_live_valid")).thenReturn(json);
 
     Optional<OpenApiKeyDTO> dtoOpt = service.findOpenApiKey("lx_live_valid");
     assertThat(dtoOpt).isPresent();

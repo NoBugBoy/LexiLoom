@@ -1,12 +1,16 @@
 package io.lexiloom.application.document.statemachine;
 
+import io.lexiloom.application.document.api.dto.DocumentEventEnum;
+import io.lexiloom.application.document.api.dto.DocumentStateEnum;
+import io.lexiloom.application.document.model.event.DocumentStateTransitionEvent;
+
 import cn.hutool.core.util.StrUtil;
 import com.alibaba.cola.statemachine.Action;
 import com.alibaba.cola.statemachine.Condition;
 import com.alibaba.cola.statemachine.StateMachine;
 import com.alibaba.cola.statemachine.builder.StateMachineBuilder;
 import com.alibaba.cola.statemachine.builder.StateMachineBuilderFactory;
-import io.lexiloom.application.common.ErrorCode;
+import io.lexiloom.application.exception.ErrorCode;
 import io.lexiloom.application.document.model.entity.DocumentEntity;
 import io.lexiloom.application.document.version.DocVersionService;
 import io.lexiloom.application.enums.WorkSpaceRoleEnum;
@@ -122,14 +126,24 @@ public class DocumentStateMachineEngine {
     return ctx -> hasRoleAtLeast(ctx, WorkSpaceRoleEnum.MEMBER) && hasNonBlankTitle(ctx);
   }
 
-  /** 驳回前置条件：具备审批权限（管理员及以上、非文档作者本人），且必须填写驳回原因/修改意见 */
+  /** 驳回前置条件：具备审批权限（管理员及以上角色），且必须填写驳回原因/修改意见 */
   private Condition<DocumentStateContext> checkRejectCondition() {
     return ctx -> checkApproverCondition(ctx) && StrUtil.isNotBlank(ctx.comment());
   }
 
-  /** 审批通过条件：具备审批权限（管理员及以上角色，且不得审批自己创建的文档，实现职责分离） */
+  /** 审批通过条件：具备审批权限（管理员及以上角色），且文档不能处于排队或异步解析未完成状态 */
   private Condition<DocumentStateContext> checkApproveCondition() {
-    return ctx -> checkApproverCondition(ctx);
+    return ctx -> checkApproverCondition(ctx) && isParseReady(ctx);
+  }
+
+  private boolean isParseReady(DocumentStateContext ctx) {
+    if (ctx == null || ctx.document() == null) {
+      return false;
+    }
+    io.lexiloom.application.document.parser.DocParseStatusEnum status =
+        ctx.document().getParseStatus();
+    return status != io.lexiloom.application.document.parser.DocParseStatusEnum.QUEUED
+        && status != io.lexiloom.application.document.parser.DocParseStatusEnum.ASYNC_PROCESSING;
   }
 
   // ===================== Condition 复用断言（角色与归属校验） =====================
@@ -137,19 +151,6 @@ public class DocumentStateMachineEngine {
   /** 审批权限断言：管理员及以上角色（ADMIN / OWNER 具备审批与自审发布权限） */
   private boolean checkApproverCondition(DocumentStateContext ctx) {
     return hasRoleAtLeast(ctx, WorkSpaceRoleEnum.ADMIN);
-  }
-
-  /** 判断操作人是否为文档作者本人（历史数据 createBy 为空时按"非作者"处理，避免误拦截） */
-  private boolean isAuthor(DocumentStateContext ctx) {
-    if (ctx == null || ctx.document() == null || ctx.operatorId() == null) {
-      return false;
-    }
-    return ctx.operatorId().equals(ctx.document().getCreateBy());
-  }
-
-  /** 判断操作人是否为文档作者本人或具备管理权限（管理员及以上角色） */
-  private boolean isAdminOrAuthor(DocumentStateContext ctx) {
-    return isAuthor(ctx) || hasRoleAtLeast(ctx, WorkSpaceRoleEnum.ADMIN);
   }
 
   /** 角色等级断言：解析上下文中的操作人角色并做等级比较，解析失败按无权限处理 */

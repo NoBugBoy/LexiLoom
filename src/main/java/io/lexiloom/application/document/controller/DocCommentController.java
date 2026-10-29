@@ -34,18 +34,7 @@ public class DocCommentController {
       @RequestParam("workSpaceId") @NotNull(message = "工作空间ID不能为空") Long workSpaceId,
       @Validated @RequestBody DocCommentCreateRequest request) {
     Long userId = SecurityHolder.getUserId();
-
-    if (request.parentId() == null || request.parentId() == 0L) {
-      return docCommentService.addRootComment(workSpaceId, docId, userId, request.content());
-    } else {
-      return docCommentService.addReplyComment(
-          workSpaceId,
-          docId,
-          userId,
-          request.parentId(),
-          request.replyToUserId(),
-          request.content());
-    }
+    return docCommentService.addComment(workSpaceId, docId, userId, request);
   }
 
   /** 获取文档评论树 */

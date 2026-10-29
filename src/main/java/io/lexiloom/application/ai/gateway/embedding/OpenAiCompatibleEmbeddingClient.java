@@ -3,14 +3,18 @@ package io.lexiloom.application.ai.gateway.embedding;
 import cn.hutool.core.util.StrUtil;
 import io.lexiloom.application.ai.trace.RagTraceHolder;
 import io.lexiloom.application.ai.trace.model.RagTraceContext;
-import io.lexiloom.application.common.ErrorCode;
+import io.lexiloom.application.exception.ErrorCode;
 import io.lexiloom.application.exception.BusinessException;
+import java.net.http.HttpClient;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.Nullable;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.JsonNode;
@@ -19,11 +23,30 @@ import tools.jackson.databind.ObjectMapper;
 /** OpenAI-compatible embeddings HTTP client. */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class OpenAiCompatibleEmbeddingClient {
 
   private static final int MAX_BATCH_SIZE = 16;
   private final ObjectMapper objectMapper;
+  private final RestClient restClient;
+
+  @Autowired
+  public OpenAiCompatibleEmbeddingClient(ObjectMapper objectMapper) {
+    this(objectMapper, null);
+  }
+
+  public OpenAiCompatibleEmbeddingClient(
+      ObjectMapper objectMapper, @Nullable RestClient restClient) {
+    this.objectMapper = objectMapper;
+    if (restClient != null) {
+      this.restClient = restClient;
+    } else {
+      HttpClient httpClient =
+          HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+      JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+      requestFactory.setReadTimeout(Duration.ofSeconds(60));
+      this.restClient = RestClient.builder().requestFactory(requestFactory).build();
+    }
+  }
 
   public List<float[]> embedBatch(
       List<String> texts, String baseUrl, String apiKey, String model, int dimension) {
@@ -45,7 +68,7 @@ public class OpenAiCompatibleEmbeddingClient {
       String endpoint = normalizeEndpoint(baseUrl);
       Map<String, Object> body = Map.of("model", model, "input", texts, "dimensions", dimension);
       String response =
-          RestClient.create()
+          restClient
               .post()
               .uri(endpoint)
               .header("Authorization", "Bearer " + apiKey)
@@ -80,9 +103,14 @@ public class OpenAiCompatibleEmbeddingClient {
   }
 
   private void recordUsage(JsonNode usage) {
-    if (usage == null || !usage.hasNonNull("prompt_tokens")) return;
+    if (usage == null || usage.isNull()) return;
+    long tokens =
+        usage.hasNonNull("prompt_tokens")
+            ? usage.get("prompt_tokens").asLong(0L)
+            : usage.path("total_tokens").asLong(0L);
+    if (tokens <= 0) return;
     RagTraceContext trace = RagTraceHolder.get();
-    if (trace != null) trace.recordEmbeddingTokens(usage.get("prompt_tokens").asLong());
+    if (trace != null) trace.recordEmbeddingTokens(tokens);
   }
 
   private String normalizeEndpoint(String baseUrl) {

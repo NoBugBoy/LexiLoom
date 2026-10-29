@@ -2,8 +2,7 @@ package io.lexiloom.application.user.controller;
 
 import io.lexiloom.application.common.SecurityHolder;
 import io.lexiloom.application.exception.BusinessException;
-import io.lexiloom.application.user.api.WorkSpaceQueryService;
-import io.lexiloom.application.user.mapper.WorkSpaceMapper;
+import io.lexiloom.application.user.service.WorkSpaceViewService;
 import io.lexiloom.application.user.model.request.WorkSpaceCreateRequest;
 import io.lexiloom.application.user.model.request.WorkSpacePageRequest;
 import io.lexiloom.application.user.model.request.WorkSpaceUpdateRequest;
@@ -31,8 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class WorkSpaceController {
 
   private final WorkSpaceCommandService workSpaceCommandService;
-  private final WorkSpaceQueryService workSpaceQueryService;
-  private final WorkSpaceMapper workSpaceMapper;
+  private final WorkSpaceViewService workSpaceQueryService;
 
   public record UpdateMaxMembersRequest(@NotNull(message = "配额人数上限不能为空") Integer maxMembers) {}
 
@@ -48,8 +46,7 @@ public class WorkSpaceController {
   @GetMapping("/{id}")
   public WorkSpaceResponse getById(@PathVariable("id") Long id) {
     return workSpaceQueryService
-        .getById(id)
-        .map(workSpaceMapper::toResponse)
+        .getResponseById(id)
         .orElseThrow(() -> BusinessException.badRequest("团队不存在: " + id));
   }
 
@@ -57,8 +54,7 @@ public class WorkSpaceController {
   @GetMapping("/code/{code}")
   public WorkSpaceResponse getByCode(@PathVariable("code") String code) {
     return workSpaceQueryService
-        .getByCode(code)
-        .map(workSpaceMapper::toResponse)
+        .getResponseByCode(code)
         .orElseThrow(() -> BusinessException.badRequest("团队不存在: " + code));
   }
 

@@ -1,6 +1,8 @@
 package io.lexiloom.application.document.api.dto;
 
-import io.lexiloom.application.document.statemachine.DocumentStateEnum;
+import cn.hutool.core.date.DatePattern;
+import com.fasterxml.jackson.annotation.JsonFormat;
+import io.lexiloom.application.document.api.dto.DocumentStateEnum;
 import java.time.LocalDateTime;
 
 /** 文档历史版本快照数据传输对象 (不可变 record) */
@@ -16,7 +18,7 @@ public record DocVersionDTO(
     Long publisherId,
     Integer wordCount,
     DocumentStateEnum status,
-    LocalDateTime createTime) {
+    @JsonFormat(pattern = DatePattern.NORM_DATETIME_PATTERN) LocalDateTime createTime) {
 
   /** 兼容不带 status 的旧构造方法，默认状态为 PENDING_APPROVAL */
   public DocVersionDTO(

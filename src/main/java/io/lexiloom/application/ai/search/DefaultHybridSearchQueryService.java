@@ -22,7 +22,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
-import org.springframework.lang.Nullable;
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 
 /**
@@ -239,10 +239,7 @@ public class DefaultHybridSearchQueryService implements HybridSearchQueryService
 
     int requested = command.topK();
     if (hasMultiSource) {
-      if (requested <= 0 || requested < minTopK) {
-        return minTopK;
-      }
-      return Math.min(requested, maxTopK);
+      return Math.clamp(requested, minTopK, maxTopK);
     }
 
     if (requested > 0) {

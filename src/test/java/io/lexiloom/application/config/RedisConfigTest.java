@@ -35,5 +35,13 @@ class RedisConfigTest {
     com.fasterxml.jackson.databind.ObjectMapper mapper = config.jackson2ObjectMapper();
 
     assertThat(mapper).isNotNull();
+    assertThat(
+            mapper.isEnabled(
+                com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS))
+        .isFalse();
+    assertThat(
+            mapper.isEnabled(
+                com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES))
+        .isFalse();
   }
 }

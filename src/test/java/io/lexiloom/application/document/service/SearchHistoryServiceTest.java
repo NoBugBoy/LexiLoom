@@ -9,9 +9,9 @@ import static org.mockito.Mockito.when;
 
 import io.lexiloom.application.document.search.dto.SearchHistoryRecordEvent;
 import io.lexiloom.application.document.service.impl.SearchHistoryServiceImpl;
+import java.time.Duration;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -51,7 +51,7 @@ class SearchHistoryServiceTest {
     String expectedKey = "ll:search:history:1:1001";
     verify(zSetOperations).add(eq(expectedKey), eq("Elasticsearch 8"), anyDouble());
     verify(zSetOperations).removeRange(expectedKey, 0, -21);
-    verify(stringRedisTemplate).expire(expectedKey, 30L, TimeUnit.DAYS);
+    verify(stringRedisTemplate).expire(expectedKey, Duration.ofDays(30));
 
     ArgumentCaptor<SearchHistoryRecordEvent> eventCaptor =
         ArgumentCaptor.forClass(SearchHistoryRecordEvent.class);

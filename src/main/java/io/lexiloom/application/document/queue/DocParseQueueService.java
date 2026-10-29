@@ -32,12 +32,13 @@ import tools.jackson.databind.ObjectMapper;
  * DeepDoc 文档解析 Redis 分布式排队与单并发调度服务
  *
  * <p>核心契约：
+ *
  * <ul>
- *   <li>严格单并发：同时仅允许 1 个文档提交给 DeepDoc 进行解析，每完成一个再调度下一个；</li>
- *   <li>状态与排位：支持 QUEUED 排队状态，通过 Redis ZSet 实时计算当前排第几位；</li>
- *   <li>崩溃高可靠：服务关闭/重启后任务留存 Redis 中，启动后自动断点续调；</li>
- *   <li>固定重试：若 DeepDoc 服务未启动或瞬时网络断开，保留在队首并按固定周期轮询重试（无指数退避）；</li>
- *   <li>幂等强一致：仅在接收到 DeepDoc 异步回调且成功入库落盘后，才将任务移出队列。</li>
+ *   <li>严格单并发：同时仅允许 1 个文档提交给 DeepDoc 进行解析，每完成一个再调度下一个；
+ *   <li>状态与排位：支持 QUEUED 排队状态，通过 Redis ZSet 实时计算当前排第几位；
+ *   <li>崩溃高可靠：服务关闭/重启后任务留存 Redis 中，启动后自动断点续调；
+ *   <li>固定重试：若 DeepDoc 服务未启动或瞬时网络断开，保留在队首并按固定周期轮询重试（无指数退避）；
+ *   <li>幂等强一致：仅在接收到 DeepDoc 异步回调且成功入库落盘后，才将任务移出队列。
  * </ul>
  */
 @Slf4j
@@ -49,6 +50,7 @@ public class DocParseQueueService {
   public static final String TASK_PREFIX = "ll:doc:parse:task:";
   public static final String ACTIVE_KEY = "ll:doc:parse:active";
   private static final Duration ACTIVE_TTL = Duration.ofMinutes(60);
+  private static final Duration TASK_PAYLOAD_TTL = Duration.ofDays(7);
 
   private final StringRedisTemplate redisTemplate;
   private final ObjectMapper objectMapper;
@@ -73,6 +75,7 @@ public class DocParseQueueService {
     try {
       String json = objectMapper.writeValueAsString(task);
       redisTemplate.opsForValue().set(TASK_PREFIX + docIdStr, json);
+      redisTemplate.expire(TASK_PREFIX + docIdStr, TASK_PAYLOAD_TTL);
       redisTemplate.opsForZSet().add(QUEUE_KEY, docIdStr, (double) task.createTime());
 
       log.info(
@@ -83,7 +86,11 @@ public class DocParseQueueService {
 
       triggerNextDispatch();
     } catch (Exception e) {
-      log.error("【DocParseQueue】任务写入 Redis 队列失败: docId={}, error={}", task.documentId(), e.getMessage(), e);
+      log.error(
+          "【DocParseQueue】任务写入 Redis 队列失败: docId={}, error={}",
+          task.documentId(),
+          e.getMessage(),
+          e);
     }
   }
 
@@ -111,9 +118,7 @@ public class DocParseQueueService {
     return (int) (rank + 1);
   }
 
-  /**
-   * 触发下一个排队任务派发执行（保证集群全局 DeepDoc 单并发）
-   */
+  /** 触发下一个排队任务派发执行（保证集群全局 DeepDoc 单并发） */
   public void triggerNextDispatch() {
     if (!localDispatchLock.tryLock()) {
       return;
@@ -134,7 +139,8 @@ public class DocParseQueueService {
       String headDocIdStr = head.iterator().next();
 
       // 3. 抢占全局 active 槽位 (SETNX 带 TTL 兜底防死锁)
-      Boolean acquired = redisTemplate.opsForValue().setIfAbsent(ACTIVE_KEY, headDocIdStr, ACTIVE_TTL);
+      Boolean acquired =
+          redisTemplate.opsForValue().setIfAbsent(ACTIVE_KEY, headDocIdStr, ACTIVE_TTL);
       if (acquired == null || !acquired) {
         log.debug("【DocParseQueue】抢占执行槽位竞争失败，由其他节点处理: headDocId={}", headDocIdStr);
         return;
@@ -149,9 +155,7 @@ public class DocParseQueueService {
     }
   }
 
-  /**
-   * 真正执行单个任务向 DeepDoc 发起解析提交
-   */
+  /** 真正执行单个任务向 DeepDoc 发起解析提交 */
   private void executeDispatch(String docIdStr) {
     Long docId;
     try {
@@ -159,7 +163,7 @@ public class DocParseQueueService {
     } catch (NumberFormatException e) {
       log.warn("【DocParseQueue】非法 docId，剔除队首: {}", docIdStr);
       redisTemplate.opsForZSet().remove(QUEUE_KEY, docIdStr);
-      redisTemplate.delete(ACTIVE_KEY);
+      releaseActiveKeyIfOwner(docIdStr);
       triggerNextDispatch();
       return;
     }
@@ -170,7 +174,7 @@ public class DocParseQueueService {
       if (task == null) {
         log.warn("【DocParseQueue】无法加载任务元数据且 DB 无记录，剔除队首: docId={}", docId);
         redisTemplate.opsForZSet().remove(QUEUE_KEY, docIdStr);
-        redisTemplate.delete(ACTIVE_KEY);
+        releaseActiveKeyIfOwner(docIdStr);
         triggerNextDispatch();
         return;
       }
@@ -225,8 +229,8 @@ public class DocParseQueueService {
         return;
       }
 
-      if (parseResult.isSuccess() || parseResult.isPreviewOnly()) {
-        // 同步返回解析结果（非 DeepDoc 回调引擎或纯预览模式）
+      if (parseResult.isSuccess()) {
+        // 同步返回解析结果（非 DeepDoc 回调引擎）
         transactionalService.completeAsyncParse(
             task.documentId(),
             task.sourceFileId(),
@@ -247,7 +251,7 @@ public class DocParseQueueService {
             "【DocParseQueue】DeepDoc 远程服务未就绪或未启动，释放 active 槽位保留队首待重试: docId={}, error={}",
             task.documentId(),
             parseResult.errorMessage());
-        redisTemplate.delete(ACTIVE_KEY);
+        releaseActiveKeyIfOwner(docIdStr);
         return;
       }
 
@@ -256,7 +260,8 @@ public class DocParseQueueService {
           "【DocParseQueue】文档解析发生非可重试错误: docId={}, error={}",
           task.documentId(),
           parseResult.errorMessage());
-      transactionalService.failAsyncParse(task.documentId(), task.sourceFileId(), parseResult.errorMessage());
+      transactionalService.failAsyncParse(
+          task.documentId(), task.sourceFileId(), parseResult.errorMessage());
       onParseCompleted(task.documentId());
     } catch (Exception e) {
       if (isNetworkException(e)) {
@@ -264,9 +269,10 @@ public class DocParseQueueService {
             "【DocParseQueue】调用 DeepDoc 网络异常，释放 active 槽位待重试: docId={}, error={}",
             task.documentId(),
             e.getMessage());
-        redisTemplate.delete(ACTIVE_KEY);
+        releaseActiveKeyIfOwner(docIdStr);
       } else {
-        log.error("【DocParseQueue】提交解析出现未知异常: docId={}, error={}", task.documentId(), e.getMessage(), e);
+        log.error(
+            "【DocParseQueue】提交解析出现未知异常: docId={}, error={}", task.documentId(), e.getMessage(), e);
         transactionalService.failAsyncParse(task.documentId(), task.sourceFileId(), e.getMessage());
         onParseCompleted(task.documentId());
       }
@@ -286,7 +292,7 @@ public class DocParseQueueService {
     try {
       redisTemplate.opsForZSet().remove(QUEUE_KEY, docIdStr);
       redisTemplate.delete(TASK_PREFIX + docIdStr);
-      redisTemplate.delete(ACTIVE_KEY);
+      releaseActiveKeyIfOwner(docIdStr);
       log.info("【DocParseQueue】任务已成功完成并彻底移出 Redis 队列: docId={}", documentId);
     } catch (Exception e) {
       log.error("【DocParseQueue】清理已完成任务异常: docId={}, error={}", documentId, e.getMessage(), e);
@@ -296,17 +302,23 @@ public class DocParseQueueService {
     triggerNextDispatch();
   }
 
-  /**
-   * 定时巡检与重试调度器（默认每 5 秒轮询一次，无需指数退避）
-   */
+  /** 仅当当前活跃槽位未被其他文档任务占用时释放 ACTIVE_KEY，防止迟到回调误删新任务锁 */
+  private void releaseActiveKeyIfOwner(String docIdStr) {
+    String currentActive = redisTemplate.opsForValue().get(ACTIVE_KEY);
+    if (currentActive == null || docIdStr.equals(currentActive)) {
+      redisTemplate.delete(ACTIVE_KEY);
+    } else {
+      log.warn("【DocParseQueue】跳过释放 ACTIVE_KEY：当前活跃任务为 {}，非目标任务 {}", currentActive, docIdStr);
+    }
+  }
+
+  /** 定时巡检与重试调度器（默认每 5 秒轮询一次，无需指数退避） */
   @Scheduled(fixedDelayString = "${lexiloom.parser.deepdoc.queue-poll-interval-ms:5000}")
   public void scheduledPollAndRetry() {
     triggerNextDispatch();
   }
 
-  /**
-   * 应用启动就绪后自动巡检 Redis 队列，保障服务重启后任务无缝恢复
-   */
+  /** 应用启动就绪后自动巡检 Redis 队列，保障服务重启后任务无缝恢复 */
   @EventListener(ApplicationReadyEvent.class)
   public void onApplicationReady() {
     log.info("【DocParseQueue】LexiLoom 服务启动就绪，巡检 Redis 排队队列并恢复可能未完成的任务...");

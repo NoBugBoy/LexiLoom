@@ -1,6 +1,6 @@
 package io.lexiloom.application.document.api;
 
-import io.lexiloom.application.document.statemachine.DocumentStateEnum;
+import io.lexiloom.application.document.api.dto.DocumentStateEnum;
 
 /**
  * 文档生命周期状态跨模块命令契约 (Spring Modulith 暴露)

@@ -7,12 +7,19 @@ import io.lexiloom.application.user.service.AdminCommandService;
 import io.lexiloom.application.user.usecase.admin.AdminLoginUseCase;
 import io.lexiloom.application.user.usecase.admin.AdminRegisterUseCase;
 import io.lexiloom.application.user.usecase.admin.SendAdminRestPasswordEmailUseCase;
+import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
+@Validated
 @RestController
 @RequestMapping("/admin/auth")
 @RequiredArgsConstructor
@@ -30,7 +37,8 @@ public class AdminAuthController {
    * @return 激活成功后的访问令牌
    */
   @GetMapping("/complete-register")
-  public AccessToken completeRegister(@RequestParam String ott) {
+  public AccessToken completeRegister(
+      @RequestParam("ott") @NotBlank(message = "令牌不能为空") String ott) {
     return new AccessToken(adminRegisterUseCase.execute(ott));
   }
 
@@ -41,7 +49,8 @@ public class AdminAuthController {
    * @return 202 Accepted
    */
   @GetMapping("/complete-reset")
-  public ResponseEntity<Void> completeReset(@RequestParam String ott) {
+  public ResponseEntity<Void> completeReset(
+      @RequestParam("ott") @NotBlank(message = "令牌不能为空") String ott) {
     adminCommandService.resetPassword(ott);
     return ResponseEntity.status(HttpStatus.ACCEPTED).build();
   }

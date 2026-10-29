@@ -29,8 +29,7 @@ class AdminRoleServiceImplTest {
   @Test
   @DisplayName("查找用户角色")
   void findRolesByUserId() {
-    AdminRoleEntity entity = new AdminRoleEntity();
-    entity.setRole(AdminRoleEnum.SUPER_ADMIN);
+    AdminRoleEntity entity = AdminRoleEntity.create(1L, AdminRoleEnum.SUPER_ADMIN);
 
     when(adminRoleRepository.findByUserId(1L)).thenReturn(Collections.singletonList(entity));
 
@@ -50,9 +49,10 @@ class AdminRoleServiceImplTest {
   }
 
   @Test
-  @DisplayName("分配角色")
+  @DisplayName("分配角色 - 不存在时正常分配")
   void assignRole() {
-    AdminRoleEntity entity = new AdminRoleEntity();
+    AdminRoleEntity entity = AdminRoleEntity.create(1L, AdminRoleEnum.SUPER_ADMIN);
+    when(adminRoleRepository.existsByUserIdAndRole(1L, AdminRoleEnum.SUPER_ADMIN)).thenReturn(false);
     when(adminRoleMapper.toAdminRoleEntity(1L, AdminRoleEnum.SUPER_ADMIN)).thenReturn(entity);
 
     service.assignRole(1L, AdminRoleEnum.SUPER_ADMIN);
@@ -61,15 +61,31 @@ class AdminRoleServiceImplTest {
   }
 
   @Test
-  @DisplayName("批量分配角色（空实现）")
-  void assignRoles() {
-    assertThatCode(() -> service.assignRoles(1L, List.of(AdminRoleEnum.SUPER_ADMIN)))
-        .doesNotThrowAnyException();
+  @DisplayName("分配角色 - 已存在时幂等跳过")
+  void assignRole_alreadyExists() {
+    when(adminRoleRepository.existsByUserIdAndRole(1L, AdminRoleEnum.SUPER_ADMIN)).thenReturn(true);
+
+    service.assignRole(1L, AdminRoleEnum.SUPER_ADMIN);
+
+    verify(adminRoleRepository, never()).save(any());
   }
 
   @Test
-  @DisplayName("删除用户角色（空实现）")
+  @DisplayName("批量分配角色")
+  void assignRoles() {
+    AdminRoleEntity entity = AdminRoleEntity.create(1L, AdminRoleEnum.SUPER_ADMIN);
+    when(adminRoleRepository.existsByUserIdAndRole(1L, AdminRoleEnum.SUPER_ADMIN)).thenReturn(false);
+    when(adminRoleMapper.toAdminRoleEntity(1L, AdminRoleEnum.SUPER_ADMIN)).thenReturn(entity);
+
+    service.assignRoles(1L, List.of(AdminRoleEnum.SUPER_ADMIN));
+
+    verify(adminRoleRepository).save(entity);
+  }
+
+  @Test
+  @DisplayName("删除用户角色")
   void deleteByUserId() {
-    assertThatCode(() -> service.deleteByUserId(1L)).doesNotThrowAnyException();
+    service.deleteByUserId(1L);
+    verify(adminRoleRepository).deleteByUserId(1L);
   }
 }

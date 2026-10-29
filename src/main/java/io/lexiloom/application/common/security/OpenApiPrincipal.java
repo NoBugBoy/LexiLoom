@@ -80,4 +80,23 @@ public record OpenApiPrincipal(
         .filter(Objects::nonNull)
         .collect(Collectors.toUnmodifiableSet());
   }
+
+  @Override
+  public String toString() {
+    return "OpenApiPrincipal[keyId="
+        + keyId
+        + ", userId="
+        + userId
+        + ", name="
+        + name
+        + ", scopes="
+        + scopes
+        + ", allowedWorkspaceIds="
+        + allowedWorkspaceIds
+        + ", llmProvider="
+        + llmProvider
+        + ", llmApiKey="
+        + (llmApiKey == null ? "null" : "[PROTECTED]")
+        + "]";
+  }
 }

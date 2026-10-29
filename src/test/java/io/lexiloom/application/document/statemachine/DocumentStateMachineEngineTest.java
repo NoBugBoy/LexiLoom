@@ -1,5 +1,9 @@
 package io.lexiloom.application.document.statemachine;
 
+import io.lexiloom.application.document.api.dto.DocumentEventEnum;
+import io.lexiloom.application.document.api.dto.DocumentStateEnum;
+import io.lexiloom.application.document.model.event.DocumentStateTransitionEvent;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;

@@ -96,6 +96,7 @@ public class RagTraceAspect {
               () -> {
                 Object result = pjp.proceed();
                 if (result instanceof AiChatResponse resp) {
+                  context.recordSessionId(resp.sessionId());
                   context.recordAnswer(resp.content(), effectiveModel);
                   context.recordCitations(resp.citations());
                   if (resp.promptTokens() != null || resp.completionTokens() != null) {

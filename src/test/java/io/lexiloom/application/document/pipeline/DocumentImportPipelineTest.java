@@ -11,7 +11,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.lexiloom.application.common.ErrorCode;
+import io.lexiloom.application.exception.ErrorCode;
 import io.lexiloom.application.common.storage.FileStorageGateway;
 import io.lexiloom.application.document.acl.DocAccessControlService;
 import io.lexiloom.application.document.model.entity.DocSourceFileEntity;
@@ -22,8 +22,8 @@ import io.lexiloom.application.document.parser.DocParserGateway;
 import io.lexiloom.application.document.repository.DocSourceFileRepository;
 import io.lexiloom.application.document.repository.DocVersionRepository;
 import io.lexiloom.application.document.repository.DocumentRepository;
-import io.lexiloom.application.document.statemachine.DocumentStateEnum;
-import io.lexiloom.application.document.statemachine.DocumentStateTransitionEvent;
+import io.lexiloom.application.document.api.dto.DocumentStateEnum;
+import io.lexiloom.application.document.model.event.DocumentStateTransitionEvent;
 import io.lexiloom.application.enums.WorkSpaceAclEnum;
 import io.lexiloom.application.exception.BusinessException;
 import java.io.InputStream;
@@ -201,8 +201,8 @@ class DocumentImportPipelineTest {
   }
 
   @Test
-  @DisplayName("导入 PDF 文件：默认双轨制 (PREVIEW_ONLY) 固化版面原件预览模式")
-  void testImportPdfDefaultPreviewMode() {
+  @DisplayName("导入 PDF 文件：自动提交排队并转入异步解析流水线")
+  void testImportPdfQueuedForAsyncParsing() {
     // Arrange
     byte[] pdfBytes = "%PDF-1.4 dummy pdf content".getBytes(StandardCharsets.UTF_8);
     DocumentImportCommand command =

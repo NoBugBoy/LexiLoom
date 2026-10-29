@@ -20,6 +20,7 @@ import io.lexiloom.application.document.repository.DocumentRepository;
 import io.lexiloom.application.enums.WorkSpaceAclEnum;
 import io.lexiloom.application.exception.BusinessException;
 import java.time.LocalDateTime;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
@@ -127,7 +128,7 @@ class DocCommentServiceTest {
   void testLikeCommentSuccess() {
     when(docCommentRepository.existsById(50L)).thenReturn(true);
     when(stringRedisTemplate.opsForValue()).thenReturn(valueOps);
-    when(valueOps.setIfAbsent(eq("ll:comment:like:50:10"), eq("1"), eq(24L), eq(TimeUnit.HOURS)))
+    when(valueOps.setIfAbsent(eq("ll:comment:like:50:10"), eq("1"), eq(Duration.ofHours(24))))
         .thenReturn(Boolean.TRUE);
 
     commentService.likeComment(50L, 10L);
@@ -140,7 +141,7 @@ class DocCommentServiceTest {
   void testLikeCommentDuplicate() {
     when(docCommentRepository.existsById(50L)).thenReturn(true);
     when(stringRedisTemplate.opsForValue()).thenReturn(valueOps);
-    when(valueOps.setIfAbsent(eq("ll:comment:like:50:10"), eq("1"), eq(24L), eq(TimeUnit.HOURS)))
+    when(valueOps.setIfAbsent(eq("ll:comment:like:50:10"), eq("1"), eq(Duration.ofHours(24))))
         .thenReturn(Boolean.FALSE);
 
     assertThatThrownBy(() -> commentService.likeComment(50L, 10L))

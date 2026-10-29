@@ -94,4 +94,21 @@ class SearchHistoryArchiveTest {
 
     verify(searchHistoryRepository).save(any());
   }
+
+  @Test
+  @DisplayName("全局搜索历史：workspaceId 为空时自动兜底为 0L 归档，不抛异常")
+  void shouldDefaultWorkspaceIdToZeroWhenNull() {
+    LocalDateTime now = LocalDateTime.now();
+    SearchHistoryRecordEvent event = new SearchHistoryRecordEvent(3001L, null, "全局搜索", now);
+
+    archiveListener.onSearchHistoryRecord(event);
+
+    ArgumentCaptor<SearchHistoryEntity> captor = ArgumentCaptor.forClass(SearchHistoryEntity.class);
+    verify(searchHistoryRepository).save(captor.capture());
+
+    SearchHistoryEntity saved = captor.getValue();
+    assertThat(saved.getUserId()).isEqualTo(3001L);
+    assertThat(saved.getWorkspaceId()).isEqualTo(0L);
+    assertThat(saved.getKeyword()).isEqualTo("全局搜索");
+  }
 }

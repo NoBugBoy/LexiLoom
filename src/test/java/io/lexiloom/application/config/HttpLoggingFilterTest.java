@@ -126,7 +126,7 @@ class HttpLoggingFilterTest {
   }
 
   @Test
-  @DisplayName("验证白名单路径 shouldNotFilter 判定正确")
+  @DisplayName("验证白名单路径 shouldNotFilter 判定正确（含 /uploads 静态资源）")
   void testExcludePrefixes() {
     MockHttpServletRequest actuatorReq = new MockHttpServletRequest("GET", "/actuator/health");
     assertThat(filter.shouldNotFilter(actuatorReq)).isTrue();
@@ -135,7 +135,56 @@ class HttpLoggingFilterTest {
         new MockHttpServletRequest("GET", "/v3/api-docs/swagger-config");
     assertThat(filter.shouldNotFilter(swaggerReq)).isTrue();
 
+    MockHttpServletRequest uploadReq =
+        new MockHttpServletRequest("GET", "/uploads/avatar/test.png");
+    assertThat(filter.shouldNotFilter(uploadReq)).isTrue();
+
     MockHttpServletRequest apiReq = new MockHttpServletRequest("GET", "/api/ai/chat");
     assertThat(filter.shouldNotFilter(apiReq)).isFalse();
+  }
+
+  @Test
+  @DisplayName("验证 multipart/form-data 文件上传与 JSON 敏感字段（含 snake_case）脱敏正常处理")
+  void testMultipartAndSensitiveMasking() throws ServletException, IOException {
+    MockHttpServletRequest multipartReq =
+        new MockHttpServletRequest("POST", "/api/documents/upload");
+    multipartReq.setContentType(MediaType.MULTIPART_FORM_DATA_VALUE);
+    multipartReq.setContent(new byte[] {0x00, 0x01, 0x02, (byte) 0xFF});
+    MockHttpServletResponse multipartResp = new MockHttpServletResponse();
+
+    filter.doFilter(
+        multipartReq,
+        multipartResp,
+        (req, resp) -> {
+          req.getInputStream().readAllBytes();
+          resp.setContentType(MediaType.APPLICATION_JSON_VALUE);
+          resp.getWriter()
+              .write("{\"token\":\"secret-jwt-123\",\"api_key\":\"lx_live_secret\",\"status\":\"ok\"}");
+        });
+
+    assertThat(multipartResp.getContentAsString())
+        .isEqualTo("{\"token\":\"secret-jwt-123\",\"api_key\":\"lx_live_secret\",\"status\":\"ok\"}");
+  }
+
+  @Test
+  @DisplayName("验证 OpenAI 兼容端点 /chat/completions 禁止被 ContentCachingResponseWrapper 包裹")
+  void testChatCompletionsEndpointDoesNotWrapResponse() throws ServletException, IOException {
+    MockHttpServletRequest request =
+        new MockHttpServletRequest("POST", "/api/v1/openapi/chat/completions");
+    request.setContentType(MediaType.APPLICATION_JSON_VALUE);
+    MockHttpServletResponse response = new MockHttpServletResponse();
+    AtomicReference<ServletResponse> responsePassedToChain = new AtomicReference<>();
+
+    filter.doFilter(
+        request,
+        response,
+        (req, resp) -> {
+          responsePassedToChain.set(resp);
+          resp.getWriter().write("data: [DONE]\n\n");
+        });
+
+    assertThat(responsePassedToChain.get())
+        .isNotInstanceOf(ContentCachingResponseWrapper.class)
+        .isSameAs(response);
   }
 }

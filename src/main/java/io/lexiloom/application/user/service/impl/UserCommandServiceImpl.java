@@ -2,7 +2,7 @@ package io.lexiloom.application.user.service.impl;
 
 import io.lexiloom.application.common.SecurityHolder;
 import io.lexiloom.application.exception.BusinessException;
-import io.lexiloom.application.user.api.UserQueryService;
+import io.lexiloom.application.user.service.UserEntityQueryService;
 import io.lexiloom.application.user.api.dto.Email;
 import io.lexiloom.application.user.api.dto.Phone;
 import io.lexiloom.application.user.mapper.UserEntityMapper;
@@ -21,7 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class UserCommandServiceImpl implements UserCommandService {
   private final UserRepository userRepository;
-  private final UserQueryService userQueryService;
+  private final UserEntityQueryService userQueryService;
   private final UserEntityMapper userEntityMapper;
 
   public record UserRegister(
@@ -43,8 +43,8 @@ public class UserCommandServiceImpl implements UserCommandService {
     var user =
         userQueryService
             .getUserByUserId(SecurityHolder.getUserId())
-            .map(userEntity -> userEntityMapper.updateEntity(nickName, avatarUrl, userEntity))
             .orElseThrow(() -> BusinessException.badRequest("用户不存在"));
+    user.updateProfile(nickName, avatarUrl);
     userRepository.saveAndFlush(user);
   }
 }

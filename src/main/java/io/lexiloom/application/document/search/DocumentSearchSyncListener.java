@@ -7,8 +7,8 @@ import io.lexiloom.application.document.model.event.DocumentDeletedEvent;
 import io.lexiloom.application.document.model.event.DocumentUpdatedEvent;
 import io.lexiloom.application.document.repository.DocSourceFileRepository;
 import io.lexiloom.application.document.repository.DocumentRepository;
-import io.lexiloom.application.document.statemachine.DocumentStateEnum;
-import io.lexiloom.application.document.statemachine.DocumentStateTransitionEvent;
+import io.lexiloom.application.document.api.dto.DocumentStateEnum;
+import io.lexiloom.application.document.model.event.DocumentStateTransitionEvent;
 import java.util.Collections;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -105,15 +105,15 @@ public class DocumentSearchSyncListener {
         return;
       }
 
-      // 2. 查询关联的源文件纯文本 (可选)
+      // 2. 查询关联的源文件纯文本 (优先按主文档指针查询当前版本，兜底按最新创建源文件匹配)
       DocSourceFileEntity sourceFile =
-          docSourceFileRepository
-              .findByDocumentId(documentId)
+          (doc.getSourceFileId() != null
+                  ? docSourceFileRepository.findById(doc.getSourceFileId())
+                  : java.util.Optional.<DocSourceFileEntity>empty())
               .or(
                   () ->
-                      doc.getSourceFileId() != null
-                          ? docSourceFileRepository.findById(doc.getSourceFileId())
-                          : java.util.Optional.empty())
+                      docSourceFileRepository.findFirstByDocumentIdOrderByCreateTimeDesc(
+                          documentId))
               .orElse(null);
 
       // 3. 查询文档关联标签名 (可选)

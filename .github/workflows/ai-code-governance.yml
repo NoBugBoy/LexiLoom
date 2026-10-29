@@ -4,7 +4,7 @@ on:
   workflow_dispatch: # 支持网页上手动点按钮触发
   push:
     branches:
-      - hook         # 当前测试分支
+      - v1.0.1         # 当前测试分支
       - main         # 如果后续切回 main 也会触发
     paths:
       - 'src/**'       # 只有 src 目录下的代码变动才触发

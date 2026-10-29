@@ -9,7 +9,7 @@ trigger: always_on
 
 ## 1. 工程规范和基础约定
 
-1. 项目为JDK25 + SpringBoot4.x + SpringSecurity + Spring Modulith + Spring Data Jpa 为基础模块开发
+1. 项目为JDK25 + SpringBoot4.x + SpringSecurity + Spring Modulith + Spring Data Jpa 为基础模块开发，必须使用现代化的新API。
 2. 使用CQRS架构，并引入了部分领域驱动设计思想，如充血模型，防腐层等概念
 3. 所有涉及到Entity、dto、request、response等实体转换，强制使用MapStruct转换,特殊是大部分属性来源和目标都是一致的情况下
 4. 如果该record仅在当前类范围内使用，可以定义在类中
@@ -21,7 +21,7 @@ trigger: always_on
    禁止定义线程池和使用ThreadLocal，必须使用虚拟线程和ScopeValue,禁止同步锁，优先使用juc包的锁，可以使用结构化并发，不强制使用@Async
 10. service核心方法加注释，Entity字段必须加备注,时间类型务必使用LocalDateTime,如果是VO类，需要加yyyy-MM-dd HH:mm:
     ss的格式化Jackson注解,防止返回的时间带'T'
-11. 多用switch,和instance of record等新特性，减少if else
+11. 多用switch,和instance of record等新特性，减少if else（2个分支以上的）
 12. 任何涉及调用第三方AI接口，必须统一使用OpenAI Compatible / Responses API 形式，如对方文档不支持，则提示用户
 
 ## 2. 语言新特性与编程范式

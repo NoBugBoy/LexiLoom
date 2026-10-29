@@ -1,6 +1,6 @@
 package io.lexiloom.application.document.model.request;
 
-import io.lexiloom.application.document.statemachine.DocumentEventEnum;
+import io.lexiloom.application.document.api.dto.DocumentEventEnum;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 

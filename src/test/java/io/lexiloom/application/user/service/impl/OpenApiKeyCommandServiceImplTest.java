@@ -97,7 +97,7 @@ class OpenApiKeyCommandServiceImplTest {
 
     assertThat(resp.rawApiKey()).isNotEqualTo("lx_live_old");
     assertThat(entity.getApiKey()).isEqualTo(resp.rawApiKey());
-    verify(stringRedisTemplate).delete("openapi:key:lx_live_old");
+    verify(stringRedisTemplate).delete(OpenApiKeyCommandServiceImpl.REDIS_OPENAPI_KEY_PREFIX + "lx_live_old");
   }
 
   @Test
@@ -110,7 +110,7 @@ class OpenApiKeyCommandServiceImplTest {
     service.deleteKey(1L, 10L);
 
     verify(openApiKeyRepository).delete(entity);
-    verify(stringRedisTemplate).delete("openapi:key:lx_live_123");
+    verify(stringRedisTemplate).delete(OpenApiKeyCommandServiceImpl.REDIS_OPENAPI_KEY_PREFIX + "lx_live_123");
   }
 
   @Test

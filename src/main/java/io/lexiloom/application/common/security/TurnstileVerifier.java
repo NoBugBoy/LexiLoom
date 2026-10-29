@@ -1,22 +1,42 @@
 package io.lexiloom.application.common.security;
 
-import io.lexiloom.application.config.TurnstileProperties;
+import java.net.http.HttpClient;
+import java.time.Duration;
 import java.util.Map;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class TurnstileVerifier {
   private static final ParameterizedTypeReference<Map<String, Object>> RESPONSE_TYPE =
       new ParameterizedTypeReference<>() {};
+  private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(3);
+  private static final Duration READ_TIMEOUT = Duration.ofSeconds(5);
 
   private final TurnstileProperties properties;
-  private final RestClient restClient = RestClient.create();
+  private final RestClient restClient;
+
+  @Autowired
+  public TurnstileVerifier(TurnstileProperties properties) {
+    this(properties, createDefaultRestClient());
+  }
+
+  TurnstileVerifier(TurnstileProperties properties, RestClient restClient) {
+    this.properties = properties;
+    this.restClient = restClient;
+  }
+
+  private static RestClient createDefaultRestClient() {
+    HttpClient httpClient = HttpClient.newBuilder().connectTimeout(CONNECT_TIMEOUT).build();
+    JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+    requestFactory.setReadTimeout(READ_TIMEOUT);
+    return RestClient.builder().requestFactory(requestFactory).build();
+  }
 
   public void verify(String token) {
     if (!properties.enabled()) {

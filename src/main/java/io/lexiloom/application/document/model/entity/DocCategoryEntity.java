@@ -103,4 +103,49 @@ public class DocCategoryEntity extends BaseEntity {
     this.path =
         (pPath.endsWith("/") ? pPath : pPath + "/") + (getId() != null ? getId() + "/" : "");
   }
+
+  /**
+   * 充血领域行为：校验防环、跨空间与层级上限，并移动到目标父分类下
+   *
+   * @param newParent 目标父分类（为 null 表示移动到顶级根分类 0L）
+   */
+  public void validateAndMoveTo(
+      @org.jspecify.annotations.Nullable DocCategoryEntity newParent) {
+    if (newParent == null) {
+      move(0L, "/0/", 1);
+      return;
+    }
+    if (Objects.equals(this.getId(), newParent.getId())) {
+      throw BusinessException.badRequest("不能将分类移动到自己内部");
+    }
+    if (!Objects.equals(this.workSpaceId, newParent.getWorkSpaceId())) {
+      throw BusinessException.badRequest("不能跨团队空间移动分类");
+    }
+    if (newParent.getPath() != null && this.path != null && newParent.getPath().startsWith(this.path)) {
+      throw BusinessException.badRequest("不能将分类移动到自身的子分类下");
+    }
+    int targetLevel = (newParent.getLevel() == null ? 1 : newParent.getLevel()) + 1;
+    if (targetLevel > 10) {
+      throw BusinessException.badRequest("分类层级最多支持 10 层");
+    }
+    move(newParent.getId(), newParent.getPath(), targetLevel);
+  }
+
+  /**
+   * 充血领域行为：当祖先节点发生移动时，基于精确前缀切片安全刷新子孙节点的物化路径与深度
+   *
+   * @param oldAncestorPath 祖先节点移动前的路径前缀
+   * @param newAncestorPath 祖先节点移动后的路径前缀
+   * @param levelDelta 深度变化差值
+   */
+  public void rebaseSubtreeNode(
+      String oldAncestorPath, String newAncestorPath, int levelDelta) {
+    if (StrUtil.isBlank(this.path)
+        || StrUtil.isBlank(oldAncestorPath)
+        || !this.path.startsWith(oldAncestorPath)) {
+      return;
+    }
+    this.path = newAncestorPath + this.path.substring(oldAncestorPath.length());
+    this.level = Math.max(1, (this.level == null ? 1 : this.level) + levelDelta);
+  }
 }

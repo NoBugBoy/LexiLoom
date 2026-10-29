@@ -6,5 +6,7 @@ import org.mapstruct.Mapper;
 @Mapper
 public interface AdminEntityMapper {
 
-  AdminEntity toAdminEntity(String email, String password, Boolean emailVerified);
+  default AdminEntity toAdminEntity(String email, String password, Boolean emailVerified) {
+    return AdminEntity.create(email, password, emailVerified);
+  }
 }

@@ -9,6 +9,7 @@ import io.lexiloom.application.exception.BusinessException;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.util.List;
+import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
@@ -33,6 +34,7 @@ public class ApprovalController {
   public List<ApprovalRecordDTO> listPending(
       @RequestParam("targetWorkspaceId") @NotNull(message = "目标工作空间ID不能为空")
           Long targetWorkspaceId) {
+    requireAuthenticatedUserId();
     return approvalApi.listPendingApprovals(targetWorkspaceId);
   }
 
@@ -41,25 +43,46 @@ public class ApprovalController {
   public List<ApprovalRecordDTO> listHistory(
       @RequestParam("type") @NotNull(message = "审批类型不能为空") ApprovalTypeEnum type,
       @RequestParam("bizId") @NotNull(message = "业务主键不能为空") Long bizId) {
+    requireAuthenticatedUserId();
     return approvalApi.listApprovalHistory(type, bizId);
   }
 
-  /** 统一处理审批单操作 (通过或驳回) */
+  /** 统一处理审批单操作 (通过、驳回或撤回) */
   @PostMapping("/action")
   public ResponseEntity<Void> handleApprovalAction(
       @Valid @RequestBody ApprovalActionRequest request) {
-    Long approverId = SecurityHolder.getUserId();
-    String approverName = SecurityHolder.getUsername().orElse(null);
+    Long operatorId = requireAuthenticatedUserId();
+    String operatorName = SecurityHolder.getUsername().orElse(null);
+    String normalizedAction = request.action().trim().toUpperCase(Locale.ROOT);
 
-    if ("APPROVE".equalsIgnoreCase(request.action())) {
-      approvalApi.approve(
-          request.approvalType(), request.bizId(), approverId, approverName, request.comment());
-    } else if ("REJECT".equalsIgnoreCase(request.action())) {
-      approvalApi.reject(
-          request.approvalType(), request.bizId(), approverId, approverName, request.comment());
-    } else {
-      throw BusinessException.badRequest("不支持的审批动作: " + request.action());
+    switch (normalizedAction) {
+      case "APPROVE" ->
+          approvalApi.approve(
+              request.approvalType(),
+              request.bizId(),
+              operatorId,
+              operatorName,
+              request.comment());
+      case "REJECT" ->
+          approvalApi.reject(
+              request.approvalType(),
+              request.bizId(),
+              operatorId,
+              operatorName,
+              request.comment());
+      case "CANCEL" ->
+          approvalApi.cancel(
+              request.approvalType(), request.bizId(), operatorId, request.comment());
+      default -> throw BusinessException.badRequest("不支持的审批动作: " + request.action());
     }
     return ResponseEntity.ok().build();
+  }
+
+  private Long requireAuthenticatedUserId() {
+    Long userId = SecurityHolder.getUserId();
+    if (userId == null) {
+      throw BusinessException.unauthorized("未登录或登录已过期");
+    }
+    return userId;
   }
 }

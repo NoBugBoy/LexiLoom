@@ -1,5 +1,7 @@
 package io.lexiloom.application.document.api.dto;
 
+import cn.hutool.core.date.DatePattern;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import io.lexiloom.application.enums.WorkSpaceAclEnum;
 import java.time.LocalDateTime;
 
@@ -9,4 +11,4 @@ public record LinkableDocumentDTO(
     String title,
     Long categoryId,
     WorkSpaceAclEnum visibility,
-    LocalDateTime updateTime) {}
+    @JsonFormat(pattern = DatePattern.NORM_DATETIME_PATTERN) LocalDateTime updateTime) {}

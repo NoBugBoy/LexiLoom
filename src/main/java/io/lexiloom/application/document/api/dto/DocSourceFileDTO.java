@@ -1,5 +1,7 @@
 package io.lexiloom.application.document.api.dto;
 
+import cn.hutool.core.date.DatePattern;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import io.lexiloom.application.document.parser.DocParseStatusEnum;
 import io.lexiloom.application.document.parser.DocParserEngineEnum;
 import java.time.LocalDateTime;
@@ -20,7 +22,7 @@ public record DocSourceFileDTO(
     String rawText,
     String parseMetadata,
     String errorMessage,
-    LocalDateTime createTime) {
+    @JsonFormat(pattern = DatePattern.NORM_DATETIME_PATTERN) LocalDateTime createTime) {
 
   /** 兼容旧版 14 个参数构造器（无 parseMetadata） */
   public DocSourceFileDTO(

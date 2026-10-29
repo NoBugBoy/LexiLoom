@@ -2,9 +2,11 @@ package io.lexiloom.application.ai.controller;
 
 import io.lexiloom.application.ai.listener.DocVectorSyncListener;
 import io.lexiloom.application.ai.model.request.AiChatRequest;
+import io.lexiloom.application.ai.model.request.ApiKeyTokenUsageQueryRequest;
 import io.lexiloom.application.ai.model.request.ConversationSessionCreateRequest;
 import io.lexiloom.application.ai.model.response.AiChatResponse;
 import io.lexiloom.application.ai.model.response.AiReindexResponse;
+import io.lexiloom.application.ai.model.response.ApiKeyTokenUsageResponse;
 import io.lexiloom.application.ai.model.response.TokenUsageStatsResponse;
 import io.lexiloom.application.ai.model.search.DocChunkDocument;
 import io.lexiloom.application.ai.model.vo.ConversationMessageVO;
@@ -20,12 +22,12 @@ import io.lexiloom.application.ai.trace.entity.RagTraceDetailEntity;
 import io.lexiloom.application.ai.trace.entity.RagTraceEntity;
 import io.lexiloom.application.ai.trace.model.RagFeedbackRequest;
 import io.lexiloom.application.ai.trace.model.RagTracePageRequest;
-import io.lexiloom.application.common.ErrorCode;
+import io.lexiloom.application.exception.ErrorCode;
 import io.lexiloom.application.common.LoginUserAuthentication;
 import io.lexiloom.application.common.SecurityHolder;
 import io.lexiloom.application.document.api.DocumentQueryApi;
 import io.lexiloom.application.document.api.dto.DocumentDTO;
-import io.lexiloom.application.document.statemachine.DocumentStateEnum;
+import io.lexiloom.application.document.api.dto.DocumentStateEnum;
 import io.lexiloom.application.exception.BusinessException;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -166,6 +168,21 @@ public class AiChatController {
       accessSecurityValidator.assertCanAccessWorkspace(workspaceId);
     }
     return aiStatsQueryService.getTokenUsageStatsResponse(workspaceId, days);
+  }
+
+  /**
+   * 统计每个或指定 API Key 的 Token 消耗用量趋势（支持按日 DAILY 或按月 MONTHLY 统计）
+   *
+   * @param request 查询参数 (包含可选 apiKey, period=DAILY/MONTHLY, days, months, workspaceId)
+   * @return API Key Token 消耗趋势与分布统计
+   */
+  @GetMapping({"/stats/tokens/api-keys", "/token-stats/api-keys"})
+  public ApiKeyTokenUsageResponse getApiKeyTokenUsageStats(
+      @Valid ApiKeyTokenUsageQueryRequest request) {
+    if (request != null && request.workspaceId() != null) {
+      accessSecurityValidator.assertCanAccessWorkspace(request.workspaceId());
+    }
+    return aiStatsQueryService.getApiKeyTokenUsageStats(request);
   }
 
   /**

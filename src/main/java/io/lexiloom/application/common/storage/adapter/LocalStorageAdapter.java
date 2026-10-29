@@ -1,6 +1,7 @@
 package io.lexiloom.application.common.storage.adapter;
 
 import cn.hutool.core.io.FileUtil;
+import cn.hutool.core.util.StrUtil;
 import io.lexiloom.application.common.storage.FileStorageGateway;
 import io.lexiloom.application.exception.BusinessException;
 import java.io.File;
@@ -14,17 +15,24 @@ import lombok.extern.slf4j.Slf4j;
 public class LocalStorageAdapter implements FileStorageGateway {
 
   private static final String UPLOAD_DIR = "uploads";
+  private static final String UPLOAD_PREFIX = "/uploads/";
 
   @Override
   public String upload(
       String objectKey, InputStream inputStream, String contentType, long contentLength) {
+    if (inputStream == null) {
+      throw BusinessException.badRequest("上传文件流不能为空");
+    }
     try {
-      Path targetPath = StoragePathGuard.resolveWithin(Paths.get(UPLOAD_DIR), objectKey);
+      String sanitizedKey = sanitizeKey(objectKey);
+      Path targetPath = StoragePathGuard.resolveWithin(Paths.get(UPLOAD_DIR), sanitizedKey);
       File file = targetPath.toFile();
       FileUtil.mkdir(file.getParentFile());
       FileUtil.writeFromStream(inputStream, file);
       log.info("本地存储上传文件成功: path={}", targetPath);
-      return getUrl(objectKey);
+      return getUrl(sanitizedKey);
+    } catch (BusinessException be) {
+      throw be;
     } catch (Exception e) {
       log.error("本地存储文件保存失败: objectKey={}, error={}", objectKey, e.getMessage(), e);
       throw BusinessException.badRequest("文件存储失败，请稍后重试");
@@ -34,11 +42,7 @@ public class LocalStorageAdapter implements FileStorageGateway {
   @Override
   public void delete(String objectKeyOrUrl) {
     try {
-      String cleanKey = objectKeyOrUrl;
-      if (cleanKey.startsWith("/uploads/")) {
-        cleanKey = cleanKey.substring("/uploads/".length());
-      }
-      Path targetPath = StoragePathGuard.resolveWithin(Paths.get(UPLOAD_DIR), cleanKey);
+      Path targetPath = resolveTargetPath(objectKeyOrUrl);
       FileUtil.del(targetPath.toFile());
       log.info("本地存储删除文件成功: path={}", targetPath);
     } catch (Exception e) {
@@ -48,18 +52,13 @@ public class LocalStorageAdapter implements FileStorageGateway {
 
   @Override
   public String getUrl(String objectKey) {
-    String cleanKey = objectKey.startsWith("/") ? objectKey.substring(1) : objectKey;
-    return "/uploads/" + cleanKey;
+    return UPLOAD_PREFIX + sanitizeKey(objectKey);
   }
 
   @Override
   public InputStream download(String objectKeyOrUrl) {
     try {
-      String cleanKey = objectKeyOrUrl;
-      if (cleanKey.startsWith("/uploads/")) {
-        cleanKey = cleanKey.substring("/uploads/".length());
-      }
-      Path targetPath = StoragePathGuard.resolveWithin(Paths.get(UPLOAD_DIR), cleanKey);
+      Path targetPath = resolveTargetPath(objectKeyOrUrl);
       File file = targetPath.toFile();
       if (!file.exists()) {
         throw BusinessException.notFound("存储文件不存在: " + objectKeyOrUrl);
@@ -75,11 +74,28 @@ public class LocalStorageAdapter implements FileStorageGateway {
 
   @Override
   public boolean exists(String objectKeyOrUrl) {
-    String cleanKey = objectKeyOrUrl;
-    if (cleanKey.startsWith("/uploads/")) {
-      cleanKey = cleanKey.substring("/uploads/".length());
+    if (StrUtil.isBlank(objectKeyOrUrl)) {
+      return false;
     }
-    Path targetPath = StoragePathGuard.resolveWithin(Paths.get(UPLOAD_DIR), cleanKey);
-    return targetPath.toFile().exists();
+    try {
+      return resolveTargetPath(objectKeyOrUrl).toFile().exists();
+    } catch (Exception e) {
+      return false;
+    }
+  }
+
+  private Path resolveTargetPath(String objectKeyOrUrl) {
+    return StoragePathGuard.resolveWithin(Paths.get(UPLOAD_DIR), sanitizeKey(objectKeyOrUrl));
+  }
+
+  private String sanitizeKey(String objectKeyOrUrl) {
+    if (StrUtil.isBlank(objectKeyOrUrl)) {
+      throw BusinessException.badRequest("存储对象键不能为空");
+    }
+    String clean = objectKeyOrUrl.trim();
+    if (clean.startsWith(UPLOAD_PREFIX)) {
+      clean = clean.substring(UPLOAD_PREFIX.length());
+    }
+    return StoragePathGuard.sanitizeObjectKey(clean);
   }
 }

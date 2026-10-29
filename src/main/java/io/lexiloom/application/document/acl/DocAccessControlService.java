@@ -1,6 +1,6 @@
 package io.lexiloom.application.document.acl;
 
-import io.lexiloom.application.common.ErrorCode;
+import io.lexiloom.application.exception.ErrorCode;
 import io.lexiloom.application.document.model.entity.DocumentEntity;
 import io.lexiloom.application.enums.WorkSpaceAclEnum;
 import io.lexiloom.application.enums.WorkSpaceRoleEnum;

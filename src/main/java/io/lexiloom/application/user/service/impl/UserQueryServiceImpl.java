@@ -1,9 +1,16 @@
 package io.lexiloom.application.user.service.impl;
 
+import cn.hutool.core.util.StrUtil;
 import io.lexiloom.application.user.api.UserQueryService;
+import io.lexiloom.application.user.api.dto.UserDTO;
+import io.lexiloom.application.user.mapper.UserEntityMapper;
 import io.lexiloom.application.user.model.entity.UserEntity;
 import io.lexiloom.application.user.repository.UserRepository;
+import io.lexiloom.application.user.service.UserEntityQueryService;
+import java.util.Collection;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -12,8 +19,9 @@ import org.springframework.stereotype.Service;
  */
 @Service
 @RequiredArgsConstructor
-public class UserQueryServiceImpl implements UserQueryService {
+public class UserQueryServiceImpl implements UserQueryService, UserEntityQueryService {
   private final UserRepository userRepository;
+  private final UserEntityMapper userEntityMapper;
 
   @Override
   public Optional<UserEntity> isFirstLogin(String openId) {
@@ -27,34 +35,22 @@ public class UserQueryServiceImpl implements UserQueryService {
 
   @Override
   public Optional<UserEntity> getUserByEmail(String email) {
-    if (cn.hutool.core.util.StrUtil.isBlank(email)) {
+    if (StrUtil.isBlank(email)) {
       return Optional.empty();
     }
     return userRepository.findByEmail(email.trim());
   }
 
   @Override
-  public java.util.Map<Long, io.lexiloom.application.user.api.dto.UserDTO> findUserMapByIds(
-      java.util.Collection<Long> userIds) {
+  public Map<Long, UserDTO> findUserMapByIds(Collection<Long> userIds) {
     if (userIds == null || userIds.isEmpty()) {
-      return java.util.Map.of();
+      return Map.of();
     }
     return userRepository.findAllById(userIds).stream()
         .collect(
-            java.util.stream.Collectors.toMap(
+            Collectors.toMap(
                 UserEntity::getId,
-                u ->
-                    new io.lexiloom.application.user.api.dto.UserDTO(
-                        u.getId(),
-                        u.getOpenId(),
-                        u.getUnionId(),
-                        u.getUserName(),
-                        u.getAvatarUrl(),
-                        u.getEmail(),
-                        u.getEmailVerified(),
-                        u.getPhoneNumber(),
-                        u.getCountryCode(),
-                        u.getPhoneVerified()),
+                userEntityMapper::toUserDTO,
                 (u1, u2) -> u1));
   }
 }

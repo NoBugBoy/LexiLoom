@@ -15,9 +15,9 @@ import io.lexiloom.application.user.repository.OpenApiKeyRepository;
 import io.lexiloom.application.user.repository.UserRepository;
 import io.lexiloom.application.user.service.OpenApiKeyCommandService;
 import io.lexiloom.application.utils.DesensitizeUtils;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Objects;
-import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -33,7 +33,7 @@ import tools.jackson.databind.ObjectMapper;
 @RequiredArgsConstructor
 public class OpenApiKeyCommandServiceImpl implements OpenApiKeyCommandService {
 
-  public static final String REDIS_OPENAPI_KEY_PREFIX = "openapi:key:";
+  public static final String REDIS_OPENAPI_KEY_PREFIX = "ll:openapi:key:";
 
   private final OpenApiKeyRepository openApiKeyRepository;
   private final UserRepository userRepository;
@@ -200,7 +200,9 @@ public class OpenApiKeyCommandServiceImpl implements OpenApiKeyCommandService {
   private void cacheKeyInfo(String apiKey, OpenApiKeyDTO dto) {
     try {
       String json = objectMapper.writeValueAsString(dto);
-      stringRedisTemplate.opsForValue().set(REDIS_OPENAPI_KEY_PREFIX + apiKey, json, 7, TimeUnit.DAYS);
+      stringRedisTemplate
+          .opsForValue()
+          .set(REDIS_OPENAPI_KEY_PREFIX + apiKey, json, Duration.ofDays(7));
     } catch (Exception e) {
       log.warn("【OpenApiKey】写入 Redis 缓存失败: apiKey={}, err={}", StrUtil.sub(apiKey, 0, 10), e.getMessage());
     }

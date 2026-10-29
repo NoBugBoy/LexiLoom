@@ -10,12 +10,17 @@ import io.lexiloom.application.ai.api.AiStatsQueryApi;
 import io.lexiloom.application.ai.api.dto.TokenUsageStatsDTO;
 import io.lexiloom.application.ai.config.AiProperties;
 import io.lexiloom.application.ai.mapper.TokenStatsMapper;
+import io.lexiloom.application.ai.model.request.ApiKeyTokenUsageQueryRequest;
+import io.lexiloom.application.ai.model.response.ApiKeyTokenUsageResponse;
 import io.lexiloom.application.ai.model.response.TokenUsageStatsResponse;
 import io.lexiloom.application.ai.repository.DocChunkRepository;
 import io.lexiloom.application.ai.service.AiStatsQueryService;
 import io.lexiloom.application.ai.trace.entity.QRagTraceEntity;
+import io.lexiloom.application.utils.DesensitizeUtils;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.YearMonth;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -73,12 +78,12 @@ public class AiStatsQueryApiImpl implements AiStatsQueryApi, AiStatsQueryService
   @Transactional(readOnly = true)
   public TokenUsageStatsDTO getTokenUsageStats(Long workspaceId, Integer days) {
     int effectiveDays = (days == null || days <= 0) ? 7 : days;
-    LocalDateTime endTime = LocalDateTime.now();
-    LocalDateTime startTime = LocalDate.now().minusDays(effectiveDays - 1L).atStartOfDay();
+    LocalDateTime endTime = LocalDateTime.now(ZoneId.systemDefault());
+    LocalDateTime startTime =
+        LocalDate.now(ZoneId.systemDefault()).minusDays(effectiveDays - 1L).atStartOfDay();
 
     QRagTraceEntity qTrace = QRagTraceEntity.ragTraceEntity;
     BooleanBuilder builder = new BooleanBuilder();
-    builder.and(qTrace.delFlag.eq(0L));
     builder.and(qTrace.createTime.goe(startTime));
     builder.and(qTrace.createTime.loe(endTime));
 
@@ -283,6 +288,210 @@ public class AiStatsQueryApiImpl implements AiStatsQueryApi, AiStatsQueryService
   public TokenUsageStatsResponse getTokenUsageStatsResponse(Long workspaceId, Integer days) {
     TokenUsageStatsDTO dto = getTokenUsageStats(workspaceId, days);
     return tokenStatsMapper.toResponse(dto);
+  }
+
+  /**
+   * 统计每个或指定 API Key 的 Token 消耗用量趋势（支持按日 DAILY 或按月 MONTHLY）
+   *
+   * @param request 查询请求参数 (含可选 apiKey, period=DAILY/MONTHLY, days, months, workspaceId)
+   * @return API Key Token 消耗趋势响应对象
+   */
+  @Override
+  @Transactional(readOnly = true)
+  public ApiKeyTokenUsageResponse getApiKeyTokenUsageStats(ApiKeyTokenUsageQueryRequest request) {
+    ApiKeyTokenUsageQueryRequest req =
+        request != null ? request : new ApiKeyTokenUsageQueryRequest(null, null, null, null, null);
+
+    boolean isMonthly = req.isMonthly();
+    int effectiveRange = req.getEffectiveRange();
+    ZoneId zone = ZoneId.systemDefault();
+    LocalDateTime endTime = LocalDateTime.now(zone);
+
+    LocalDateTime startTime;
+    List<String> periodKeys = new ArrayList<>(effectiveRange);
+
+    if (isMonthly) {
+      YearMonth currentMonth = YearMonth.now(zone);
+      YearMonth startMonth = currentMonth.minusMonths(effectiveRange - 1L);
+      startTime = startMonth.atDay(1).atStartOfDay();
+      for (int i = 0; i < effectiveRange; i++) {
+        periodKeys.add(startMonth.plusMonths(i).toString()); // "yyyy-MM"
+      }
+    } else {
+      LocalDate today = LocalDate.now(zone);
+      LocalDate startDate = today.minusDays(effectiveRange - 1L);
+      startTime = startDate.atStartOfDay();
+      for (int i = 0; i < effectiveRange; i++) {
+        periodKeys.add(startDate.plusDays(i).toString()); // "yyyy-MM-dd"
+      }
+    }
+
+    QRagTraceEntity qTrace = QRagTraceEntity.ragTraceEntity;
+    BooleanBuilder builder = new BooleanBuilder();
+    builder.and(qTrace.createTime.goe(startTime));
+    builder.and(qTrace.createTime.loe(endTime));
+
+    String targetMaskedKey = null;
+    if (StrUtil.isNotBlank(req.apiKey())) {
+      targetMaskedKey = DesensitizeUtils.maskApiKey(req.apiKey().trim());
+      builder.and(qTrace.apiKey.eq(targetMaskedKey));
+    } else {
+      builder.and(qTrace.apiKey.isNotNull()).and(qTrace.apiKey.ne(""));
+    }
+
+    if (req.workspaceId() != null) {
+      builder.and(qTrace.workspaceId.eq(req.workspaceId()));
+    }
+
+    String pattern = isMonthly ? "YYYY-MM" : "YYYY-MM-DD";
+    StringExpression dateExpr =
+        Expressions.stringTemplate("TO_CHAR({0}, '" + pattern + "')", qTrace.createTime);
+
+    List<Tuple> tuples =
+        queryFactory
+            .select(
+                dateExpr,
+                qTrace.apiKey,
+                qTrace.promptTokens.sum().coalesce(0),
+                qTrace.completionTokens.sum().coalesce(0),
+                qTrace.embeddingTokens.sum().coalesce(0),
+                qTrace.rerankTokens.sum().coalesce(0),
+                qTrace.totalTokens.sum().coalesce(0),
+                qTrace.count())
+            .from(qTrace)
+            .where(builder)
+            .groupBy(dateExpr, qTrace.apiKey)
+            .orderBy(dateExpr.asc())
+            .fetch();
+
+    record KeyStatRecord(
+        String period,
+        String apiKey,
+        long promptTokens,
+        long completionTokens,
+        long embeddingTokens,
+        long rerankTokens,
+        long totalTokens,
+        long callCount) {}
+
+    List<KeyStatRecord> records = new ArrayList<>();
+    Map<String, long[]> keyAggregates = new HashMap<>(); // apiKey -> [total, prompt, completion, calls]
+
+    long grandTotalTokens = 0L;
+    long grandPromptTokens = 0L;
+    long grandCompletionTokens = 0L;
+    long grandEmbeddingTokens = 0L;
+    long grandRerankTokens = 0L;
+    long grandCallCount = 0L;
+
+    if (tuples != null) {
+      for (Tuple tuple : tuples) {
+        String period = tuple.get(0, String.class);
+        String apiKey = tuple.get(1, String.class);
+        if (StrUtil.isBlank(period) || StrUtil.isBlank(apiKey)) {
+          continue;
+        }
+
+        long prompt = getLong(tuple.get(2, Number.class));
+        long completion = getLong(tuple.get(3, Number.class));
+        long embedding = getLong(tuple.get(4, Number.class));
+        long rerank = getLong(tuple.get(5, Number.class));
+        long total = getLong(tuple.get(6, Number.class));
+        long calls = getLong(tuple.get(7, Number.class));
+
+        if (total == 0L && (prompt > 0L || completion > 0L || embedding > 0L || rerank > 0L)) {
+          total = prompt + completion + embedding + rerank;
+        }
+
+        records.add(
+            new KeyStatRecord(period, apiKey, prompt, completion, embedding, rerank, total, calls));
+
+        grandTotalTokens += total;
+        grandPromptTokens += prompt;
+        grandCompletionTokens += completion;
+        grandEmbeddingTokens += embedding;
+        grandRerankTokens += rerank;
+        grandCallCount += calls;
+
+        long[] keyAgg = keyAggregates.computeIfAbsent(apiKey, k -> new long[4]);
+        keyAgg[0] += total;
+        keyAgg[1] += prompt;
+        keyAgg[2] += completion;
+        keyAgg[3] += calls;
+      }
+    }
+
+    ApiKeyTokenUsageResponse.TokenUsageSummaryVO summary =
+        new ApiKeyTokenUsageResponse.TokenUsageSummaryVO(
+            grandTotalTokens,
+            grandPromptTokens,
+            grandCompletionTokens,
+            grandEmbeddingTokens,
+            grandRerankTokens,
+            grandCallCount);
+
+    // 计算各 API Key 在全周期内的用量排行
+    List<ApiKeyTokenUsageResponse.KeyBreakdownVO> keyBreakdown = new ArrayList<>();
+    final long totalForCalc = grandTotalTokens;
+    for (Map.Entry<String, long[]> entry : keyAggregates.entrySet()) {
+      String key = entry.getKey();
+      long[] agg = entry.getValue();
+      double pct = totalForCalc > 0 ? (agg[0] * 100.0 / totalForCalc) : 0.0;
+      double roundedPct = Math.round(pct * 100.0) / 100.0;
+      keyBreakdown.add(
+          new ApiKeyTokenUsageResponse.KeyBreakdownVO(
+              key, agg[0], agg[1], agg[2], agg[3], roundedPct));
+    }
+    keyBreakdown.sort(
+        Comparator.comparingLong(ApiKeyTokenUsageResponse.KeyBreakdownVO::totalTokens).reversed());
+
+    // 构建时间序列 timeline，按日期/月份连续补 0
+    Map<String, List<KeyStatRecord>> recordsByPeriod = new HashMap<>();
+    for (KeyStatRecord rec : records) {
+      recordsByPeriod.computeIfAbsent(rec.period(), k -> new ArrayList<>()).add(rec);
+    }
+
+    List<ApiKeyTokenUsageResponse.TimelineTokenUsageVO> timeline =
+        new ArrayList<>(periodKeys.size());
+    for (String period : periodKeys) {
+      List<KeyStatRecord> periodRecords = recordsByPeriod.getOrDefault(period, List.of());
+      long pTotal = 0L;
+      long pPrompt = 0L;
+      long pCompletion = 0L;
+      long pEmbedding = 0L;
+      long pRerank = 0L;
+      long pCalls = 0L;
+      List<ApiKeyTokenUsageResponse.KeyDetailVO> keyDetails =
+          new ArrayList<>(periodRecords.size());
+
+      for (KeyStatRecord r : periodRecords) {
+        pTotal += r.totalTokens();
+        pPrompt += r.promptTokens();
+        pCompletion += r.completionTokens();
+        pEmbedding += r.embeddingTokens();
+        pRerank += r.rerankTokens();
+        pCalls += r.callCount();
+        keyDetails.add(
+            new ApiKeyTokenUsageResponse.KeyDetailVO(
+                r.apiKey(), r.totalTokens(), r.promptTokens(), r.completionTokens(), r.callCount()));
+      }
+      keyDetails.sort(
+          Comparator.comparingLong(ApiKeyTokenUsageResponse.KeyDetailVO::totalTokens).reversed());
+
+      timeline.add(
+          new ApiKeyTokenUsageResponse.TimelineTokenUsageVO(
+              period, pTotal, pPrompt, pCompletion, pEmbedding, pRerank, pCalls, keyDetails));
+    }
+
+    return new ApiKeyTokenUsageResponse(
+        isMonthly ? "MONTHLY" : "DAILY",
+        targetMaskedKey,
+        req.workspaceId(),
+        startTime,
+        endTime,
+        summary,
+        keyBreakdown,
+        timeline);
   }
 
   private long getLong(Number number) {

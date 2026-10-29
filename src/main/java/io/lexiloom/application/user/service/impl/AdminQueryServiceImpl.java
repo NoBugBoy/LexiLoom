@@ -5,7 +5,7 @@ import com.querydsl.core.types.Projections;
 import com.querydsl.core.types.dsl.Expressions;
 import com.querydsl.jpa.impl.JPAQuery;
 import com.querydsl.jpa.impl.JPAQueryFactory;
-import io.lexiloom.application.user.api.AdminQueryService;
+import io.lexiloom.application.user.service.AdminQueryService;
 import io.lexiloom.application.user.model.entity.AdminEntity;
 import io.lexiloom.application.user.model.entity.QAdminEntity;
 import io.lexiloom.application.user.model.entity.QAdminRoleEntity;
@@ -19,17 +19,22 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.support.PageableExecutionUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class AdminQueryServiceImpl implements AdminQueryService {
   private final AdminRepository repository;
   private final JPAQueryFactory queryFactory;
 
   @Override
   public Optional<AdminEntity> findAdminByEmail(String email) {
-    return repository.findByEmail(email);
+    if (!StringUtils.hasText(email)) {
+      return Optional.empty();
+    }
+    return repository.findByEmail(email.trim());
   }
 
   @Override

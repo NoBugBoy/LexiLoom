@@ -2,8 +2,6 @@ package io.lexiloom.application;
 
 import static io.restassured.RestAssured.given;
 
-import cn.binarywang.wx.miniapp.api.WxMaService;
-import io.lexiloom.application.common.CustomerProperties;
 import io.lexiloom.application.common.security.RedisTokenManager;
 import io.lexiloom.application.enums.AdminRoleEnum;
 import io.restassured.RestAssured;
@@ -50,11 +48,7 @@ public abstract class BaseControllerIntegrationTest {
 
   @LocalServerPort protected int port;
 
-  @Autowired protected CustomerProperties customerProperties;
-
   @Autowired protected RedisTokenManager redisTokenManager;
-
-  @MockitoBean protected WxMaService wxMaService;
 
   @MockitoBean protected JavaMailSender javaMailSender;
 

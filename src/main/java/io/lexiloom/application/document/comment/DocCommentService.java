@@ -1,20 +1,21 @@
 package io.lexiloom.application.document.comment;
 
-import io.lexiloom.application.common.ErrorCode;
+import io.lexiloom.application.exception.ErrorCode;
 import io.lexiloom.application.document.acl.DocAccessControlService;
 import io.lexiloom.application.document.api.dto.DocCommentDTO;
 import io.lexiloom.application.document.api.dto.DocCommentNodeDTO;
 import io.lexiloom.application.document.mapper.DocCommentMapper;
 import io.lexiloom.application.document.model.entity.DocCommentEntity;
 import io.lexiloom.application.document.model.entity.DocumentEntity;
+import io.lexiloom.application.document.model.request.DocCommentCreateRequest;
 import io.lexiloom.application.document.repository.DocCommentRepository;
 import io.lexiloom.application.document.repository.DocumentRepository;
 import io.lexiloom.application.exception.BusinessException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,6 +40,22 @@ public class DocCommentService {
   private final DocCommentMapper docCommentMapper;
   private final StringRedisTemplate stringRedisTemplate;
   private final DocAccessControlService docAccessControlService;
+
+  /** 发表评论或楼中楼回复（统一编排入口，保持 Controller 纯粹性） */
+  @Transactional
+  public DocCommentDTO addComment(
+      Long workSpaceId, Long documentId, Long userId, DocCommentCreateRequest request) {
+    if (request.parentId() == null || request.parentId() == 0L) {
+      return addRootComment(workSpaceId, documentId, userId, request.content());
+    }
+    return addReplyComment(
+        workSpaceId,
+        documentId,
+        userId,
+        request.parentId(),
+        request.replyToUserId(),
+        request.content());
+  }
 
   /** 发表根评论 */
   @Transactional
@@ -128,13 +145,18 @@ public class DocCommentService {
     Boolean isNew =
         stringRedisTemplate
             .opsForValue()
-            .setIfAbsent(redisKey, "1", COMMENT_LIKE_TTL_HOURS, TimeUnit.HOURS);
+            .setIfAbsent(redisKey, "1", Duration.ofHours(COMMENT_LIKE_TTL_HOURS));
     if (Boolean.FALSE.equals(isNew)) {
       throw BusinessException.badRequest("您已在 24 小时内点赞过该评论，请稍后再试");
     }
 
     // 3. 原子 SQL 递增，避免应用层 read-modify-write 并发丢失
-    docCommentRepository.incrementLikeCount(commentId);
+    try {
+      docCommentRepository.incrementLikeCount(commentId);
+    } catch (Exception ex) {
+      stringRedisTemplate.delete(redisKey);
+      throw ex;
+    }
     log.info("【DocCommentService】评论点赞成功: commentId={}, userId={}", commentId, userId);
   }
 

@@ -7,9 +7,13 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
@@ -33,12 +37,18 @@ public class HttpLoggingFilter extends OncePerRequestFilter {
   private static final int MAX_PAYLOAD_LENGTH = 10000;
 
   private static final Set<String> EXCLUDE_PREFIXES =
-      Set.of("/actuator", "/v3/api-docs", "/swagger-ui", "/favicon.ico");
+      Set.of("/actuator", "/v3/api-docs", "/swagger-ui", "/favicon.ico", "/uploads");
+
+  /** 匹配 JSON 中常见敏感凭据字段（兼容 camelCase 与 snake_case）并掩码脱敏 */
+  private static final Pattern SENSITIVE_JSON_FIELD_PATTERN =
+      Pattern.compile(
+          "(\"(?:(?:old_?|new_?)?password|secret(?:_?key)?|(?:llm_?)?api_?key|(?:access_?|refresh_?|turnstile_?)?token)\"\\s*:\\s*\")([^\"]+)(\")",
+          Pattern.CASE_INSENSITIVE);
 
   @Override
   protected boolean shouldNotFilter(HttpServletRequest request) {
     String path = request.getRequestURI();
-    return EXCLUDE_PREFIXES.stream().anyMatch(path::startsWith);
+    return path != null && EXCLUDE_PREFIXES.stream().anyMatch(path::startsWith);
   }
 
   @Override
@@ -67,7 +77,7 @@ public class HttpLoggingFilter extends OncePerRequestFilter {
 
     HttpServletResponse responseToUse = responseWrapper != null ? responseWrapper : response;
 
-    long startTime = System.currentTimeMillis();
+    long startNanos = System.nanoTime();
     String uri = request.getRequestURI();
     String queryString = request.getQueryString();
     String fullUri = StringUtils.hasText(queryString) ? uri + "?" + queryString : uri;
@@ -77,53 +87,57 @@ public class HttpLoggingFilter extends OncePerRequestFilter {
     try {
       filterChain.doFilter(requestWrapper, responseToUse);
     } finally {
-      long duration = System.currentTimeMillis() - startTime;
-      int status = responseToUse.getStatus();
+      long duration = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
+      boolean asyncOrStreaming = responseWrapper == null || request.isAsyncStarted();
+      try {
+        if (log.isInfoEnabled()) {
+          int status = responseToUse.getStatus();
+          String requestBody = extractRequestPayload(requestWrapper);
 
-      String requestBody =
-          getPayload(requestWrapper.getContentAsByteArray(), request.getContentType());
+          if (asyncOrStreaming) {
+            log.info(
+                """
 
-      if (responseWrapper == null || request.isAsyncStarted()) {
-        log.info(
-            """
+                ====================== [HTTP LOG] ======================
+                --> {} {} (IP: {})
+                Request Body : {}
+                <-- {} (Cost: {} ms) [STREAMING/ASYNC]
+                Response Body: [STREAMING_RESPONSE_NOT_CACHED]
+                =======================================================
+                """,
+                method,
+                fullUri,
+                clientIp,
+                StringUtils.hasText(requestBody) ? requestBody : "[EMPTY]",
+                status,
+                duration);
+          } else {
+            String responseBody = extractResponsePayload(responseWrapper);
 
-            ====================== [HTTP LOG] ======================
-            --> {} {} (IP: {})
-            Request Body : {}
-            <-- {} (Cost: {} ms) [STREAMING/ASYNC]
-            Response Body: [STREAMING_RESPONSE_NOT_CACHED]
-            =======================================================
-            """,
-            method,
-            fullUri,
-            clientIp,
-            StringUtils.hasText(requestBody) ? requestBody : "[EMPTY]",
-            status,
-            duration);
-      } else {
-        String responseBody =
-            getPayload(responseWrapper.getContentAsByteArray(), responseWrapper.getContentType());
+            log.info(
+                """
 
-        log.info(
-            """
-
-            ====================== [HTTP LOG] ======================
-            --> {} {} (IP: {})
-            Request Body : {}
-            <-- {} (Cost: {} ms)
-            Response Body: {}
-            =======================================================
-            """,
-            method,
-            fullUri,
-            clientIp,
-            StringUtils.hasText(requestBody) ? requestBody : "[EMPTY]",
-            status,
-            duration,
-            StringUtils.hasText(responseBody) ? responseBody : "[EMPTY]");
-
-        // 仅在非异步/非流式的普通响应中，将缓存的响应体内容回写至真实 Response
-        responseWrapper.copyBodyToResponse();
+                ====================== [HTTP LOG] ======================
+                --> {} {} (IP: {})
+                Request Body : {}
+                <-- {} (Cost: {} ms)
+                Response Body: {}
+                =======================================================
+                """,
+                method,
+                fullUri,
+                clientIp,
+                StringUtils.hasText(requestBody) ? requestBody : "[EMPTY]",
+                status,
+                duration,
+                StringUtils.hasText(responseBody) ? responseBody : "[EMPTY]");
+          }
+        }
+      } finally {
+        // 独立 finally 块确保即便日志拼装异常，非流式响应也必定回写至真实客户端连接
+        if (!asyncOrStreaming) {
+          responseWrapper.copyBodyToResponse();
+        }
       }
     }
   }
@@ -133,7 +147,10 @@ public class HttpLoggingFilter extends OncePerRequestFilter {
       return true;
     }
     String uri = request.getRequestURI();
-    if (uri != null && (uri.contains("/stream") || uri.endsWith(".sse"))) {
+    if (uri != null
+        && (uri.contains("/stream")
+            || uri.endsWith(".sse")
+            || uri.endsWith("/chat/completions"))) {
       return true;
     }
     String accept = request.getHeader(HttpHeaders.ACCEPT);
@@ -143,25 +160,67 @@ public class HttpLoggingFilter extends OncePerRequestFilter {
             || accept.contains("application/x-ndjson"));
   }
 
-  private String getPayload(byte[] buf, String contentType) {
-    if (buf == null || buf.length == 0) {
+  private String extractRequestPayload(ContentCachingRequestWrapper request) {
+    String contentType = request.getContentType();
+    if (isMultipartContentType(contentType)) {
+      long size = request.getContentLengthLong();
+      if (size < 0) {
+        size = request.getContentAsByteArray().length;
+      }
+      return size > 0 ? "[Multipart Data: " + size + " bytes]" : "";
+    }
+    byte[] buf = request.getContentAsByteArray();
+    if (buf.length == 0) {
       return "";
     }
-    // 仅打印文本/JSON/XML/表单类内容，避免二进制内容乱码
-    if (contentType != null) {
-      String lower = contentType.toLowerCase();
-      boolean isTextOrJson =
-          lower.contains("json")
-              || lower.contains("xml")
-              || lower.contains("text")
-              || lower.contains("form");
-      if (!isTextOrJson) {
-        return "[Binary Data: " + buf.length + " bytes]";
-      }
+    if (!isTextOrJsonContentType(contentType)) {
+      return "[Binary Data: " + buf.length + " bytes]";
     }
+    return formatTextPayload(buf);
+  }
+
+  private String extractResponsePayload(ContentCachingResponseWrapper response) {
+    int size = response.getContentSize();
+    if (size <= 0) {
+      return "";
+    }
+    String contentType = response.getContentType();
+    if (isMultipartContentType(contentType)) {
+      return "[Multipart Data: " + size + " bytes]";
+    }
+    // 重要：先判断是否为二进制类型，避免对大体积文件下载调用 getContentAsByteArray() 触发堆内存完整拷贝
+    if (!isTextOrJsonContentType(contentType)) {
+      return "[Binary Data: " + size + " bytes]";
+    }
+    return formatTextPayload(response.getContentAsByteArray());
+  }
+
+  private boolean isMultipartContentType(@Nullable String contentType) {
+    return contentType != null && contentType.toLowerCase(Locale.ROOT).startsWith("multipart/");
+  }
+
+  private boolean isTextOrJsonContentType(@Nullable String contentType) {
+    if (contentType == null) {
+      return true;
+    }
+    String lower = contentType.toLowerCase(Locale.ROOT);
+    return lower.contains("json")
+        || lower.contains("xml")
+        || lower.contains("text")
+        || lower.contains("x-www-form-urlencoded");
+  }
+
+  private String formatTextPayload(byte[] buf) {
     int length = Math.min(buf.length, MAX_PAYLOAD_LENGTH);
-    String content = new String(buf, 0, length, StandardCharsets.UTF_8);
+    String content = maskSensitiveFields(new String(buf, 0, length, StandardCharsets.UTF_8));
     return buf.length > MAX_PAYLOAD_LENGTH ? content + "... [TRUNCATED]" : content;
+  }
+
+  private String maskSensitiveFields(String content) {
+    if (!StringUtils.hasText(content) || !content.contains("\"")) {
+      return content;
+    }
+    return SENSITIVE_JSON_FIELD_PATTERN.matcher(content).replaceAll("$1******$3");
   }
 
   private String getClientIp(HttpServletRequest request) {
@@ -172,8 +231,11 @@ public class HttpLoggingFilter extends OncePerRequestFilter {
     if (!StringUtils.hasText(ip) || "unknown".equalsIgnoreCase(ip)) {
       ip = request.getRemoteAddr();
     }
-    if (StringUtils.hasText(ip) && ip.contains(",")) {
-      ip = ip.split(",")[0].trim();
+    if (StringUtils.hasText(ip)) {
+      int commaIdx = ip.indexOf(',');
+      if (commaIdx > 0) {
+        ip = ip.substring(0, commaIdx).trim();
+      }
     }
     return ip;
   }

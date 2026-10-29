@@ -15,11 +15,14 @@ import io.lexiloom.application.ai.api.dto.TokenUsageStatsDTO;
 import io.lexiloom.application.ai.config.AiProperties;
 import io.lexiloom.application.ai.mapper.TokenStatsMapper;
 import io.lexiloom.application.ai.mapper.TokenStatsMapperImpl;
+import io.lexiloom.application.ai.model.request.ApiKeyTokenUsageQueryRequest;
+import io.lexiloom.application.ai.model.response.ApiKeyTokenUsageResponse;
 import io.lexiloom.application.ai.model.response.TokenUsageStatsResponse;
 import io.lexiloom.application.ai.repository.DocChunkRepository;
 import io.lexiloom.application.ai.service.impl.AiStatsQueryApiImpl;
 import io.lexiloom.application.ai.trace.entity.QRagTraceEntity;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -247,5 +250,104 @@ class AiStatsQueryApiImplTest {
     assertThat(response.modelBreakdown().get(0).percentage()).isEqualTo(100.0);
     assertThat(response.dailyStats()).hasSize(7);
     assertThat(response.dailyStats().get(6).totalTokens()).isEqualTo(300L);
+  }
+
+  @Test
+  @DisplayName("验证 getApiKeyTokenUsageStats 按日统计指定 API Key 消耗趋势")
+  @SuppressWarnings("unchecked")
+  void testGetApiKeyTokenUsageStatsDaily() {
+    String todayStr = LocalDate.now().toString();
+    Tuple tuple = mock(Tuple.class);
+    when(tuple.get(0, String.class)).thenReturn(todayStr);
+    when(tuple.get(1, String.class)).thenReturn("lx_live_b7c2****c1be");
+    when(tuple.get(2, Number.class)).thenReturn(500);
+    when(tuple.get(3, Number.class)).thenReturn(1000);
+    when(tuple.get(4, Number.class)).thenReturn(100);
+    when(tuple.get(5, Number.class)).thenReturn(50);
+    when(tuple.get(6, Number.class)).thenReturn(1650);
+    when(tuple.get(7, Number.class)).thenReturn(2L);
+
+    QRagTraceEntity qTrace = QRagTraceEntity.ragTraceEntity;
+    when(queryFactory.select(
+            any(Expression.class),
+            any(Expression.class),
+            any(Expression.class),
+            any(Expression.class),
+            any(Expression.class),
+            any(Expression.class),
+            any(Expression.class),
+            any(Expression.class)))
+        .thenReturn(jpaQuery);
+    when(jpaQuery.from(qTrace)).thenReturn(jpaQuery);
+    when(jpaQuery.where(any(Predicate.class))).thenReturn(jpaQuery);
+    when(jpaQuery.groupBy(any(Expression.class), any(Expression.class))).thenReturn(jpaQuery);
+    when(jpaQuery.orderBy(any(OrderSpecifier.class))).thenReturn(jpaQuery);
+    when(jpaQuery.fetch()).thenReturn(List.of(tuple));
+
+    ApiKeyTokenUsageQueryRequest request =
+        new ApiKeyTokenUsageQueryRequest("lx_live_b7c2xxxxxxxxc1be", 1L, "DAILY", 7, null);
+    ApiKeyTokenUsageResponse response = service.getApiKeyTokenUsageStats(request);
+
+    assertThat(response).isNotNull();
+    assertThat(response.periodType()).isEqualTo("DAILY");
+    assertThat(response.targetApiKey()).isEqualTo("lx_live_b7c2****c1be");
+    assertThat(response.workspaceId()).isEqualTo(1L);
+
+    // 校验汇总
+    assertThat(response.total().totalTokens()).isEqualTo(1650L);
+    assertThat(response.total().promptTokens()).isEqualTo(500L);
+    assertThat(response.total().completionTokens()).isEqualTo(1000L);
+    assertThat(response.total().callCount()).isEqualTo(2L);
+
+    // 校验各 Key 排行
+    assertThat(response.keyBreakdown()).hasSize(1);
+    assertThat(response.keyBreakdown().getFirst().apiKey()).isEqualTo("lx_live_b7c2****c1be");
+    assertThat(response.keyBreakdown().getFirst().percentage()).isEqualTo(100.0);
+
+    // 校验连续 7 天时间序列
+    assertThat(response.timeline()).hasSize(7);
+    ApiKeyTokenUsageResponse.TimelineTokenUsageVO lastDay = response.timeline().get(6);
+    assertThat(lastDay.period()).isEqualTo(todayStr);
+    assertThat(lastDay.totalTokens()).isEqualTo(1650L);
+    assertThat(lastDay.keyDetails()).hasSize(1);
+  }
+
+  @Test
+  @DisplayName("验证 getApiKeyTokenUsageStats 按月统计多 Key 并支持空数据补 0")
+  @SuppressWarnings("unchecked")
+  void testGetApiKeyTokenUsageStatsMonthlyEmpty() {
+    QRagTraceEntity qTrace = QRagTraceEntity.ragTraceEntity;
+    when(queryFactory.select(
+            any(Expression.class),
+            any(Expression.class),
+            any(Expression.class),
+            any(Expression.class),
+            any(Expression.class),
+            any(Expression.class),
+            any(Expression.class),
+            any(Expression.class)))
+        .thenReturn(jpaQuery);
+    when(jpaQuery.from(qTrace)).thenReturn(jpaQuery);
+    when(jpaQuery.where(any(Predicate.class))).thenReturn(jpaQuery);
+    when(jpaQuery.groupBy(any(Expression.class), any(Expression.class))).thenReturn(jpaQuery);
+    when(jpaQuery.orderBy(any(OrderSpecifier.class))).thenReturn(jpaQuery);
+    when(jpaQuery.fetch()).thenReturn(List.of());
+
+    ApiKeyTokenUsageQueryRequest request =
+        new ApiKeyTokenUsageQueryRequest(null, null, "MONTHLY", null, 6);
+    ApiKeyTokenUsageResponse response = service.getApiKeyTokenUsageStats(request);
+
+    assertThat(response).isNotNull();
+    assertThat(response.periodType()).isEqualTo("MONTHLY");
+    assertThat(response.targetApiKey()).isNull();
+    assertThat(response.total().totalTokens()).isZero();
+    assertThat(response.keyBreakdown()).isEmpty();
+
+    // 校验连续 6 个月时间序列，全为 0
+    assertThat(response.timeline()).hasSize(6);
+    String currentMonthStr = YearMonth.now().toString();
+    assertThat(response.timeline().get(5).period()).isEqualTo(currentMonthStr);
+    assertThat(response.timeline().get(5).totalTokens()).isZero();
+    assertThat(response.timeline().get(5).keyDetails()).isEmpty();
   }
 }

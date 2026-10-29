@@ -193,9 +193,13 @@ public class WorkSpaceCommandServiceImpl implements WorkSpaceCommandService {
       if (Objects.equals(workSpaceId, parentId)) {
         throw BusinessException.badRequest("不能将工作空间自身设置为父空间");
       }
-      workSpaceRepository
-          .findById(parentId)
-          .orElseThrow(() -> BusinessException.badRequest("指定的父工作空间不存在: " + parentId));
+      WorkSpaceEntity parent =
+          workSpaceRepository
+              .findById(parentId)
+              .orElseThrow(() -> BusinessException.badRequest("指定的父工作空间不存在: " + parentId));
+      if (Objects.equals(parent.getParentId(), workSpaceId)) {
+        throw BusinessException.badRequest("检测到循环关联：目标父空间已是当前空间的子空间");
+      }
     }
 
     workSpace.changeParent(parentId);

@@ -1,6 +1,6 @@
 package io.lexiloom.application.document.pipeline;
 
-import io.lexiloom.application.common.ErrorCode;
+import io.lexiloom.application.exception.ErrorCode;
 import io.lexiloom.application.common.storage.FileStorageGateway;
 import io.lexiloom.application.document.acl.DocAccessControlService;
 import io.lexiloom.application.document.model.entity.DocSourceFileEntity;

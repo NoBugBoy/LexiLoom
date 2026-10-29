@@ -2,7 +2,7 @@ package io.lexiloom.application.document.service;
 
 import cn.hutool.core.io.IoUtil;
 import cn.hutool.core.util.StrUtil;
-import io.lexiloom.application.common.ErrorCode;
+import io.lexiloom.application.exception.ErrorCode;
 import io.lexiloom.application.document.acl.DocAccessControlService;
 import io.lexiloom.application.document.api.dto.DocumentDTO;
 import io.lexiloom.application.document.mapper.DocumentMapper;
@@ -11,7 +11,6 @@ import io.lexiloom.application.document.model.entity.DocumentEntity;
 import io.lexiloom.application.document.model.event.DocumentDeletedEvent;
 import io.lexiloom.application.document.model.event.DocumentUpdatedEvent;
 import io.lexiloom.application.document.model.request.DocumentTransitionRequest;
-import io.lexiloom.application.document.model.request.DocumentUpdateRequest;
 import io.lexiloom.application.document.parser.DocParserEngineEnum;
 import io.lexiloom.application.document.pipeline.DocumentImportCommand;
 import io.lexiloom.application.document.pipeline.DocumentImportPipeline;
@@ -21,7 +20,7 @@ import io.lexiloom.application.document.repository.DocCommentRepository;
 import io.lexiloom.application.document.repository.DocSourceFileRepository;
 import io.lexiloom.application.document.repository.DocumentRepository;
 import io.lexiloom.application.document.statemachine.DocumentStateContext;
-import io.lexiloom.application.document.statemachine.DocumentStateEnum;
+import io.lexiloom.application.document.api.dto.DocumentStateEnum;
 import io.lexiloom.application.document.statemachine.DocumentStateMachineEngine;
 import io.lexiloom.application.enums.WorkSpaceAclEnum;
 import io.lexiloom.application.exception.BusinessException;
@@ -39,8 +38,8 @@ import org.springframework.web.multipart.MultipartFile;
 @RequiredArgsConstructor
 public class DocumentCommandService {
 
-  /** 单文件导入大小上限：10MB（超限直接拒绝，避免整文件读入内存导致 OOM） */
-  private static final long MAX_IMPORT_FILE_SIZE_BYTES = 10L * 1024 * 1024;
+  /** 单文件导入大小上限：100MB（与 application.yaml max-file-size 保持一致，避免整文件读入内存导致 OOM） */
+  private static final long MAX_IMPORT_FILE_SIZE_BYTES = 100L * 1024 * 1024;
 
   private final DocumentRepository documentRepository;
   private final DocAccessControlService docAccessControlService;
@@ -52,40 +51,6 @@ public class DocumentCommandService {
   private final DocCategoryRepository docCategoryRepository;
   private final DocSourceFileRepository docSourceFileRepository;
   private final io.lexiloom.application.approval.api.ApprovalApi approvalApi;
-
-  /** 修改编辑文档内容 */
-  @Transactional
-  public DocumentDTO update(Long docId, DocumentUpdateRequest request, Long userId) {
-    DocumentEntity doc =
-        documentRepository
-            .findById(docId)
-            .orElseThrow(() -> new BusinessException(ErrorCode.Document.DOC_NOT_FOUND, "文档不存在"));
-
-    docAccessControlService.assertCanWrite(doc, userId);
-
-    doc.updateContent(request.title(), request.summary(), request.content(), null);
-    if (request.categoryId() != null) {
-      assertCategoryInWorkSpace(doc.getWorkSpaceId(), request.categoryId());
-      doc.updateCategory(request.categoryId());
-    }
-    if (request.visibility() != null) {
-      doc.updateVisibility(request.visibility());
-    }
-    if (request.coverUrl() != null) {
-      doc.updateCover(request.coverUrl());
-    }
-
-    DocumentEntity updated = documentRepository.save(doc);
-
-    // 若修改的文档已处于审批通过状态，发布更新事件以刷新 Elasticsearch 全文检索索引
-    if (updated.getStatus() == DocumentStateEnum.APPROVED) {
-      eventPublisher.publishEvent(
-          new DocumentUpdatedEvent(docId, updated.getWorkSpaceId(), userId));
-    }
-
-    log.info("【DocumentCommandService】文档更新成功: id={}, userId={}", docId, userId);
-    return documentMapper.toDTO(updated);
-  }
 
   /** 软删除文档（级联清理关联评论与暂存草稿） */
   @Transactional
@@ -150,26 +115,24 @@ public class DocumentCommandService {
       String userName = io.lexiloom.application.common.SecurityHolder.getUsername().orElse(null);
       String comment = StrUtil.blankToDefault(request.reason(), "管理员审核操作");
       try {
-        if (request.event()
-            == io.lexiloom.application.document.statemachine.DocumentEventEnum.APPROVE) {
-          approvalApi.approve(
-              io.lexiloom.application.enums.ApprovalTypeEnum.DOCUMENT_AUDIT,
-              docId,
-              userId,
-              userName,
-              comment);
-        } else if (request.event()
-            == io.lexiloom.application.document.statemachine.DocumentEventEnum.REJECT) {
-          approvalApi.reject(
-              io.lexiloom.application.enums.ApprovalTypeEnum.DOCUMENT_AUDIT,
-              docId,
-              userId,
-              userName,
-              comment);
-        } else if (request.event()
-            == io.lexiloom.application.document.statemachine.DocumentEventEnum.SUBMIT) {
-          approvalApi.submitDocumentAudit(
-              docId, doc.getWorkSpaceId(), userId, userName, comment, null);
+        switch (request.event()) {
+          case APPROVE ->
+              approvalApi.approve(
+                  io.lexiloom.application.enums.ApprovalTypeEnum.DOCUMENT_AUDIT,
+                  docId,
+                  userId,
+                  userName,
+                  comment);
+          case REJECT ->
+              approvalApi.reject(
+                  io.lexiloom.application.enums.ApprovalTypeEnum.DOCUMENT_AUDIT,
+                  docId,
+                  userId,
+                  userName,
+                  comment);
+          case SUBMIT ->
+              approvalApi.submitDocumentAudit(
+                  docId, doc.getWorkSpaceId(), userId, userName, comment, null);
         }
       } catch (Exception e) {
         log.warn(

@@ -147,20 +147,9 @@ public class DocSourceFileEntity extends BaseEntity {
     markParseSuccess(rawText, engine, null);
   }
 
-  /** 标记为固化版面仅预览（如 PDF 双轨制） */
-  public void markPreviewOnly(String rawText, DocParserEngineEnum engine, String parseMetadata) {
-    applyParseResult(DocParseStatusEnum.PREVIEW_ONLY, rawText, engine, parseMetadata);
-  }
-
-  /** 标记为固化版面仅预览 */
-  public void markPreviewOnly(String rawText, DocParserEngineEnum engine) {
-    markPreviewOnly(rawText, engine, null);
-  }
-
   /** 标记解析失败 */
   public void markParseFailed(String errorMessage) {
-    if (this.parseStatus == DocParseStatusEnum.SUCCESS
-        || this.parseStatus == DocParseStatusEnum.PREVIEW_ONLY) {
+    if (this.parseStatus == DocParseStatusEnum.SUCCESS) {
       throw BusinessException.badRequest("文档已成功解析，不可标记为失败状态");
     }
     this.parseStatus = DocParseStatusEnum.FAILED;

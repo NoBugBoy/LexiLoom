@@ -15,9 +15,9 @@ import io.lexiloom.application.document.model.event.DocumentUpdatedEvent;
 import io.lexiloom.application.document.parser.DocParserEngineEnum;
 import io.lexiloom.application.document.repository.DocSourceFileRepository;
 import io.lexiloom.application.document.repository.DocumentRepository;
-import io.lexiloom.application.document.statemachine.DocumentEventEnum;
-import io.lexiloom.application.document.statemachine.DocumentStateEnum;
-import io.lexiloom.application.document.statemachine.DocumentStateTransitionEvent;
+import io.lexiloom.application.document.api.dto.DocumentEventEnum;
+import io.lexiloom.application.document.api.dto.DocumentStateEnum;
+import io.lexiloom.application.document.model.event.DocumentStateTransitionEvent;
 import io.lexiloom.application.enums.WorkSpaceAclEnum;
 import java.time.LocalDateTime;
 import java.util.Collections;
@@ -67,7 +67,8 @@ class DocumentSearchSyncListenerTest {
         DocSearchDocument.builder().id("101").workspaceId("1").title("Spring 实战").build();
 
     when(documentRepository.findById(docId)).thenReturn(Optional.of(doc));
-    when(docSourceFileRepository.findByDocumentId(docId)).thenReturn(Optional.of(sourceFile));
+    when(docSourceFileRepository.findFirstByDocumentIdOrderByCreateTimeDesc(docId))
+        .thenReturn(Optional.of(sourceFile));
     when(docSearchMapper.toSearchDoc(doc, sourceFile, Collections.emptyList()))
         .thenReturn(searchDoc);
 
@@ -182,7 +183,8 @@ class DocumentSearchSyncListenerTest {
     doc.transitionTo(DocumentStateEnum.APPROVED);
 
     when(documentRepository.findById(docId)).thenReturn(Optional.of(doc));
-    when(docSourceFileRepository.findByDocumentId(docId)).thenReturn(Optional.empty());
+    when(docSourceFileRepository.findFirstByDocumentIdOrderByCreateTimeDesc(docId))
+        .thenReturn(Optional.empty());
     when(docSearchMapper.toSearchDoc(eq(doc), any(), any()))
         .thenReturn(DocSearchDocument.builder().id("106").build());
     doThrow(new RuntimeException("ES unavailable")).when(docSearchRepository).save(any());
@@ -225,7 +227,8 @@ class DocumentSearchSyncListenerTest {
     doc.transitionTo(DocumentStateEnum.APPROVED);
 
     when(documentRepository.findById(docId)).thenReturn(Optional.of(doc));
-    when(docSourceFileRepository.findByDocumentId(docId)).thenReturn(Optional.empty());
+    when(docSourceFileRepository.findFirstByDocumentIdOrderByCreateTimeDesc(docId))
+        .thenReturn(Optional.empty());
     when(docSearchMapper.toSearchDoc(eq(doc), any(), any()))
         .thenReturn(DocSearchDocument.builder().id("108").build());
 

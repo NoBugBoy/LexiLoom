@@ -1,6 +1,7 @@
 package io.lexiloom.application.user.service.impl;
 
 import com.querydsl.core.BooleanBuilder;
+import io.lexiloom.application.enums.WorkSpaceStatusEnum;
 import io.lexiloom.application.user.api.WorkSpaceQueryService;
 import io.lexiloom.application.user.api.dto.WorkSpaceDTO;
 import io.lexiloom.application.user.mapper.WorkSpaceMapper;
@@ -11,6 +12,7 @@ import io.lexiloom.application.user.model.request.WorkSpacePageRequest;
 import io.lexiloom.application.user.model.response.WorkSpaceResponse;
 import io.lexiloom.application.user.repository.WorkSpaceMemberRepository;
 import io.lexiloom.application.user.repository.WorkSpaceRepository;
+import io.lexiloom.application.user.service.WorkSpaceViewService;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -24,7 +26,7 @@ import org.springframework.util.StringUtils;
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
-public class WorkSpaceQueryServiceImpl implements WorkSpaceQueryService {
+public class WorkSpaceQueryServiceImpl implements WorkSpaceQueryService, WorkSpaceViewService {
 
   private final WorkSpaceRepository workSpaceRepository;
   private final WorkSpaceMemberRepository workSpaceMemberRepository;
@@ -36,11 +38,24 @@ public class WorkSpaceQueryServiceImpl implements WorkSpaceQueryService {
   }
 
   @Override
+  public Optional<WorkSpaceResponse> getResponseById(Long id) {
+    return workSpaceRepository.findById(id).map(workSpaceMapper::toResponse);
+  }
+
+  @Override
   public Optional<WorkSpaceDTO> getByCode(String code) {
     if (!StringUtils.hasText(code)) {
       return Optional.empty();
     }
     return workSpaceRepository.findByCode(code.trim().toLowerCase()).map(workSpaceMapper::toDTO);
+  }
+
+  @Override
+  public Optional<WorkSpaceResponse> getResponseByCode(String code) {
+    if (!StringUtils.hasText(code)) {
+      return Optional.empty();
+    }
+    return workSpaceRepository.findByCode(code.trim().toLowerCase()).map(workSpaceMapper::toResponse);
   }
 
   @Override
@@ -84,6 +99,7 @@ public class WorkSpaceQueryServiceImpl implements WorkSpaceQueryService {
     }
 
     return workSpaceRepository.findAllById(workSpaceIds).stream()
+        .filter(ws -> ws.getStatus() != WorkSpaceStatusEnum.DISBANDED)
         .map(workSpaceMapper::toResponse)
         .toList();
   }
@@ -131,6 +147,7 @@ public class WorkSpaceQueryServiceImpl implements WorkSpaceQueryService {
     }
 
     return workSpaceRepository.findAllById(workSpaceIds).stream()
+        .filter(ws -> ws.getStatus() != WorkSpaceStatusEnum.DISBANDED)
         .map(workSpaceMapper::toDTO)
         .toList();
   }

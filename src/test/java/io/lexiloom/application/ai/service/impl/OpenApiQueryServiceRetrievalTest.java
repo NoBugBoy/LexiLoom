@@ -20,7 +20,7 @@ import io.lexiloom.application.ai.trace.RagTracePersistenceService;
 import io.lexiloom.application.common.SecurityHolder;
 import io.lexiloom.application.document.api.DocumentQueryApi;
 import io.lexiloom.application.document.api.dto.DocumentDTO;
-import io.lexiloom.application.document.statemachine.DocumentStateEnum;
+import io.lexiloom.application.document.api.dto.DocumentStateEnum;
 import io.lexiloom.application.enums.WorkSpaceAclEnum;
 import io.lexiloom.application.enums.WorkSpaceRoleEnum;
 import io.lexiloom.application.enums.WorkSpaceStatusEnum;

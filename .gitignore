@@ -54,3 +54,4 @@ __pycache__/
 /.agents/plugins/
 /.agents/plugins.json
 # /.agents/skills/ (允许入库共享通用 Agent 技能)
+/docs/

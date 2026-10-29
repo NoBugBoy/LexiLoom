@@ -4,9 +4,7 @@ import cn.hutool.core.util.StrUtil;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
-/**
- * AI 全链路调用来源渠道枚举 (严禁自定义，仅限以下三种受管类型)
- */
+/** AI 全链路调用来源渠道枚举 (严禁自定义，仅限以下三种受管类型) */
 @Getter
 @RequiredArgsConstructor
 public enum AiCallSourceEnum {
@@ -36,24 +34,10 @@ public enum AiCallSourceEnum {
     }
     String clean = source.trim().toUpperCase();
     return switch (clean) {
-      case "CLI_SKILL", "AGENT_MCP", "AGENT", "MCP_PLUGIN" -> CLI_SKILL;
-      case "OPENAPI", "AGENT_OPENAPI" -> OPENAPI;
-      case "WEB_CHAT", "WEB" -> WEB_CHAT;
+      case "CLI_SKILL" -> CLI_SKILL;
+      case "OPENAPI" -> OPENAPI;
+      case "WEB_CHAT" -> WEB_CHAT;
       default -> defaultSource != null ? defaultSource : WEB_CHAT;
     };
-  }
-
-  /**
-   * 判断输入字符串是否属于受管的三种合法来源之一
-   *
-   * @param source 待校验字符串
-   * @return true 若为合法受管枚举
-   */
-  public static boolean isValid(String source) {
-    if (StrUtil.isBlank(source)) {
-      return false;
-    }
-    String clean = source.trim().toUpperCase();
-    return "CLI_SKILL".equals(clean) || "OPENAPI".equals(clean) || "WEB_CHAT".equals(clean);
   }
 }

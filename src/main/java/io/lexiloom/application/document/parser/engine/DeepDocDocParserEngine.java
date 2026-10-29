@@ -9,7 +9,7 @@ import io.lexiloom.application.document.parser.DocParseCommand;
 import io.lexiloom.application.document.parser.DocParseResult;
 import io.lexiloom.application.document.parser.DocParserEngine;
 import io.lexiloom.application.document.parser.DocParserEngineEnum;
-import io.lexiloom.application.document.parser.DocumentContentCleaner;
+import io.lexiloom.application.document.api.DocumentContentCleaner;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.net.http.HttpClient;
@@ -215,9 +215,9 @@ public class DeepDocDocParserEngine implements DocParserEngine {
       // 检查是否为异步接收成功的响应 (PROCESSING)
       if (StrUtil.isNotBlank(responseBody) && responseBody.trim().startsWith("{")) {
         JsonNode rootNode = objectMapper.readTree(responseBody);
-        String respStatus = rootNode.hasNonNull("status") ? rootNode.get("status").asText() : "";
+        String respStatus = rootNode.hasNonNull("status") ? rootNode.get("status").asString() : "";
         if ("PROCESSING".equalsIgnoreCase(respStatus) || "ACCEPTED".equalsIgnoreCase(respStatus)) {
-          String taskId = rootNode.hasNonNull("task_id") ? rootNode.get("task_id").asText() : null;
+          String taskId = rootNode.hasNonNull("task_id") ? rootNode.get("task_id").asString() : null;
           log.info("【DeepDoc】远程微服务已接收异步解析任务，进入等待回调模式: file={}, taskId={}", fileName, taskId);
           Map<String, Object> meta = new HashMap<>(command.extraOptions());
           if (taskId != null) {
@@ -294,11 +294,11 @@ public class DeepDocDocParserEngine implements DocParserEngine {
     if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
       try {
         JsonNode node = objectMapper.readTree(trimmed);
-        if (node.hasNonNull("markdown")) return node.get("markdown").asText();
-        if (node.hasNonNull("text")) return node.get("text").asText();
-        if (node.hasNonNull("content")) return node.get("content").asText();
-        if (node.hasNonNull("data") && node.get("data").isTextual()) {
-          return node.get("data").asText();
+        if (node.hasNonNull("markdown")) return node.get("markdown").asString();
+        if (node.hasNonNull("text")) return node.get("text").asString();
+        if (node.hasNonNull("content")) return node.get("content").asString();
+        if (node.hasNonNull("data") && node.get("data").isString()) {
+          return node.get("data").asString();
         }
       } catch (Exception ignored) {
       }

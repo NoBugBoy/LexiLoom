@@ -3,7 +3,7 @@ package io.lexiloom.application.document.service.impl;
 import cn.hutool.core.util.StrUtil;
 import io.lexiloom.application.document.search.DocSearchDocument;
 import io.lexiloom.application.document.service.SearchSuggestQueryService;
-import io.lexiloom.application.document.statemachine.DocumentStateEnum;
+import io.lexiloom.application.document.api.dto.DocumentStateEnum;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;

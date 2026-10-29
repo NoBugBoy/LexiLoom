@@ -45,7 +45,7 @@ class AdminCommandServiceImplTest {
   @Test
   @DisplayName("保存管理员")
   void saveAdminUser() {
-    AdminEntity entity = new AdminEntity();
+    AdminEntity entity = AdminEntity.create("test@test.com", "pwd", true);
     entity.setId(1L);
     when(adminEntityMapper.toAdminEntity("test@test.com", "pwd", true)).thenReturn(entity);
     when(adminRepository.save(entity)).thenReturn(entity);
@@ -60,8 +60,7 @@ class AdminCommandServiceImplTest {
   void resetPasswordInternalWrongPwd() {
     SecurityContextHolder.getContext()
         .setAuthentication(new LoginUserAuthentication(1L, List.of("user")));
-    AdminEntity entity = new AdminEntity();
-    entity.setPassword("encoded");
+    AdminEntity entity = AdminEntity.create("test@test.com", "encoded", true);
 
     when(adminRepository.findById(1L)).thenReturn(Optional.of(entity));
     when(passwordEncoder.matches("wrong", "encoded")).thenReturn(false);
@@ -76,8 +75,7 @@ class AdminCommandServiceImplTest {
   void resetPasswordInternalSuccess() {
     SecurityContextHolder.getContext()
         .setAuthentication(new LoginUserAuthentication(1L, List.of("user")));
-    AdminEntity entity = new AdminEntity();
-    entity.setPassword("encoded");
+    AdminEntity entity = AdminEntity.create("test@test.com", "encoded", true);
 
     when(adminRepository.findById(1L)).thenReturn(Optional.of(entity));
     when(passwordEncoder.matches("old", "encoded")).thenReturn(true);
@@ -120,7 +118,7 @@ class AdminCommandServiceImplTest {
     when(cacheHelper.getAndEvict(AccountCacheKey.OTT_RESET_PASSWORD, "valid"))
         .thenReturn(Optional.of(dto));
 
-    AdminEntity entity = new AdminEntity();
+    AdminEntity entity = AdminEntity.create("test@test.com", "oldpwd", true);
     when(adminRepository.findByEmail("test@test.com")).thenReturn(Optional.of(entity));
     when(passwordEncoder.encode("new")).thenReturn("encodedNew");
 

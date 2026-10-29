@@ -1,8 +1,7 @@
 package io.lexiloom.application.user.controller;
 
 import io.lexiloom.application.exception.BusinessException;
-import io.lexiloom.application.user.api.WorkSpaceMemberQueryService;
-import io.lexiloom.application.user.mapper.WorkSpaceMemberMapper;
+import io.lexiloom.application.user.service.WorkSpaceMemberViewService;
 import io.lexiloom.application.user.model.request.WorkSpaceMemberAddRequest;
 import io.lexiloom.application.user.model.request.WorkSpaceMemberPageRequest;
 import io.lexiloom.application.user.model.request.WorkSpaceMemberRoleUpdateRequest;
@@ -29,8 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class WorkSpaceMemberController {
 
   private final WorkSpaceMemberCommandService workSpaceMemberCommandService;
-  private final WorkSpaceMemberQueryService workSpaceMemberQueryService;
-  private final WorkSpaceMemberMapper workSpaceMemberMapper;
+  private final WorkSpaceMemberViewService workSpaceMemberQueryService;
 
   /** 添加团队成员 */
   @PostMapping
@@ -58,8 +56,7 @@ public class WorkSpaceMemberController {
   public WorkSpaceMemberResponse getMember(
       @PathVariable("workSpaceId") Long workSpaceId, @PathVariable("userId") Long userId) {
     return workSpaceMemberQueryService
-        .getMember(workSpaceId, userId)
-        .map(workSpaceMemberMapper::toResponse)
+        .getMemberResponse(workSpaceId, userId)
         .orElseThrow(() -> BusinessException.badRequest("团队成员不存在"));
   }
 

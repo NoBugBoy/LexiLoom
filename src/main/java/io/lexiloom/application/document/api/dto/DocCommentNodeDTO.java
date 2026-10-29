@@ -1,5 +1,7 @@
 package io.lexiloom.application.document.api.dto;
 
+import cn.hutool.core.date.DatePattern;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
@@ -14,7 +16,7 @@ public record DocCommentNodeDTO(
     Long replyToUserId,
     String content,
     Integer likeCount,
-    LocalDateTime createTime,
+    @JsonFormat(pattern = DatePattern.NORM_DATETIME_PATTERN) LocalDateTime createTime,
     List<DocCommentNodeDTO> replies) {
 
   public DocCommentNodeDTO {

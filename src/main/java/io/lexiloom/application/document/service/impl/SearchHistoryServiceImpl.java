@@ -3,12 +3,12 @@ package io.lexiloom.application.document.service.impl;
 import cn.hutool.core.util.StrUtil;
 import io.lexiloom.application.document.search.dto.SearchHistoryRecordEvent;
 import io.lexiloom.application.document.service.SearchHistoryService;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -51,7 +51,7 @@ public class SearchHistoryServiceImpl implements SearchHistoryService {
       stringRedisTemplate.opsForZSet().removeRange(key, 0, -(MAX_HISTORY_ITEMS + 1));
 
       // 设置 30 天 TTL，防止冷数据永久滞留 Redis
-      stringRedisTemplate.expire(key, HISTORY_TTL_DAYS, TimeUnit.DAYS);
+      stringRedisTemplate.expire(key, Duration.ofDays(HISTORY_TTL_DAYS));
     } catch (Exception ex) {
       log.warn(
           "写入 Redis 搜索历史异常: userId={}, workspaceId={}, keyword={}, error={}",
@@ -74,21 +74,21 @@ public class SearchHistoryServiceImpl implements SearchHistoryService {
   @Override
   public List<String> getHistory(Long userId, Long workspaceId, int size) {
     if (userId == null) {
-      return Collections.emptyList();
+      return List.of();
     }
     String key = buildKey(userId, workspaceId);
-    int limit = size <= 0 ? 10 : Math.min(size, MAX_HISTORY_ITEMS);
+    int limit = size <= 0 ? 10 : Math.clamp(size, 1, MAX_HISTORY_ITEMS);
 
     try {
       Set<String> members = stringRedisTemplate.opsForZSet().reverseRange(key, 0, limit - 1);
-      return members == null ? Collections.emptyList() : new ArrayList<>(members);
+      return members == null ? List.of() : List.copyOf(members);
     } catch (Exception ex) {
       log.warn(
           "读取 Redis 搜索历史异常: userId={}, workspaceId={}, error={}",
           userId,
           workspaceId,
           ex.getMessage());
-      return Collections.emptyList();
+      return List.of();
     }
   }
 

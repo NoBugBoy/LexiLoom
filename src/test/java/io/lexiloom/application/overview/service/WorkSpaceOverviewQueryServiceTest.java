@@ -12,7 +12,7 @@ import static org.mockito.Mockito.when;
 import io.lexiloom.application.ai.api.AiStatsQueryApi;
 import io.lexiloom.application.document.api.DocumentQueryApi;
 import io.lexiloom.application.document.api.dto.WorkspaceDocStatsDTO;
-import io.lexiloom.application.document.statemachine.DocumentStateEnum;
+import io.lexiloom.application.document.api.dto.DocumentStateEnum;
 import io.lexiloom.application.enums.WorkSpaceAclEnum;
 import io.lexiloom.application.enums.WorkSpaceRoleEnum;
 import io.lexiloom.application.enums.WorkSpaceStatusEnum;
@@ -23,11 +23,11 @@ import io.lexiloom.application.user.api.WorkSpaceMemberQueryService;
 import io.lexiloom.application.user.api.WorkSpaceQueryService;
 import io.lexiloom.application.user.api.dto.UserDTO;
 import io.lexiloom.application.user.api.dto.WorkSpaceDTO;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -245,6 +245,6 @@ class WorkSpaceOverviewQueryServiceTest {
 
     // Verify cache saved with 180s TTL
     verify(valueOperations)
-        .set(eq("ll:ws:overview:1"), eq("{\"cached\":true}"), eq(180L), eq(TimeUnit.SECONDS));
+        .set(eq("ll:ws:overview:1"), eq("{\"cached\":true}"), eq(Duration.ofSeconds(180)));
   }
 }

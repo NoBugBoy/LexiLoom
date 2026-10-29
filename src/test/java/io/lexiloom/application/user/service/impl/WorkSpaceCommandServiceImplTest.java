@@ -230,4 +230,52 @@ class WorkSpaceCommandServiceImplTest {
     verify(workSpaceRepository).deleteById(1L);
     verify(workSpaceMemberRepository).deleteByWorkSpaceId(1L);
   }
+
+  @Test
+  @DisplayName("修改父空间 - 成功")
+  void changeParent_success() {
+    WorkSpaceEntity entity = WorkSpaceEntity.create("团队名", "team-code", null, null, userId, 50, null);
+    WorkSpaceEntity parent = WorkSpaceEntity.create("父空间", "parent-code", null, null, userId, 50, null);
+    WorkSpaceMemberEntity member = WorkSpaceMemberEntity.create(1L, userId, WorkSpaceRoleEnum.ADMIN);
+
+    when(workSpaceRepository.findById(1L)).thenReturn(Optional.of(entity));
+    when(workSpaceMemberRepository.findByWorkSpaceIdAndUserId(1L, userId)).thenReturn(Optional.of(member));
+    when(workSpaceRepository.findById(2L)).thenReturn(Optional.of(parent));
+
+    service.changeParent(1L, 2L);
+
+    assertThat(entity.getParentId()).isEqualTo(2L);
+    verify(workSpaceRepository).save(entity);
+  }
+
+  @Test
+  @DisplayName("修改父空间 - 不能设置自身为父空间")
+  void changeParent_selfParentThrows() {
+    WorkSpaceEntity entity = WorkSpaceEntity.create("团队名", "team-code", null, null, userId, 50, null);
+    WorkSpaceMemberEntity member = WorkSpaceMemberEntity.create(1L, userId, WorkSpaceRoleEnum.ADMIN);
+
+    when(workSpaceRepository.findById(1L)).thenReturn(Optional.of(entity));
+    when(workSpaceMemberRepository.findByWorkSpaceIdAndUserId(1L, userId)).thenReturn(Optional.of(member));
+
+    assertThatThrownBy(() -> service.changeParent(1L, 1L))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("不能将工作空间自身设置为父空间");
+  }
+
+  @Test
+  @DisplayName("修改父空间 - 检测直接循环关联")
+  void changeParent_circularThrows() {
+    WorkSpaceEntity entity = WorkSpaceEntity.create("团队名", "team-code", null, null, userId, 50, null);
+    WorkSpaceEntity parent = WorkSpaceEntity.create("父空间", "parent-code", null, null, userId, 50, null);
+    parent.changeParent(1L); // parent's parent is already entity(1L)
+    WorkSpaceMemberEntity member = WorkSpaceMemberEntity.create(1L, userId, WorkSpaceRoleEnum.ADMIN);
+
+    when(workSpaceRepository.findById(1L)).thenReturn(Optional.of(entity));
+    when(workSpaceMemberRepository.findByWorkSpaceIdAndUserId(1L, userId)).thenReturn(Optional.of(member));
+    when(workSpaceRepository.findById(2L)).thenReturn(Optional.of(parent));
+
+    assertThatThrownBy(() -> service.changeParent(1L, 2L))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("检测到循环关联");
+  }
 }

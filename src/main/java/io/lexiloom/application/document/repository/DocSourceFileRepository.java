@@ -24,6 +24,8 @@ public interface DocSourceFileRepository extends BaseRepository<DocSourceFileEnt
 
   Optional<DocSourceFileEntity> findByDocumentId(Long documentId);
 
+  Optional<DocSourceFileEntity> findFirstByDocumentIdOrderByCreateTimeDesc(Long documentId);
+
   List<DocSourceFileEntity> findByWorkSpaceId(Long workSpaceId);
 
   boolean existsByWorkSpaceIdAndFileHash(Long workSpaceId, String fileHash);

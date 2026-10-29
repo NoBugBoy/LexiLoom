@@ -1,7 +1,6 @@
 package io.lexiloom.application.common.storage.adapter;
 
 import cn.hutool.core.io.FileUtil;
-import cn.hutool.core.io.IoUtil;
 import cn.hutool.core.util.StrUtil;
 import io.lexiloom.application.common.storage.FileStorageGateway;
 import io.lexiloom.application.common.storage.RustfsStorageProperties;
@@ -13,7 +12,6 @@ import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import io.minio.RemoveObjectArgs;
 import io.minio.StatObjectArgs;
-import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.InputStream;
 import java.nio.file.Path;
@@ -56,35 +54,37 @@ public class RustfsStorageAdapter implements FileStorageGateway {
     this.minioClient = client;
   }
 
+  private static final long DEFAULT_PART_SIZE = 10L * 1024 * 1024;
+
   @Override
   public String upload(
       String objectKey, InputStream inputStream, String contentType, long contentLength) {
-    String cleanKey = safeKey(objectKey);
-    byte[] fileBytes;
-    try {
-      fileBytes = IoUtil.readBytes(inputStream);
-    } catch (Exception e) {
-      log.error("读取待上传文件流失败: key={}, error={}", cleanKey, e.getMessage(), e);
-      throw BusinessException.badRequest("读取上传文件内容失败");
+    if (inputStream == null) {
+      throw BusinessException.badRequest("上传文件流不能为空");
     }
+    String cleanKey = safeKey(objectKey);
 
-    // 1. 若配置了 MinioClient，通过标准 S3 协议上传至远端 RustFS 存储桶
+    // 1. 若配置了 MinioClient，通过标准 S3 协议流式上传至远端 RustFS 存储桶（避免全量读入堆内存引发 OOM）
     if (minioClient != null) {
       try {
         ensureBucketExists();
-        try (ByteArrayInputStream in = new ByteArrayInputStream(fileBytes)) {
-          minioClient.putObject(
-              PutObjectArgs.builder().bucket(properties.getBucketName()).object(cleanKey).stream(
-                      in, fileBytes.length, -1)
-                  .contentType(StrUtil.blankToDefault(contentType, "application/octet-stream"))
-                  .build());
-          log.info(
-              "rustfs 对象存储上传成功 (S3 远端): bucket={}, objectKey={}, size={} bytes",
-              properties.getBucketName(),
-              cleanKey,
-              fileBytes.length);
-          return getUrl(cleanKey);
-        }
+        long objectSize = contentLength >= 0 ? contentLength : -1L;
+        long partSize = contentLength >= 0 ? -1L : DEFAULT_PART_SIZE;
+        minioClient.putObject(
+            PutObjectArgs.builder()
+                .bucket(properties.getBucketName())
+                .object(cleanKey)
+                .stream(inputStream, objectSize, partSize)
+                .contentType(StrUtil.blankToDefault(contentType, "application/octet-stream"))
+                .build());
+        log.info(
+            "rustfs 对象存储上传成功 (S3 远端): bucket={}, objectKey={}, size={} bytes",
+            properties.getBucketName(),
+            cleanKey,
+            contentLength);
+        return getUrl(cleanKey);
+      } catch (BusinessException be) {
+        throw be;
       } catch (Exception e) {
         log.error(
             "rustfs S3 远端上传失败: bucket={}, key={}, error={}",
@@ -96,20 +96,22 @@ public class RustfsStorageAdapter implements FileStorageGateway {
       }
     }
 
-    // 2. 本地模拟存储（仅在未配置 S3 远端客户端的单测或无网环境使用）
+    // 2. 本地模拟存储（仅在未配置 S3 远端客户端的单测或无网环境使用，直接流式落盘）
     try {
       Path targetPath =
           StoragePathGuard.resolveWithin(
               Paths.get(RUSTFS_LOCAL_DATA, properties.getBucketName()), cleanKey);
       File file = targetPath.toFile();
       FileUtil.mkdir(file.getParentFile());
-      FileUtil.writeBytes(fileBytes, file);
+      FileUtil.writeFromStream(inputStream, file);
       log.info(
           "rustfs 存储上传成功 (本地模拟): bucket={}, objectKey={}, size={} bytes",
           properties.getBucketName(),
           cleanKey,
-          fileBytes.length);
+          file.length());
       return getUrl(cleanKey);
+    } catch (BusinessException be) {
+      throw be;
     } catch (Exception e) {
       log.error("rustfs 存储文件保存失败: objectKey={}, error={}", cleanKey, e.getMessage(), e);
       throw BusinessException.badRequest("rustfs 文件存储失败，请稍后重试");
@@ -234,19 +236,23 @@ public class RustfsStorageAdapter implements FileStorageGateway {
     if (StrUtil.isBlank(objectKeyOrUrl)) {
       return "";
     }
-    String clean = objectKeyOrUrl;
+    String clean = objectKeyOrUrl.trim();
     String prefix = "/rustfs/" + properties.getBucketName() + "/";
     if (clean.contains(prefix)) {
-      clean = clean.substring(clean.indexOf(prefix) + prefix.length());
-    } else {
-      String endpointPrefix = properties.getEndpoint() + "/" + properties.getBucketName() + "/";
+      return clean.substring(clean.indexOf(prefix) + prefix.length());
+    }
+    if (StrUtil.isNotBlank(properties.getEndpoint())) {
+      String normalizedEndpoint = properties.getEndpoint().replaceAll("/+$", "");
+      String endpointPrefix = normalizedEndpoint + "/" + properties.getBucketName() + "/";
       if (clean.contains(endpointPrefix)) {
-        clean = clean.substring(clean.indexOf(endpointPrefix) + endpointPrefix.length());
-      } else if (clean.startsWith("/uploads/")) {
-        clean = clean.substring("/uploads/".length());
-      } else if (clean.startsWith("/")) {
-        clean = clean.substring(1);
+        return clean.substring(clean.indexOf(endpointPrefix) + endpointPrefix.length());
       }
+    }
+    if (clean.startsWith("/uploads/")) {
+      return clean.substring("/uploads/".length());
+    }
+    if (clean.startsWith("/")) {
+      return clean.substring(1);
     }
     return clean;
   }

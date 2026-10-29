@@ -1,12 +1,16 @@
 package io.lexiloom.application.enums;
 
 import cn.hutool.core.util.StrUtil;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import org.jspecify.annotations.Nullable;
 
 /**
  * OpenAPI 权限范围枚举 (Scopes)
@@ -26,6 +30,7 @@ public enum OpenApiScopeEnum {
   /** 大模型补全与 RAG 问答会话 */
   CHAT_COMPLETION("chat:completion", "大模型问答会话与生成");
 
+  @JsonValue
   private final String code;
   private final String description;
 
@@ -57,5 +62,30 @@ public enum OpenApiScopeEnum {
       return false;
     }
     return parseScopes(scopesStr).contains(scope.getCode());
+  }
+
+  @JsonCreator
+  public static @Nullable OpenApiScopeEnum fromValue(@Nullable String value) {
+    if (StrUtil.isBlank(value)) {
+      return null;
+    }
+    String clean = value.trim().toLowerCase();
+    return switch (clean) {
+      case "kb:read", "kbread" -> KB_READ;
+      case "kb:search", "kbsearch" -> KB_SEARCH;
+      case "doc:read", "docread" -> DOC_READ;
+      case "chat:completion", "chatcompletion" -> CHAT_COMPLETION;
+      default -> {
+        try {
+          yield valueOf(value.trim().toUpperCase());
+        } catch (Exception ex) {
+          yield null;
+        }
+      }
+    };
+  }
+
+  public static Optional<OpenApiScopeEnum> ofNullable(@Nullable String value) {
+    return Optional.ofNullable(fromValue(value));
   }
 }

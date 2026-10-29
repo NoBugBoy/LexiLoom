@@ -6,17 +6,15 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
-import io.lexiloom.application.common.CustomerProperties;
 import io.lexiloom.application.common.cache.CacheHelper;
 import io.lexiloom.application.common.security.RedisTokenManager;
 import io.lexiloom.application.common.security.TurnstileVerifier;
 import io.lexiloom.application.enums.AdminRoleEnum;
 import io.lexiloom.application.exception.BusinessException;
-import io.lexiloom.application.user.api.AdminQueryService;
+import io.lexiloom.application.user.service.AdminQueryService;
 import io.lexiloom.application.user.api.dto.AdminRegisterDTO;
 import io.lexiloom.application.user.api.dto.AdminResetPasswordDTO;
 import io.lexiloom.application.user.cache.AccountCacheKey;
@@ -32,12 +30,9 @@ import io.lexiloom.application.user.usecase.admin.SendAdminRegisterEmailUseCase;
 import io.lexiloom.application.user.usecase.admin.SendAdminRestPasswordEmailUseCase;
 import jakarta.mail.Session;
 import jakarta.mail.internet.MimeMessage;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -51,16 +46,12 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 @ExtendWith(MockitoExtension.class)
 class AdminAuthCaseTest {
 
-  private static final KeyPair KEY_PAIR = rsaKeyPair();
-
   @Mock private JavaMailSender mailSender;
   @Mock private CacheHelper cacheHelper;
   @Mock private AdminQueryService adminQueryService;
   @Mock private AdminCommandService adminCommandService;
   @Mock private AdminRoleService adminRoleService;
   @Mock private PasswordEncoder passwordEncoder;
-  @Mock private CustomerProperties customerProperties;
-  @Mock private CustomerProperties.Security security;
   @Mock private RedisTokenManager redisTokenManager;
   @Mock private TurnstileVerifier turnstileVerifier;
 
@@ -68,13 +59,6 @@ class AdminAuthCaseTest {
   @InjectMocks private SendAdminRestPasswordEmailUseCase sendAdminRestPasswordEmailUseCase;
   @InjectMocks private AdminLoginUseCase adminLoginUseCase;
   @InjectMocks private AdminRegisterUseCase adminRegisterUseCase;
-
-  @BeforeEach
-  void setUp() {
-    lenient().when(customerProperties.security()).thenReturn(security);
-    lenient().when(security.getPrivateKey()).thenReturn(KEY_PAIR.getPrivate());
-    lenient().when(security.getPublicKey()).thenReturn(KEY_PAIR.getPublic());
-  }
 
   @Nested
   @DisplayName("SendAdminRegisterEmailUseCase 测试")
@@ -86,8 +70,7 @@ class AdminAuthCaseTest {
       String email = "exist@qq.com";
       AdminCreateRequest request = new AdminCreateRequest(email, "password123");
 
-      AdminEntity mockAdmin = new AdminEntity();
-      mockAdmin.setEmail(email);
+      AdminEntity mockAdmin = AdminEntity.create(email, "password123", true);
       given(adminQueryService.findAdminByEmail(email)).willReturn(Optional.of(mockAdmin));
 
       assertThatThrownBy(() -> sendAdminRegisterEmailUseCase.execute(request))
@@ -140,8 +123,7 @@ class AdminAuthCaseTest {
       String email = "exists@qq.com";
       ResetPasswordRequest request = new ResetPasswordRequest(email, "newPassword123");
 
-      AdminEntity mockAdmin = new AdminEntity();
-      mockAdmin.setEmail(email);
+      AdminEntity mockAdmin = AdminEntity.create(email, "password123", true);
       given(adminQueryService.findAdminByEmail(email)).willReturn(Optional.of(mockAdmin));
 
       MimeMessage mimeMessage = new MimeMessage(Session.getInstance(new Properties()));
@@ -179,9 +161,8 @@ class AdminAuthCaseTest {
     void shouldThrowExceptionWhenPasswordMismatch() {
       AdminLoginRequest request =
           new AdminLoginRequest("admin@lexiloom.com", "wrongpwd", null, null, "captcha-token");
-      AdminEntity admin = new AdminEntity();
+      AdminEntity admin = AdminEntity.create("admin@lexiloom.com", "encoded_pwd", true);
       admin.setId(1L);
-      admin.setPassword("encoded_pwd");
 
       given(adminQueryService.findAdminByEmail("admin@lexiloom.com"))
           .willReturn(Optional.of(admin));
@@ -197,9 +178,8 @@ class AdminAuthCaseTest {
     void shouldReturnTokenOnSuccess() {
       AdminLoginRequest request =
           new AdminLoginRequest("admin@lexiloom.com", "correctpwd", null, null, "captcha-token");
-      AdminEntity admin = new AdminEntity();
+      AdminEntity admin = AdminEntity.create("admin@lexiloom.com", "encoded_correct", true);
       admin.setId(88L);
-      admin.setPassword("encoded_correct");
 
       given(adminQueryService.findAdminByEmail("admin@lexiloom.com"))
           .willReturn(Optional.of(admin));
@@ -260,7 +240,7 @@ class AdminAuthCaseTest {
     @Test
     @DisplayName("系统启动时若超管已存在则不重复创建")
     void shouldNotCreateSuperAdminWhenAlreadyPresent() throws Exception {
-      AdminEntity superAdmin = new AdminEntity();
+      AdminEntity superAdmin = AdminEntity.create("admin@lexiloom.com", "super_enc_pwd", true);
       superAdmin.setId(1L);
       given(adminQueryService.findAdminByEmail("admin@lexiloom.com"))
           .willReturn(Optional.of(superAdmin));
@@ -268,16 +248,6 @@ class AdminAuthCaseTest {
       adminRegisterUseCase.run();
 
       verify(adminCommandService, never()).saveAdminUser(anyString(), anyString());
-    }
-  }
-
-  private static KeyPair rsaKeyPair() {
-    try {
-      KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-      generator.initialize(2048);
-      return generator.generateKeyPair();
-    } catch (Exception e) {
-      throw new IllegalStateException("生成 RSA 密钥失败", e);
     }
   }
 }

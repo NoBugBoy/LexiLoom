@@ -176,4 +176,24 @@ class ApprovalControllerTest {
             String.valueOf(currentUserId),
             "内容包含未定稿内部保密条款");
   }
+
+  @Test
+  @DisplayName("POST /api/approvals/action - 执行申请人主动撤回 (CANCEL，支持无 comment 或带 comment)")
+  void testCancelAction() throws Exception {
+    String json =
+        """
+        {
+          "approvalType": "DOCUMENT_AUDIT",
+          "bizId": 2001,
+          "action": "CANCEL"
+        }
+        """;
+
+    mockMvc
+        .perform(
+            post("/api/approvals/action").contentType(MediaType.APPLICATION_JSON).content(json))
+        .andExpect(status().isOk());
+
+    verify(approvalApi).cancel(ApprovalTypeEnum.DOCUMENT_AUDIT, 2001L, currentUserId, null);
+  }
 }

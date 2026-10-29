@@ -43,6 +43,14 @@ public interface ApprovalApi {
       String approverName,
       String approvalComment);
 
+  /** 申请人主动撤回待审批单 */
+  void cancel(ApprovalTypeEnum type, Long bizId, Long operatorId, String comment);
+
+  /** 申请人主动撤回待审批单（无附加备注） */
+  default void cancel(ApprovalTypeEnum type, Long bizId, Long operatorId) {
+    cancel(type, bizId, operatorId, null);
+  }
+
   /** 查询最新处于待审批状态的审批单 */
   Optional<ApprovalRecordDTO> getLatestPendingApproval(ApprovalTypeEnum type, Long bizId);
 

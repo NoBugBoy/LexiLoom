@@ -10,6 +10,7 @@ import io.lexiloom.application.user.model.entity.WorkSpaceMemberEntity;
 import io.lexiloom.application.user.model.request.WorkSpaceMemberPageRequest;
 import io.lexiloom.application.user.model.response.WorkSpaceMemberResponse;
 import io.lexiloom.application.user.repository.WorkSpaceMemberRepository;
+import io.lexiloom.application.user.service.WorkSpaceMemberViewService;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -21,7 +22,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
-public class WorkSpaceMemberQueryServiceImpl implements WorkSpaceMemberQueryService {
+public class WorkSpaceMemberQueryServiceImpl
+    implements WorkSpaceMemberQueryService, WorkSpaceMemberViewService {
 
   private final WorkSpaceMemberRepository workSpaceMemberRepository;
   private final WorkSpaceMemberMapper workSpaceMemberMapper;
@@ -31,6 +33,13 @@ public class WorkSpaceMemberQueryServiceImpl implements WorkSpaceMemberQueryServ
     return workSpaceMemberRepository
         .findByWorkSpaceIdAndUserId(workSpaceId, userId)
         .map(workSpaceMemberMapper::toDTO);
+  }
+
+  @Override
+  public Optional<WorkSpaceMemberResponse> getMemberResponse(Long workSpaceId, Long userId) {
+    return workSpaceMemberRepository
+        .findByWorkSpaceIdAndUserId(workSpaceId, userId)
+        .map(workSpaceMemberMapper::toResponse);
   }
 
   @Override

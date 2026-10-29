@@ -1,5 +1,7 @@
 package io.lexiloom.application.user.model.response;
 
+import cn.hutool.core.date.DatePattern;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import io.lexiloom.application.enums.WorkSpaceAclEnum;
 import io.lexiloom.application.enums.WorkSpaceStatusEnum;
 import java.time.LocalDateTime;
@@ -16,4 +18,4 @@ public record WorkSpaceResponse(
     WorkSpaceAclEnum visibility,
     Long parentId,
     Boolean childAssocEnabled,
-    LocalDateTime createTime) {}
+    @JsonFormat(pattern = DatePattern.NORM_DATETIME_PATTERN) LocalDateTime createTime) {}

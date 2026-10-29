@@ -1,21 +1,22 @@
 package io.lexiloom.application.document.pipeline;
 
 import cn.hutool.core.util.StrUtil;
-import io.lexiloom.application.common.ErrorCode;
+import io.lexiloom.application.exception.ErrorCode;
 import io.lexiloom.application.document.model.entity.DocSourceFileEntity;
 import io.lexiloom.application.document.model.entity.DocVersionEntity;
 import io.lexiloom.application.document.model.entity.DocumentEntity;
 import io.lexiloom.application.document.parser.DocParseResult;
 import io.lexiloom.application.document.parser.DocParseStatusEnum;
 import io.lexiloom.application.document.parser.DocParserEngineEnum;
-import io.lexiloom.application.document.parser.DocumentContentCleaner;
+import io.lexiloom.application.document.api.DocumentContentCleaner;
 import io.lexiloom.application.document.repository.DocSourceFileRepository;
 import io.lexiloom.application.document.repository.DocVersionRepository;
 import io.lexiloom.application.document.repository.DocumentRepository;
-import io.lexiloom.application.document.statemachine.DocumentEventEnum;
-import io.lexiloom.application.document.statemachine.DocumentStateEnum;
-import io.lexiloom.application.document.statemachine.DocumentStateTransitionEvent;
+import io.lexiloom.application.document.api.dto.DocumentEventEnum;
+import io.lexiloom.application.document.api.dto.DocumentStateEnum;
+import io.lexiloom.application.document.model.event.DocumentStateTransitionEvent;
 import io.lexiloom.application.exception.BusinessException;
+import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -151,16 +152,7 @@ public class DocumentImportTransactionalService {
     if (parseResult.isQueued() || parseResult.isAsyncProcessing()) {
       DocParseStatusEnum initialStatus =
           parseResult.isQueued() ? DocParseStatusEnum.QUEUED : DocParseStatusEnum.ASYNC_PROCESSING;
-      String placeholderContent =
-          parseResult.isQueued()
-              ? """
-              > ⏳ **[AI 智能提炼排队中]**
-              > 文档已进入解析队列，等待调度解析，请稍候刷新查看最新进展。
-              """
-              : """
-              > ⏳ **[AI 智能提炼解析中]**
-              > 正在由云端大模型进行排版分析与内容提取，请稍候刷新查看最新正文。
-              """;
+      String placeholderContent = resolveAsyncPlaceholderContent(parseResult);
 
       DocumentEntity doc =
           DocumentEntity.createFromImport(
@@ -180,23 +172,8 @@ public class DocumentImportTransactionalService {
         sourceFile.markQueued();
       }
       docSourceFileRepository.save(sourceFile);
-
-      if (approvalApi != null) {
-        try {
-          approvalApi.submitDocumentAudit(
-              savedDoc.getId(),
-              savedDoc.getWorkSpaceId(),
-              operatorId != null ? operatorId : 0L,
-              null,
-              "文档导入解析完成，待审批发布",
-              null);
-        } catch (Exception e) {
-          log.warn(
-              "【DocumentImportPipeline】自动登记发布审批单异常: docId={}, error={}",
-              savedDoc.getId(),
-              e.getMessage());
-        }
-      }
+      submitDocumentAuditQuietly(
+          savedDoc.getId(), savedDoc.getWorkSpaceId(), operatorId, "文档导入解析完成，待审批发布");
 
       log.info(
           "【DocumentImportPipeline】异步解析任务已登记: docId={}, sourceFileId={}, batchId={}",
@@ -217,130 +194,45 @@ public class DocumentImportTransactionalService {
           parseResult.metadata());
     }
 
-    if (parseResult.isPreviewOnly()) {
-      // 固化版面类 (PDF 默认双轨制 - 优先提取真实解析内容，避免占位符覆盖真实正文)
-      String defaultPreview =
-          """
-          > 📄 **[PDF 固化版面原件预览模式]**
-          > 本文档为高精度版面保真原件，已安全存储于知识库底层 rustfs 对象存储中。
-          > 支持直接在阅读器中进行翻页预览；如需深度编辑与段落重排，请点击上方【一键 AI 提炼为文档】。
-          """;
-      String actualContent =
-          StrUtil.isNotBlank(parseResult.markdownContent())
-              ? parseResult.markdownContent()
-              : StrUtil.blankToDefault(parseResult.rawText(), defaultPreview);
-      String previewContent = DocumentContentCleaner.cleanEmbeddedImages(actualContent);
+    String content = resolveSyncContentAndMarkSourceFile(sourceFile, parseResult);
+    String summary = fileName;
 
-      DocumentEntity doc =
-          DocumentEntity.createFromImport(
-              command.workSpaceId(),
-              command.categoryId(),
-              docTitle,
-              "PDF 固化版面原件预览",
-              previewContent,
-              sourceFileId,
-              fileName,
-              command.visibility(),
-              DocParseStatusEnum.PREVIEW_ONLY);
+    DocumentEntity doc =
+        DocumentEntity.createFromImport(
+            command.workSpaceId(),
+            command.categoryId(),
+            docTitle,
+            summary,
+            content,
+            sourceFileId,
+            fileName,
+            command.visibility(),
+            DocParseStatusEnum.SUCCESS);
 
-      DocumentEntity savedDoc = documentRepository.save(doc);
-      sourceFile.bindDocument(savedDoc.getId());
-      sourceFile.markPreviewOnly(
-          parseResult.rawText(),
-          parseResult.engineUsed(),
-          serializeMetadata(parseResult.metadata()));
-      docSourceFileRepository.save(sourceFile);
+    DocumentEntity savedDoc = documentRepository.save(doc);
+    sourceFile.bindDocument(savedDoc.getId());
+    docSourceFileRepository.save(sourceFile);
+    saveSnapshotIfPresent(
+        command.workSpaceId(),
+        savedDoc.getId(),
+        1,
+        "v1.0",
+        savedDoc.getTitle(),
+        content,
+        "初始版本导入",
+        operatorId);
 
-      // 创建初始版本不可变快照 (v1.0)
-      if (docVersionRepository != null) {
-        DocVersionEntity snapshot =
-            DocVersionEntity.createSnapshot(
-                command.workSpaceId(),
-                savedDoc.getId(),
-                1,
-                "v1.0",
-                savedDoc.getTitle(),
-                previewContent,
-                "初始版本导入",
-                operatorId != null ? operatorId : 0L);
-        docVersionRepository.save(snapshot);
-      }
-
-      log.info(
-          "【DocumentImportPipeline】PDF 原件预览文档创建完成: docId={}, title={}",
-          savedDoc.getId(),
-          savedDoc.getTitle());
-
-      return DocumentImportResult.previewOnly(
-          savedDoc.getId(),
-          sourceFileId,
-          savedDoc.getTitle(),
-          fileName,
-          storagePath,
-          storageUrl,
-          parseResult.engineUsed(),
-          instantUpload,
-          previewContent,
-          parseResult.metadata());
-    } else {
-      // 纯文本类 (Markdown/TXT) 与办公文档类 (Word/DOCX) -> 100% 自由编辑
-      String rawMarkdown = StrUtil.blankToDefault(parseResult.markdownContent(), "");
-      String markdownContent = DocumentContentCleaner.cleanEmbeddedImages(rawMarkdown);
-      String summary = fileName;
-
-      DocumentEntity doc =
-          DocumentEntity.createFromImport(
-              command.workSpaceId(),
-              command.categoryId(),
-              docTitle,
-              summary,
-              markdownContent,
-              sourceFileId,
-              fileName,
-              command.visibility(),
-              DocParseStatusEnum.SUCCESS);
-
-      DocumentEntity savedDoc = documentRepository.save(doc);
-      sourceFile.bindDocument(savedDoc.getId());
-      sourceFile.markParseSuccess(
-          parseResult.rawText(),
-          parseResult.engineUsed(),
-          serializeMetadata(parseResult.metadata()));
-      docSourceFileRepository.save(sourceFile);
-
-      // 创建初始版本不可变快照 (v1.0)
-      if (docVersionRepository != null) {
-        DocVersionEntity snapshot =
-            DocVersionEntity.createSnapshot(
-                command.workSpaceId(),
-                savedDoc.getId(),
-                1,
-                "v1.0",
-                savedDoc.getTitle(),
-                markdownContent,
-                "初始版本导入",
-                operatorId != null ? operatorId : 0L);
-        docVersionRepository.save(snapshot);
-      }
-
-      log.info(
-          "【DocumentImportPipeline】可编辑文档导入并创建完成: docId={}, title={}, wordCount={}",
-          savedDoc.getId(),
-          savedDoc.getTitle(),
-          savedDoc.getWordCount());
-
-      return DocumentImportResult.success(
-          savedDoc.getId(),
-          sourceFileId,
-          savedDoc.getTitle(),
-          fileName,
-          storagePath,
-          storageUrl,
-          parseResult.engineUsed(),
-          instantUpload,
-          markdownContent,
-          parseResult.metadata());
-    }
+    return DocumentImportResult.success(
+        savedDoc.getId(),
+        sourceFileId,
+        savedDoc.getTitle(),
+        fileName,
+        storagePath,
+        storageUrl,
+        parseResult.engineUsed(),
+        instantUpload,
+        content,
+        parseResult.metadata());
   }
 
   /** 独立小事务：已有文档升级导入新版本（递增版本号，状态重置为 DRAFT，旧审批状态失效） */
@@ -388,27 +280,17 @@ public class DocumentImportTransactionalService {
     int nextVersion =
         (existingDoc.getCurrentVersion() != null ? existingDoc.getCurrentVersion() : 1) + 1;
     String nextVersionTag = "v" + nextVersion + ".0";
-    String summary = fileName;
     DocumentStateEnum oldStatus = existingDoc.getStatus();
 
     if (parseResult.isQueued() || parseResult.isAsyncProcessing()) {
       DocParseStatusEnum initialStatus =
           parseResult.isQueued() ? DocParseStatusEnum.QUEUED : DocParseStatusEnum.ASYNC_PROCESSING;
-      String placeholderContent =
-          parseResult.isQueued()
-              ? """
-              > ⏳ **[AI 智能提炼排队中]**
-              > 文档已进入解析队列，等待调度解析，请稍候刷新查看最新进展。
-              """
-              : """
-              > ⏳ **[AI 智能提炼解析中]**
-              > 正在由云端大模型进行排版分析与内容提取，请稍候刷新查看最新正文。
-              """;
+      String placeholderContent = resolveAsyncPlaceholderContent(parseResult);
       existingDoc.upgradeToNewVersion(
           nextVersion,
           nextVersionTag,
           docTitle,
-          summary,
+          fileName,
           placeholderContent,
           sourceFileId,
           fileName);
@@ -422,35 +304,9 @@ public class DocumentImportTransactionalService {
       DocumentEntity savedDoc = documentRepository.save(existingDoc);
       sourceFile.bindDocument(savedDoc.getId());
       docSourceFileRepository.save(sourceFile);
-
-      if (approvalApi != null) {
-        try {
-          approvalApi.submitDocumentAudit(
-              savedDoc.getId(),
-              savedDoc.getWorkSpaceId(),
-              operatorId != null ? operatorId : 0L,
-              null,
-              "升级新版本导入，待审批发布",
-              null);
-        } catch (Exception e) {
-          log.warn(
-              "【DocumentImportPipeline】自动登记发布审批单异常: docId={}, error={}",
-              savedDoc.getId(),
-              e.getMessage());
-        }
-      }
-
-      if (oldStatus == DocumentStateEnum.APPROVED && eventPublisher != null) {
-        eventPublisher.publishEvent(
-            new DocumentStateTransitionEvent(
-                savedDoc.getId(),
-                oldStatus,
-                DocumentStateEnum.PENDING_APPROVAL,
-                DocumentEventEnum.SUBMIT,
-                operatorId != null ? operatorId : 0L,
-                "升级新版本，旧版本回归未审批",
-                java.time.LocalDateTime.now()));
-      }
+      submitDocumentAuditQuietly(
+          savedDoc.getId(), savedDoc.getWorkSpaceId(), operatorId, "升级新版本导入，待审批发布");
+      publishRevertToPendingIfApproved(oldStatus, savedDoc.getId(), operatorId, "升级新版本，旧版本回归未审批");
 
       return DocumentImportResult.asyncProcessing(
           savedDoc.getId(),
@@ -465,65 +321,23 @@ public class DocumentImportTransactionalService {
           parseResult.metadata());
     }
 
-    String content;
-    if (parseResult.isPreviewOnly()) {
-      String defaultPreview =
-          """
-          > 📄 **[PDF 固化版面原件预览模式]**
-          > 本文档为高精度版面保真原件，已安全存储于知识库底层 rustfs 对象存储中。
-          > 支持直接在阅读器中进行翻页预览；如需深度编辑与段落重排，请点击上方【一键 AI 提炼为文档】。
-          """;
-      String actualContent =
-          StrUtil.isNotBlank(parseResult.markdownContent())
-              ? parseResult.markdownContent()
-              : StrUtil.blankToDefault(parseResult.rawText(), defaultPreview);
-      content = DocumentContentCleaner.cleanEmbeddedImages(actualContent);
-      sourceFile.markPreviewOnly(
-          parseResult.rawText(),
-          parseResult.engineUsed(),
-          serializeMetadata(parseResult.metadata()));
-    } else {
-      String rawMarkdown = StrUtil.blankToDefault(parseResult.markdownContent(), "");
-      content = DocumentContentCleaner.cleanEmbeddedImages(rawMarkdown);
-      sourceFile.markParseSuccess(
-          parseResult.rawText(),
-          parseResult.engineUsed(),
-          serializeMetadata(parseResult.metadata()));
-    }
-
+    String content = resolveSyncContentAndMarkSourceFile(sourceFile, parseResult);
     existingDoc.upgradeToNewVersion(
-        nextVersion, nextVersionTag, docTitle, summary, content, sourceFileId, fileName);
+        nextVersion, nextVersionTag, docTitle, fileName, content, sourceFileId, fileName);
     DocumentEntity savedDoc = documentRepository.save(existingDoc);
     sourceFile.bindDocument(savedDoc.getId());
     docSourceFileRepository.save(sourceFile);
 
-    // 创建升级版本不可变快照
-    if (docVersionRepository != null) {
-      DocVersionEntity snapshot =
-          DocVersionEntity.createSnapshot(
-              command.workSpaceId(),
-              savedDoc.getId(),
-              nextVersion,
-              nextVersionTag,
-              savedDoc.getTitle(),
-              content,
-              "升级导入新版本",
-              operatorId != null ? operatorId : 0L);
-      docVersionRepository.save(snapshot);
-    }
-
-    // 若此前处于审批通过状态，由于升级后回归待审核状态，发出流转事件清理旧版本 ES 索引与向量数据
-    if (oldStatus == DocumentStateEnum.APPROVED && eventPublisher != null) {
-      eventPublisher.publishEvent(
-          new DocumentStateTransitionEvent(
-              savedDoc.getId(),
-              oldStatus,
-              DocumentStateEnum.PENDING_APPROVAL,
-              DocumentEventEnum.SUBMIT,
-              operatorId != null ? operatorId : 0L,
-              "升级新版本，旧版本回归待审核",
-              java.time.LocalDateTime.now()));
-    }
+    saveSnapshotIfPresent(
+        command.workSpaceId(),
+        savedDoc.getId(),
+        nextVersion,
+        nextVersionTag,
+        savedDoc.getTitle(),
+        content,
+        "升级导入新版本",
+        operatorId);
+    publishRevertToPendingIfApproved(oldStatus, savedDoc.getId(), operatorId, "升级新版本，旧版本回归待审核");
 
     log.info(
         "【DocumentImportPipeline】文档升级新版本成功: docId={}, version={}, tag={}, title={}",
@@ -543,6 +357,81 @@ public class DocumentImportTransactionalService {
         instantUpload,
         content,
         parseResult.metadata());
+  }
+
+  private String resolveAsyncPlaceholderContent(DocParseResult parseResult) {
+    return parseResult.isQueued()
+        ? """
+        > ⏳ **[AI 智能提炼排队中]**
+        > 文档已进入解析队列，等待调度解析，请稍候刷新查看最新进展。
+        """
+        : """
+        > ⏳ **[AI 智能提炼解析中]**
+        > 正在由云端大模型进行排版分析与内容提取，请稍候刷新查看最新正文。
+        """;
+  }
+
+  private String resolveSyncContentAndMarkSourceFile(
+      DocSourceFileEntity sourceFile, DocParseResult parseResult) {
+    String rawMarkdown = StrUtil.blankToDefault(parseResult.markdownContent(), "");
+    String cleaned = DocumentContentCleaner.cleanEmbeddedImages(rawMarkdown);
+    sourceFile.markParseSuccess(
+        parseResult.rawText(), parseResult.engineUsed(), serializeMetadata(parseResult.metadata()));
+    return cleaned;
+  }
+
+  private void saveSnapshotIfPresent(
+      Long workSpaceId,
+      Long docId,
+      int versionNumber,
+      String versionTag,
+      String title,
+      String content,
+      String summary,
+      Long operatorId) {
+    if (docVersionRepository == null) {
+      return;
+    }
+    DocVersionEntity snapshot =
+        DocVersionEntity.createSnapshot(
+            workSpaceId,
+            docId,
+            versionNumber,
+            versionTag,
+            title,
+            content,
+            summary,
+            operatorId != null ? operatorId : 0L);
+    docVersionRepository.save(snapshot);
+  }
+
+  private void submitDocumentAuditQuietly(
+      Long docId, Long workSpaceId, Long operatorId, String remark) {
+    if (approvalApi == null) {
+      return;
+    }
+    try {
+      approvalApi.submitDocumentAudit(
+          docId, workSpaceId, operatorId != null ? operatorId : 0L, null, remark, null);
+    } catch (Exception e) {
+      log.warn(
+          "【DocumentImportPipeline】自动登记发布审批单异常: docId={}, error={}", docId, e.getMessage());
+    }
+  }
+
+  private void publishRevertToPendingIfApproved(
+      DocumentStateEnum oldStatus, Long docId, Long operatorId, String reason) {
+    if (oldStatus == DocumentStateEnum.APPROVED && eventPublisher != null) {
+      eventPublisher.publishEvent(
+          new DocumentStateTransitionEvent(
+              docId,
+              oldStatus,
+              DocumentStateEnum.PENDING_APPROVAL,
+              DocumentEventEnum.SUBMIT,
+              operatorId != null ? operatorId : 0L,
+              reason,
+              java.time.LocalDateTime.now()));
+    }
   }
 
   /** 独立小事务：完成异步解析正文落库与切片元数据持久化 */
@@ -568,22 +457,42 @@ public class DocumentImportTransactionalService {
             doc -> {
               doc.markParseSuccess(cleanedContent, suggestedTitle);
               DocumentEntity savedDoc = documentRepository.save(doc);
-              if (docVersionRepository != null
-                  && docVersionRepository
-                      .findByDocumentIdAndVersionNumber(
-                          savedDoc.getId(), savedDoc.getCurrentVersion())
-                      .isEmpty()) {
-                DocVersionEntity snapshot =
-                    DocVersionEntity.createSnapshot(
-                        savedDoc.getWorkSpaceId(),
-                        savedDoc.getId(),
-                        savedDoc.getCurrentVersion(),
-                        savedDoc.getCurrentVersionTag(),
-                        savedDoc.getTitle(),
-                        savedDoc.getContent(),
-                        "异步解析完成快照",
-                        savedDoc.getCreateBy() != null ? savedDoc.getCreateBy() : 0L);
-                docVersionRepository.save(snapshot);
+              if (docVersionRepository != null) {
+                Optional<DocVersionEntity> snapshotOpt =
+                    docVersionRepository.findByDocumentIdAndVersionNumber(
+                        savedDoc.getId(), savedDoc.getCurrentVersion());
+                if (snapshotOpt.isEmpty()) {
+                  DocVersionEntity snapshot =
+                      DocVersionEntity.createSnapshot(
+                          savedDoc.getWorkSpaceId(),
+                          savedDoc.getId(),
+                          savedDoc.getCurrentVersion(),
+                          savedDoc.getCurrentVersionTag(),
+                          savedDoc.getTitle(),
+                          savedDoc.getContent(),
+                          "异步解析完成快照",
+                          savedDoc.getCreateBy() != null ? savedDoc.getCreateBy() : 0L);
+                  docVersionRepository.save(snapshot);
+                } else {
+                  DocVersionEntity existingSnapshot = snapshotOpt.orElseThrow();
+                  // 若已有快照内容为排队中或解析中的临时占位符，安全清理并重新生成真实快照
+                  if (StrUtil.isBlank(existingSnapshot.getContent())
+                      || existingSnapshot.getContent().startsWith("> ⏳")) {
+                    docVersionRepository.delete(existingSnapshot);
+                    docVersionRepository.flush();
+                    DocVersionEntity snapshot =
+                        DocVersionEntity.createSnapshot(
+                            savedDoc.getWorkSpaceId(),
+                            savedDoc.getId(),
+                            savedDoc.getCurrentVersion(),
+                            savedDoc.getCurrentVersionTag(),
+                            savedDoc.getTitle(),
+                            savedDoc.getContent(),
+                            "异步解析完成快照",
+                            savedDoc.getCreateBy() != null ? savedDoc.getCreateBy() : 0L);
+                    docVersionRepository.save(snapshot);
+                  }
+                }
               }
             });
 

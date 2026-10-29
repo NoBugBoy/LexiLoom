@@ -5,22 +5,22 @@
 - 基础路径：`/api/v1/openapi`（兼容路径：`/v1/openapi`）
 - 数据格式：JSON；流式接口使用 `text/event-stream`
 - 认证：使用 `X-API-Key: <API_KEY>`，也支持 `Authorization: Bearer <API_KEY>`。API Key 的作用域、绑定工作空间和模型配置由平台管理。
-- 调用来源：可通过 `X-Call-Source` 标记为 `CLI_SKILL`、`OPENAPI` 或 `WEB_CHAT`；缺省或非法值按 `OPENAPI` 处理。GET 检索也可用 `callSource` 查询参数。
+- 调用来源：可通过 `X-Call-Source` 固定为 `OPENAPI` 。GET 检索也可用 `callSource` 查询参数。
 
 本文档由 `GET /api/v1/openapi/docs` 提供，兼容路径为 `GET /v1/openapi/docs`。
 
 ## 接口一览
 
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| GET | `/workspaces` | 查询当前凭据可访问的工作空间 |
-| POST | `/knowledge/search` | 检索知识库切片（推荐） |
-| GET | `/knowledge/search` | 检索知识库切片（便于联调） |
-| GET | `/documents/{id}` | 获取单篇文档正文 |
+| 方法 | 路径                | 说明                                                |
+|------|---------------------|-----------------------------------------------------|
+| GET  | `/workspaces`       | 查询当前凭据可访问的工作空间                        |
+| POST | `/knowledge/search` | 检索知识库切片（推荐）                              |
+| GET  | `/knowledge/search` | 检索知识库切片（便于联调）                          |
+| GET  | `/documents/{id}`   | 获取单篇文档正文                                    |
 | POST | `/chat/completions` | OpenAI 风格统一对话入口，按 `stream` 选择同步或流式 |
-| POST | `/chat` | 同步问答 |
-| POST | `/chat/stream` | SSE 流式问答 |
-| GET | `/docs` | 获取本文档（`text/markdown`） |
+| POST | `/chat`             | 同步问答                                            |
+| POST | `/chat/stream`      | SSE 流式问答                                        |
+| GET  | `/docs`             | 获取本文档（`text/markdown`）                       |
 
 ## 1. 查询工作空间
 
@@ -77,13 +77,13 @@ X-Call-Source: CLI_SKILL
 
 查询参数：
 
-| 参数 | 必填 | 类型 | 说明 |
-| --- | --- | --- | --- |
-| `q` | 是 | string | 自然语言检索内容，不能是空白 |
-| `workspaceId` | 否 | long | 目标工作空间 ID |
-| `topK` | 否 | integer | 召回切片数量上限，默认 5 |
-| `minScore` | 否 | number | 相似度阈值，默认 0.50 |
-| `callSource` | 否 | string | 调用来源；非空时优先于 `X-Call-Source` |
+| 参数          | 必填 | 类型    | 说明                                   |
+|---------------|------|---------|----------------------------------------|
+| `q`           | 是   | string  | 自然语言检索内容，不能是空白           |
+| `workspaceId` | 否   | long    | 目标工作空间 ID                        |
+| `topK`        | 否   | integer | 召回切片数量上限，默认 5               |
+| `minScore`    | 否   | number  | 相似度阈值，默认 0.50                  |
+| `callSource`  | 否   | string  | 调用来源；非空时优先于 `X-Call-Source` |
 
 > GET 实现中，当 `callSource` 非空时优先使用查询参数，否则使用请求头。
 
@@ -154,15 +154,15 @@ X-API-Key: <API_KEY>
 }
 ```
 
-| 字段 | 必填 | 类型 | 说明 |
-| --- | --- | --- | --- |
-| `message` | 是 | string | 用户问题，不能是空白 |
-| `workspaceId` | 否 | long | 知识库工作空间 ID |
-| `sessionId` | 否 | string | 会话 ID，用于延续会话 |
-| `stream` | 否 | boolean | 是否流式输出；默认 `false` |
-| `enableThinking` | 否 | boolean | 是否请求模型思考内容 |
-| `documentId` | 否 | long | 指定文档 ID，供文档定向问答使用 |
-| `topK` | 否 | integer | 检索切片数量 |
+| 字段             | 必填 | 类型    | 说明                            |
+|------------------|------|---------|---------------------------------|
+| `message`        | 是   | string  | 用户问题，不能是空白            |
+| `workspaceId`    | 否   | long    | 知识库工作空间 ID               |
+| `sessionId`      | 否   | string  | 会话 ID，用于延续会话           |
+| `stream`         | 否   | boolean | 是否流式输出；默认 `false`      |
+| `enableThinking` | 否   | boolean | 是否请求模型思考内容            |
+| `documentId`     | 否   | long    | 指定文档 ID，供文档定向问答使用 |
+| `topK`           | 否   | integer | 检索切片数量                    |
 
 同步响应示例：
 

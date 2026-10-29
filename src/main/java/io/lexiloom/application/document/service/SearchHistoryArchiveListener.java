@@ -28,9 +28,10 @@ public class SearchHistoryArchiveListener {
       return;
     }
     try {
+      Long effectiveWorkspaceId = event.workspaceId() != null ? event.workspaceId() : 0L;
       SearchHistoryEntity entity =
           SearchHistoryEntity.of(
-              event.userId(), event.workspaceId(), event.keyword(), event.searchAt());
+              event.userId(), effectiveWorkspaceId, event.keyword(), event.searchAt());
       searchHistoryRepository.save(entity);
       log.debug(
           "成功异步归档搜索历史: userId={}, workspaceId={}, keyword={}",

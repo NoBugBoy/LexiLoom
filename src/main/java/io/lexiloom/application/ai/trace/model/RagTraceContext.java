@@ -17,7 +17,7 @@ import lombok.Getter;
 public class RagTraceContext {
 
   private final String traceId;
-  private final String sessionId;
+  private volatile String sessionId;
   private final Long workspaceId;
   private final Long userId;
   private final String query;
@@ -60,6 +60,12 @@ public class RagTraceContext {
   public void recordCandidate(CandidateTraceItem item) {
     if (item != null) {
       candidates.add(item);
+    }
+  }
+
+  public void recordSessionId(String sessionId) {
+    if (StrUtil.isNotBlank(sessionId)) {
+      this.sessionId = sessionId.trim();
     }
   }
 

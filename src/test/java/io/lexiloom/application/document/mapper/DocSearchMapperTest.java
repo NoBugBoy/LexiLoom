@@ -6,7 +6,7 @@ import io.lexiloom.application.document.model.entity.DocSourceFileEntity;
 import io.lexiloom.application.document.model.entity.DocumentEntity;
 import io.lexiloom.application.document.parser.DocParserEngineEnum;
 import io.lexiloom.application.document.search.DocSearchDocument;
-import io.lexiloom.application.document.statemachine.DocumentStateEnum;
+import io.lexiloom.application.document.api.dto.DocumentStateEnum;
 import io.lexiloom.application.enums.WorkSpaceAclEnum;
 import java.time.LocalDateTime;
 import java.util.List;

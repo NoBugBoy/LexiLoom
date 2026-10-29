@@ -1,6 +1,7 @@
 package io.lexiloom.application.common.storage;
 
 import lombok.Data;
+import lombok.ToString;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /** rustfs 对象存储配置属性 rustfs 是基于 Rust 编写的高性能、S3 兼容的分布式对象存储引擎 */
@@ -21,7 +22,7 @@ public class RustfsStorageProperties {
   private String accessKey = "rustfsadmin";
 
   /** Secret Key */
-  private String secretKey = "rustfsadmin";
+  @ToString.Exclude private String secretKey = "rustfsadmin";
 
   /** 区域 */
   private String region = "us-east-1";

@@ -1,5 +1,6 @@
 package io.lexiloom.application.document.pipeline;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.lexiloom.application.document.parser.DocParseStatusEnum;
 import io.lexiloom.application.document.parser.DocParserEngineEnum;
 import java.util.Collections;
@@ -11,7 +12,7 @@ public record DocumentImportResult(
     Long sourceFileId,
     String title,
     String originalFileName,
-    String storagePath,
+    @JsonIgnore String storagePath,
     String storageUrl,
     DocParseStatusEnum parseStatus,
     DocParserEngineEnum engineUsed,
@@ -45,31 +46,6 @@ public record DocumentImportResult(
         engineUsed,
         instantUpload,
         markdownContent,
-        metadata);
-  }
-
-  public static DocumentImportResult previewOnly(
-      Long documentId,
-      Long sourceFileId,
-      String title,
-      String originalFileName,
-      String storagePath,
-      String storageUrl,
-      DocParserEngineEnum engineUsed,
-      boolean instantUpload,
-      String previewPlaceholder,
-      Map<String, Object> metadata) {
-    return new DocumentImportResult(
-        documentId,
-        sourceFileId,
-        title,
-        originalFileName,
-        storagePath,
-        storageUrl,
-        DocParseStatusEnum.PREVIEW_ONLY,
-        engineUsed,
-        instantUpload,
-        previewPlaceholder,
         metadata);
   }
 
@@ -146,7 +122,6 @@ public record DocumentImportResult(
 
   public boolean isSuccess() {
     return this.parseStatus == DocParseStatusEnum.SUCCESS
-        || this.parseStatus == DocParseStatusEnum.PREVIEW_ONLY
         || this.parseStatus == DocParseStatusEnum.ASYNC_PROCESSING
         || this.parseStatus == DocParseStatusEnum.QUEUED;
   }
