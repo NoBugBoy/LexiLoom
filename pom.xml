@@ -30,7 +30,7 @@
         <querydsl.version>5.1.0</querydsl.version>
         <hutools.version>5.8.30</hutools.version>
         <jacoco.skip>true</jacoco.skip>
-        <minio.version>8.5.17</minio.version>
+        <minio.version>9.0.3</minio.version>
         <groovy.version>4.0.24</groovy.version>
         <cola-statemachine.version>4.3.2</cola-statemachine.version>
         <elasticsearch.version>8.17.2</elasticsearch.version>
